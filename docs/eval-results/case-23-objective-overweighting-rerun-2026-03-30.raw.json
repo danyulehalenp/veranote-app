@@ -1,0 +1,23 @@
+{
+  "caseId": "23",
+  "title": "Substance use denied despite positive screen and collateral concern",
+  "runAt": "2026-03-30",
+  "endpoint": "/api/generate-note",
+  "settings": {
+    "keepCloserToSource": true,
+    "outputStyle": "Standard",
+    "format": "Labeled Sections"
+  },
+  "result": {
+    "note": "Chief Concern / Interval Update: The patient denies recent cocaine use, while the girlfriend reports that the patient was using cocaine \"all weekend\" and appeared sleepless. Mood is described as irritable today.\n\nSymptom Review: No suicidal or homicidal ideation reported.\n\nMedications / Adherence / Side Effects: Not documented in source.\n\nMental Status / Observations: Not documented in source.\n\nSafety / Risk: No suicidal or homicidal ideation reported.\n\nAssessment: The patient denies cocaine use; however, the girlfriend reports use over the weekend and the urine drug screen is positive for cocaine. The patient appeared sleepless and irritable. Heart rate is elevated at 108. The source conflict regarding substance use remains unresolved in the provided material.\n\nPlan: Plan details were not documented in the source.",
+    "flags": [
+      "Medications not documented",
+      "Mental status examination not provided",
+      "Plan details not documented",
+      "Follow-up interval not documented.",
+      "Side effects not addressed.",
+      "Plan details are limited or not documented."
+    ],
+    "mode": "live"
+  }
+}

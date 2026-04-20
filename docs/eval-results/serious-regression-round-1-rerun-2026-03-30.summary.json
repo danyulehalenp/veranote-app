@@ -1,0 +1,91 @@
+{
+  "runLabel": "serious-regression-round-1-rerun-2026-03-30",
+  "date": "2026-03-30",
+  "casesRun": ["12", "13", "17", "18"],
+  "rawArtifact": "docs/eval-results/serious-regression-round-1-rerun-2026-03-30.raw.json",
+  "overall": {
+    "status": "improved-but-not-done",
+    "mainImprovement": "Undocumented plan generation was reduced across the rerun set.",
+    "mainRemainingWeakness": "Case 18 still smooths sparse input into partial false completeness."
+  },
+  "changes": {
+    "prompt": [
+      "Added sparse-input mode directives.",
+      "Added explicit no-plan-in-source behavior.",
+      "Added minimal-plan / refill-request restraints.",
+      "Added minimal-status-language restraints for 'about the same' / 'nothing major changed'.",
+      "Added therapy intervention-without-clear-benefit restraint.",
+      "Added safety-support preservation without plan expansion."
+    ],
+    "review": [
+      "Broadened passive death-wish detection.",
+      "Added sparse-input and narrow-plan copilot warnings.",
+      "Added therapy intervention-without-clear-benefit warning.",
+      "Fixed false-positive suicidality contradiction heuristic for explicit no-self-harm wording.",
+      "Updated trust copy to normalize sparse / not-documented output when source is thin."
+    ]
+  },
+  "caseResults": [
+    {
+      "id": "12",
+      "result": "improved",
+      "rating": "yellow",
+      "wins": [
+        "Unsupported monitoring plan removed.",
+        "Passive-death-wish nuance preserved.",
+        "False-positive contradiction flag did not recur.",
+        "Specific passive-death-wish warning now appears."
+      ],
+      "remainingIssues": [
+        "Some wording remains slightly cleaner than source-shaped phrasing.",
+        "Generic missing-info flags remain noisy."
+      ]
+    },
+    {
+      "id": "13",
+      "result": "improved",
+      "rating": "yellow-green",
+      "wins": [
+        "Unsupported supportive-care plan removed.",
+        "Timeline stayed intact.",
+        "Plan now stops at not-documented wording."
+      ],
+      "remainingIssues": [
+        "No-labs statement still lands in plan-adjacent space."
+      ]
+    },
+    {
+      "id": "17",
+      "result": "improved",
+      "rating": "yellow-green",
+      "wins": [
+        "Invented coping/monitoring plan removed.",
+        "Therapy-specific warning now appears.",
+        "No overstated intervention benefit."
+      ],
+      "remainingIssues": [
+        "Grounding attempt / lack of effect was under-preserved in the rerun narrative.",
+        "Formatting still comes back more compressed than preferred."
+      ]
+    },
+    {
+      "id": "18",
+      "result": "partially improved",
+      "rating": "yellow-red",
+      "wins": [
+        "No longer claims refill was provided.",
+        "Preserves refill need more narrowly.",
+        "Sparse-input and narrow-plan warnings now appear."
+      ],
+      "remainingIssues": [
+        "Still adds pseudo-complete language like 'No new symptom details were provided' and 'status appears unchanged'.",
+        "Still weakest rerun case."
+      ]
+    }
+  ],
+  "validation": {
+    "build": "pass",
+    "lint": "fail",
+    "lintFailure": "ESLint 10 flat config missing; eslint.config.* not present"
+  }
+}

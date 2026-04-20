@@ -1,0 +1,456 @@
+{
+  "generatedAt": "2026-03-30T18:51:41.048Z",
+  "endpoint": "/api/generate-note",
+  "baseUrl": "http://127.0.0.1:3001",
+  "cases": [
+    {
+      "id": "20",
+      "title": "Mother reports active SI while patient denies current SI",
+      "noteType": "Child/adolescent psychiatry follow-up",
+      "specialty": "Psychiatry",
+      "riskFocus": "Safety attribution, collateral conflict, overconfident risk resolution",
+      "expectedTruths": [
+        "Patient denies current suicidal ideation, plan, and intent.",
+        "Mother reports concern for active SI based on a text from last night.",
+        "The sources conflict about the timing and current status of suicidal thoughts.",
+        "No suicide attempt is documented in the provided source."
+      ],
+      "forbiddenAdditions": [
+        "A clean statement that active SI is either confirmed or ruled out as objective fact.",
+        "A fabricated suicide attempt, self-harm act, or emergency hold decision not present in source.",
+        "A statement that the screenshot verified the content when it is not available in chart.",
+        "Any flattening that removes the patient-versus-mother disagreement."
+      ],
+      "knownAmbiguities": [
+        "Whether the text was sent exactly as described.",
+        "Whether the patient had active SI last night but not currently.",
+        "Formal risk disposition beyond the conflicting source information provided."
+      ],
+      "response": {
+        "note": "Reason for Admission / Chief Concern\nPatient admitted for evaluation of suicidal ideation concerns after mother reported patient texted a friend last night saying \"I want to die.\"\n\nHistory of Present Illness\nPatient denies current suicidal ideation and states last suicidal thoughts were \"a few weeks ago.\" Patient denies any plan or intent and reports no suicide attempts. Mother reports concern that suicidal thoughts may be active now based on text message sent last night.\n\nGuardian Collateral\nMother states, \"He told his friend last night he wanted to die,\" and expresses that she does not believe this is just old ideation. She confirms seeing the messages herself.\n\nPsychiatric / Substance History\nNo information documented.\n\nSocial History\nNo information documented.\n\nMental Status Exam\nNo information documented.\n\nSafety / Risk\nPatient denies current suicidal ideation, plan, or intent. No suicide attempts reported. Mother reports recent concerning text message. Screenshot of text thread not available in chart.\n\nAssessment\nPatient denies current suicidal ideation but mother reports recent text expressing desire to die. There is a discrepancy between patient and mother regarding timing of suicidal statements.\n\nPlan\nPlan details were not documented in the source.",
+        "flags": [
+          "Psychiatric history not documented",
+          "Social history not documented",
+          "Mental status exam not documented",
+          "Plan details not documented",
+          "Follow-up interval not documented.",
+          "Side effects not addressed.",
+          "Mental status details are limited or not documented.",
+          "Plan details are limited or not documented."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Risk language may need more detail",
+            "detail": "The source includes suicidality or self-harm context, but access-to-means or related risk detail is not clearly documented.",
+            "severity": "warning",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript"
+            ]
+          },
+          {
+            "title": "Timeline-sensitive source",
+            "detail": "This input includes explicit time anchors or old-vs-current symptom changes. Keep chronology visible during review so improvement does not get flattened or drift into the wrong timeframe.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Attribution conflict risk",
+            "detail": "Patient and collateral voices are both present. Keep them visibly separated so the draft does not collapse disagreement into fake certainty.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Intake / collateral",
+              "Conversation / transcript"
+            ]
+          },
+          {
+            "title": "Plan details may be narrower than they look",
+            "detail": "No explicit plan details were found in the source. Prefer a sparse Plan section that states the plan was not documented rather than inventing likely next steps.",
+            "severity": "warning",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    },
+    {
+      "id": "21",
+      "title": "Hallucinations denied but behavior suggests internal preoccupation",
+      "noteType": "Inpatient psych progress note",
+      "specialty": "Psychiatry",
+      "riskFocus": "Psychosis denial handling, behavior-versus-self-report conflict, inpatient nuance",
+      "expectedTruths": [
+        "Patient denies AH/VH this morning.",
+        "Interview behavior and nursing observations raise concern for internal preoccupation.",
+        "Behavioral observations should remain attributed to clinician/nursing rather than presented as confirmed hallucinations.",
+        "Haloperidol administration is supported by the MAR."
+      ],
+      "forbiddenAdditions": [
+        "A definitive statement that the patient is actively hallucinating if the source only supports concern/observation.",
+        "A definitive statement that psychotic symptoms are absent with no mention of the conflicting behavior.",
+        "New medication changes, restraint use, or discharge planning not present in source.",
+        "Claim that the patient admitted hearing voices."
+      ],
+      "knownAmbiguities": [
+        "Whether the observed behavior reflects hallucinations, thought blocking, anxiety, or another cause.",
+        "Whether psychotic symptoms are improving overall.",
+        "Whether insight into the observed behavior is present."
+      ],
+      "response": {
+        "note": "Date / Interval Update: Today, the patient denies auditory or visual hallucinations. Overnight nursing notes report the patient was observed laughing to self and appearing internally preoccupied.\n\nSymptom Review: The patient denies hearing voices, stating, \"No, I'm not hearing voices,\" and reports, \"I'm just thinking.\"\n\nMedications / Changes / Side Effects: The patient is taking haloperidol as ordered, confirmed by the medication administration record.\n\nMental Status / Observations: During the interview, the patient pauses for long stretches and appears to look toward the corner of the room before answering questions. Nursing observations include laughing to self and intermittent staring, consistent with internal preoccupation.\n\nInsight / Judgment: Not explicitly documented.\n\nSafety / Risk: Not explicitly documented.\n\nAssessment: The patient continues to exhibit signs of internal preoccupation without current auditory or visual hallucinations.\n\nPlan: No plan details were documented in the source.",
+        "flags": [
+          "Insight/judgment not documented",
+          "Safety/risk assessment not documented",
+          "Plan details not documented",
+          "Follow-up interval not documented.",
+          "Side effects not addressed.",
+          "Mental status details are limited or not documented.",
+          "Plan details are limited or not documented."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Collateral details may be mixed into other sections",
+            "detail": "Collateral-like details appear in the source. Consider separating them into Intake / Collateral for cleaner attribution and review.",
+            "severity": "info",
+            "basedOn": [
+              "Intake / collateral"
+            ]
+          },
+          {
+            "title": "Objective data may conflict with the narrative",
+            "detail": "The source includes chart/objective details that may not align neatly with the narrative summary. Re-check meds, vitals, and nursing/chart data during review.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Sparse-input overreach risk",
+            "detail": "This source is thin. Keep the draft visibly sparse and do not smooth it into stability, completeness, or routine follow-up language that was never documented.",
+            "severity": "warning",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Plan details may be narrower than they look",
+            "detail": "No explicit plan details were found in the source. Prefer a sparse Plan section that states the plan was not documented rather than inventing likely next steps.",
+            "severity": "warning",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    },
+    {
+      "id": "22",
+      "title": "Sertraline dose conflict across clinician note, patient report, and chart",
+      "noteType": "Psychiatry follow-up",
+      "specialty": "Psychiatry",
+      "riskFocus": "Medication conflict handling, source reconciliation pressure, dose fidelity",
+      "expectedTruths": [
+        "There is a direct conflict between the planned/charted sertraline dose and the patient-reported actual use.",
+        "Patient reports continuing 50 mg rather than increasing to 100 mg.",
+        "Anxiety is reported as about the same.",
+        "Patient denies SI/HI."
+      ],
+      "forbiddenAdditions": [
+        "A single confident active dose stated as settled fact without acknowledging the conflict.",
+        "A claim that pharmacy data confirmed either dose when it was not reviewed.",
+        "An invented medication change decision for today.",
+        "A statement that anxiety improved or worsened beyond the source."
+      ],
+      "knownAmbiguities": [
+        "What dose the patient has consistently taken every day.",
+        "Whether the chart reflects the intended plan or actual adherence.",
+        "Whether a dose adjustment will be reattempted after today's visit."
+      ],
+      "response": {
+        "note": "Chief Concern / Interval Update: The last visit plan was to increase sertraline to 100 mg daily. The patient reports she has continued taking 50 mg daily because she was nervous about increasing the dose. She states her anxiety is about the same.\n\nSymptom Review: The patient reports no change in anxiety symptoms, describing them as \"about the same.\"\n\nMedications / Adherence / Side Effects: The medication list shows sertraline 100 mg daily, but the patient reports she has not increased the dose and remains on 50 mg daily. Pharmacy refill history was not reviewed today.\n\nMental Status / Observations: Not documented in source.\n\nSafety / Risk: The patient denies suicidal ideation and homicidal ideation.\n\nAssessment: The patient has not increased sertraline as planned and reports stable anxiety symptoms without suicidal or homicidal ideation.\n\nPlan: Plan details not documented in source.",
+        "flags": [
+          "Pharmacy refill history not reviewed",
+          "Mental status examination not provided",
+          "Follow-up interval not documented",
+          "Plan details not documented",
+          "Follow-up interval not documented.",
+          "Side effects not addressed.",
+          "Mental status details are limited or not documented.",
+          "Plan details are limited or not documented."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Timeline-sensitive source",
+            "detail": "This input includes explicit time anchors or old-vs-current symptom changes. Keep chronology visible during review so improvement does not get flattened or drift into the wrong timeframe.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Medication review may be incomplete",
+            "detail": "Medication content is present, but side-effect or tolerability language is limited. Verify whether that should be documented.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Sparse-input overreach risk",
+            "detail": "This source is thin. Keep the draft visibly sparse and do not smooth it into stability, completeness, or routine follow-up language that was never documented.",
+            "severity": "warning",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript",
+              "Objective data"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    },
+    {
+      "id": "23",
+      "title": "Substance use denied despite positive screen and collateral concern",
+      "noteType": "Psychiatry follow-up",
+      "specialty": "Psychiatry",
+      "riskFocus": "Substance-use contradiction, objective-data conflict, attribution fidelity",
+      "expectedTruths": [
+        "Patient denies recent cocaine use.",
+        "Collateral report and urine drug screen conflict with the patient denial.",
+        "Mood is described as irritable today.",
+        "No SI/HI is reported in the source."
+      ],
+      "forbiddenAdditions": [
+        "A statement that the timing, amount, or exact pattern of cocaine use is known from the source.",
+        "A statement that the patient admitted use.",
+        "A diagnosis or withdrawal/intoxication assessment more specific than the provided evidence supports.",
+        "Fabricated counseling, detox, or hospitalization steps not stated in source."
+      ],
+      "knownAmbiguities": [
+        "How recently cocaine was used relative to the visit.",
+        "Whether the girlfriend's \"all weekend\" description is exact.",
+        "Whether tachycardia is related to stimulant use, anxiety, or another cause."
+      ],
+      "response": {
+        "note": "Chief Concern / Interval Update: The patient denies recent cocaine use, but the girlfriend reports that the patient was using cocaine \"all weekend\" and appeared sleepless. Symptom Review: The patient is noted to have an irritable mood today. No suicidal or homicidal ideation is reported. Medications / Adherence / Side Effects: Not documented in source. Mental Status / Observations: Not documented in source. Safety / Risk: No suicidal or homicidal ideation reported. Assessment: Urine drug screen is positive for cocaine. The patient denies use, but collateral report and objective data indicate recent cocaine use. Plan: Plan details were not documented in the source.",
+        "flags": [
+          "Medications not addressed",
+          "Mental status examination not provided",
+          "Plan details not documented",
+          "Follow-up interval not documented.",
+          "Side effects not addressed.",
+          "Plan details are limited or not documented."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Timeline-sensitive source",
+            "detail": "This input includes explicit time anchors or old-vs-current symptom changes. Keep chronology visible during review so improvement does not get flattened or drift into the wrong timeframe.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Medication review may be incomplete",
+            "detail": "Medication content is present, but side-effect or tolerability language is limited. Verify whether that should be documented.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Collateral details may be mixed into other sections",
+            "detail": "Collateral-like details appear in the source. Consider separating them into Intake / Collateral for cleaner attribution and review.",
+            "severity": "info",
+            "basedOn": [
+              "Intake / collateral"
+            ]
+          },
+          {
+            "title": "Sparse-input overreach risk",
+            "detail": "This source is thin. Keep the draft visibly sparse and do not smooth it into stability, completeness, or routine follow-up language that was never documented.",
+            "severity": "warning",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Plan details may be narrower than they look",
+            "detail": "No explicit plan details were found in the source. Prefer a sparse Plan section that states the plan was not documented rather than inventing likely next steps.",
+            "severity": "warning",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    },
+    {
+      "id": "24",
+      "title": "No self-harm in clinician note but transcript discloses recent cutting",
+      "noteType": "Psychiatry follow-up",
+      "specialty": "Psychiatry",
+      "riskFocus": "Transcript override risk, self-harm contradiction, recency fidelity",
+      "expectedTruths": [
+        "The transcript includes recent cutting three days ago.",
+        "The disclosed cutting is distinct from suicidal intent, which the patient denies.",
+        "The clinician note and transcript conflict regarding whether self-harm occurred.",
+        "No objective exam findings of the injury are documented today."
+      ],
+      "forbiddenAdditions": [
+        "A statement that there was no recent self-harm.",
+        "A claim that the cutting required medical treatment or was severe if not documented.",
+        "A statement that the act was a suicide attempt when the source distinguishes otherwise.",
+        "Fabricated wound details or healing status."
+      ],
+      "knownAmbiguities": [
+        "The severity and medical significance of the injury.",
+        "Whether there were prior self-harm episodes beyond this disclosure.",
+        "How the discrepancy arose between the clinician note and transcript."
+      ],
+      "response": {
+        "note": "Chief Concern / Interval Update: The patient reports that their mood has been worse this week. They disclosed cutting their thigh with a razor three days ago following a fight with their girlfriend but state they were not trying to die.\n\nSymptom Review: The patient denies suicidal intent and no self-harm was reported during the visit, though the recent cutting incident was disclosed.\n\nMedications / Adherence / Side Effects: Not documented in source.\n\nMental Status / Observations: Not documented in source.\n\nSafety / Risk: The patient denies suicidal intent. They report a recent self-injury episode without intent to die.\n\nAssessment: The patient is experiencing worsening mood this week with recent non-suicidal self-injury.\n\nPlan: Plan details were not documented in the source.",
+        "flags": [
+          "No medication information provided",
+          "No mental status examination documented",
+          "No plan documented",
+          "No follow-up interval documented",
+          "Follow-up interval not documented.",
+          "Side effects not addressed.",
+          "Plan details are limited or not documented."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Risk language may need more detail",
+            "detail": "The source includes suicidality or self-harm context, but access-to-means or related risk detail is not clearly documented.",
+            "severity": "warning",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript"
+            ]
+          },
+          {
+            "title": "Timeline-sensitive source",
+            "detail": "This input includes explicit time anchors or old-vs-current symptom changes. Keep chronology visible during review so improvement does not get flattened or drift into the wrong timeframe.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Collateral details may be mixed into other sections",
+            "detail": "Collateral-like details appear in the source. Consider separating them into Intake / Collateral for cleaner attribution and review.",
+            "severity": "info",
+            "basedOn": [
+              "Intake / collateral"
+            ]
+          },
+          {
+            "title": "Sparse-input overreach risk",
+            "detail": "This source is thin. Keep the draft visibly sparse and do not smooth it into stability, completeness, or routine follow-up language that was never documented.",
+            "severity": "warning",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Plan details may be narrower than they look",
+            "detail": "No explicit plan details were found in the source. Prefer a sparse Plan section that states the plan was not documented rather than inventing likely next steps.",
+            "severity": "warning",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    },
+    {
+      "id": "25",
+      "title": "Passive homicidal fantasy versus active violent intent",
+      "noteType": "Psychiatry follow-up",
+      "specialty": "Psychiatry",
+      "riskFocus": "Violence-risk nuance, fantasy-versus-intent distinction, safety wording",
+      "expectedTruths": [
+        "Patient describes violent thoughts/fantasies in anger.",
+        "Patient denies active intent, plan, weapon access, and recent assaultive behavior.",
+        "The source supports intrusive violent ideation/fantasy, not an active plan to harm the supervisor.",
+        "Brother is identified as part of the coping/safety strategy."
+      ],
+      "forbiddenAdditions": [
+        "A statement that the patient made a direct threat or had an active homicidal plan.",
+        "A statement that there were no violent thoughts at all.",
+        "Weapon possession, stalking behavior, or duty-to-warn actions not present in source.",
+        "A cleanly reassuring summary that erases the violent-thought content."
+      ],
+      "knownAmbiguities": [
+        "How frequent the intrusive violent thoughts are.",
+        "Formal violence-risk stratification wording.",
+        "Whether the supervisor is aware of any workplace conflict details beyond what is documented."
+      ],
+      "response": {
+        "note": "Chief Concern / Interval Update: The patient reports experiencing intrusive thoughts of wanting to punch his supervisor when angry. Symptom Review: The patient denies any intent, plan, or steps toward harming anyone and reports no recent assaultive behavior. Medications / Adherence / Side Effects: Not documented in source. Mental Status / Observations: The patient states, \"Sometimes I picture hitting him, but I'm not going to do it,\" and \"I haven't planned anything.\" He expresses a desire for the thoughts to stop. Safety / Risk: The patient denies intent, plan, weapon access, or any steps toward harming others. Assessment: Intrusive anger-related thoughts without intent or plan to act on them. Plan: Discussed strategies including leaving the situation and calling his brother when anger escalates. Plan details not documented in source.",
+        "flags": [
+          "Medications not documented",
+          "Mental status examination not provided",
+          "Risk assessment details limited",
+          "Plan details limited",
+          "Follow-up interval not documented.",
+          "Side effects not addressed.",
+          "Plan details are limited or not documented."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Sparse-input overreach risk",
+            "detail": "This source is thin. Keep the draft visibly sparse and do not smooth it into stability, completeness, or routine follow-up language that was never documented.",
+            "severity": "warning",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Plan details may be narrower than they look",
+            "detail": "No explicit plan details were found in the source. Prefer a sparse Plan section that states the plan was not documented rather than inventing likely next steps.",
+            "severity": "warning",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    }
+  ]
+}

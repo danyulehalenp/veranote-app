@@ -1,0 +1,202 @@
+{
+  "runLabel": "serious-regression-round-1-2026-03-30",
+  "date": "2026-03-30",
+  "basis": "In-app Serious regression round 1 subset (cases 11-19)",
+  "executed": {
+    "usedLiveApi": true,
+    "endpoint": "/api/generate-note",
+    "casesRun": ["11", "12", "13", "14", "15", "16", "17", "18", "19"],
+    "uiManualEvalExecuted": false,
+    "notes": [
+      "App started locally with npm run dev",
+      "Live requests were sent through the app's real generation path",
+      "Summary judgments were then made manually against the repo's fidelity rubric"
+    ],
+    "validation": {
+      "build": "pass",
+      "lint": "fail",
+      "lintFailure": "ESLint 10 flat config missing; eslint.config.* not present"
+    }
+  },
+  "overall": {
+    "status": "needs-revision",
+    "strongestVulnerability": "Undocumented plan overexpansion from descriptive or sparse source input",
+    "secondaryVulnerabilities": [
+      "Sparse-input smoothing / false completeness",
+      "Warning logic misses some high-value edge cases",
+      "Attribution conflict still gets partially blended",
+      "Mild timeline compression"
+    ]
+  },
+  "cases": [
+    {
+      "id": "11",
+      "title": "Conflicting medication frequency reports",
+      "rating": "yellow",
+      "strengths": [
+        "Preserved patient vs husband discrepancy",
+        "Did not invent a fixed clonazepam schedule",
+        "Kept sertraline unchanged"
+      ],
+      "issues": [
+        "Over-specified sertraline as every morning",
+        "Added cleaner plan wording than source explicitly supports"
+      ],
+      "warningsFired": [
+        "Attribution conflict risk",
+        "Medication review may be incomplete"
+      ],
+      "warningsShouldHaveFired": []
+    },
+    {
+      "id": "12",
+      "title": "Passive death wish hidden by denial language",
+      "rating": "yellow-red",
+      "strengths": [
+        "Preserved passive-death-wish nuance",
+        "Kept denial of active plan/intent",
+        "Kept no recent self-harm"
+      ],
+      "issues": [
+        "Invented monitoring/supportive plan language",
+        "False-positive contradiction flag triggered"
+      ],
+      "warningsFired": [
+        "Risk language may need more detail",
+        "Possible contradiction: denial of suicidality appears to conflict with documented overdose or self-harm context"
+      ],
+      "warningsShouldHaveFired": [
+        "Passive death-wish nuance needs careful wording"
+      ]
+    },
+    {
+      "id": "13",
+      "title": "Temporal negation with vomiting resolved yesterday",
+      "rating": "yellow",
+      "strengths": [
+        "Preserved chronology accurately",
+        "Kept vomiting resolved and nausea ongoing",
+        "Kept fluids tolerated"
+      ],
+      "issues": [
+        "Added supportive-care plan language not directly documented"
+      ],
+      "warningsFired": [
+        "Timeline-sensitive source"
+      ],
+      "warningsShouldHaveFired": []
+    },
+    {
+      "id": "14",
+      "title": "Collateral overstatement versus patient minimization",
+      "rating": "yellow",
+      "strengths": [
+        "Kept patient vs father disagreement visible",
+        "Correctly attributed backpack-throwing to father"
+      ],
+      "issues": [
+        "Assessment slightly blends conflict into a cleaner shared narrative"
+      ],
+      "warningsFired": [
+        "Collateral details may be mixed into other sections",
+        "Attribution conflict risk"
+      ],
+      "warningsShouldHaveFired": []
+    },
+    {
+      "id": "15",
+      "title": "Medication stop followed by delayed worsening",
+      "rating": "yellow",
+      "strengths": [
+        "Good chronology overall",
+        "Preserved delayed worsening",
+        "Preserved outdated med-list mismatch"
+      ],
+      "issues": [
+        "Compressed 10 days into past week",
+        "Assessment smooths over unresolved cause ambiguity"
+      ],
+      "warningsFired": [
+        "Timeline-sensitive source",
+        "Medication review may be incomplete",
+        "Objective data may conflict with the narrative"
+      ],
+      "warningsShouldHaveFired": []
+    },
+    {
+      "id": "16",
+      "title": "Inpatient behavior conflict across patient and staff sources",
+      "rating": "yellow-green",
+      "strengths": [
+        "Strong preservation of patient vs nursing disagreement",
+        "Kept no physical assault",
+        "Kept calm-now vs agitated-last-night distinction"
+      ],
+      "issues": [
+        "Assessment still mildly resolves tension into one clean narrative"
+      ],
+      "warningsFired": [
+        "Medication review may be incomplete",
+        "Objective data may conflict with the narrative",
+        "Collateral details may be mixed into other sections"
+      ],
+      "warningsShouldHaveFired": [
+        "More explicit patient-vs-staff conflict warning"
+      ]
+    },
+    {
+      "id": "17",
+      "title": "Therapy intervention attempted without clear effect",
+      "rating": "yellow",
+      "strengths": [
+        "Preserved that grounding was attempted",
+        "Preserved lack of clear benefit",
+        "Preserved persistent rumination"
+      ],
+      "issues": [
+        "Invented future-oriented coping/monitoring plan language"
+      ],
+      "warningsFired": [],
+      "warningsShouldHaveFired": [
+        "Therapy intervention without clear effect / outcome-overstatement cue"
+      ]
+    },
+    {
+      "id": "18",
+      "title": "Minimal input with high hallucination risk",
+      "rating": "red",
+      "strengths": [
+        "Did not invent many major symptom details",
+        "Stayed relatively sparse"
+      ],
+      "issues": [
+        "Invented stability assessment",
+        "Turned refill request into a more concrete plan",
+        "Still too polished for the evidence level"
+      ],
+      "warningsFired": [
+        "Medication review may be incomplete"
+      ],
+      "warningsShouldHaveFired": [
+        "Sparse-input overreach risk",
+        "Warning against turning refill request into explicit plan"
+      ]
+    },
+    {
+      "id": "19",
+      "title": "Plan statement present without supporting detail",
+      "rating": "yellow-green",
+      "strengths": [
+        "Stayed appropriately sparse",
+        "Preserved 4-week follow-up",
+        "Did not invent diagnosis-specific rationale"
+      ],
+      "issues": [
+        "Minor smoothing into generic treatment-approach wording"
+      ],
+      "warningsFired": [],
+      "warningsShouldHaveFired": []
+    }
+  ],
+  "recommendedNextMove": "Tighten prompt and review behavior so undocumented plans are not generated. Specifically force 'Plan: not documented in source' behavior when the input lacks explicit plan content, then rerun cases 12, 13, 17, and 18 first."
+}

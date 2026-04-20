@@ -1,0 +1,428 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --font-sans: 'Manrope', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+  --aurora-ink: #071321;
+  --aurora-muted: #5d738a;
+  --aurora-line: rgba(124, 156, 191, 0.24);
+  --aurora-card: rgba(255, 255, 255, 0.74);
+  --aurora-card-strong: rgba(255, 255, 255, 0.86);
+  --aurora-paper: #eef6fb;
+  --aurora-cyan: #12b5d0;
+  --aurora-cyan-deep: #173b6e;
+  --aurora-teal: #3be0b9;
+  --aurora-soft: #f2fbff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: var(--font-sans), sans-serif;
+  background:
+    radial-gradient(circle at 20% 25%, rgba(18,181,208,0.06), transparent 38%),
+    radial-gradient(circle at 80% 20%, rgba(59,224,185,0.045), transparent 42%),
+    linear-gradient(180deg, #01040A 0%, #020812 38%, #050D19 100%);
+  color: #eaf7ff;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(180, 224, 255, 0.032) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180, 224, 255, 0.032) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.75), transparent 90%);
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(59, 224, 185, 0.08), transparent 22%),
+    radial-gradient(circle at 88% 14%, rgba(18, 181, 208, 0.12), transparent 24%),
+    radial-gradient(circle at 50% 100%, rgba(23, 59, 110, 0.10), transparent 30%);
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display), sans-serif;
+  letter-spacing: -0.03em;
+}
+
+::selection {
+  background: rgba(16, 157, 180, 0.18);
+  color: #091728;
+}
+
+.veranote-theme {
+  --theme-card-shadow: 0 22px 70px rgba(19, 49, 82, 0.10);
+  --theme-card-shadow-strong: 0 28px 90px rgba(19, 49, 82, 0.16);
+}
+
+.veranote-theme .text-ink {
+  color: #eff8ff !important;
+}
+
+.veranote-theme .text-muted {
+  color: #97aec4 !important;
+}
+
+.veranote-theme .border-border {
+  border-color: rgba(129, 180, 214, 0.18) !important;
+}
+
+.veranote-theme .bg-paper {
+  background-color: rgba(8, 22, 38, 0.72) !important;
+}
+
+.veranote-theme .bg-white {
+  background-color: rgba(9, 22, 39, 0.84) !important;
+}
+
+.veranote-theme .shadow-sm {
+  box-shadow: 0 20px 56px rgba(3, 10, 22, 0.28) !important;
+}
+
+.veranote-theme .shadow-md {
+  box-shadow: 0 28px 84px rgba(3, 10, 22, 0.36) !important;
+}
+
+.veranote-theme .bg-accent {
+  background: linear-gradient(135deg, var(--aurora-cyan) 0%, #1498c0 46%, #2081bc 100%) !important;
+}
+
+.veranote-theme .hover\:border-accent:hover {
+  border-color: rgba(18, 181, 208, 0.44) !important;
+}
+
+.veranote-theme .hover\:text-accent:hover {
+  color: #0d6f89 !important;
+}
+
+.veranote-theme textarea,
+.veranote-theme input,
+.veranote-theme select {
+  color: #eef8ff;
+  background-color: rgba(8, 20, 36, 0.70);
+  border-color: rgba(119, 179, 213, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.veranote-theme textarea::placeholder,
+.veranote-theme input::placeholder {
+  color: rgba(193, 218, 236, 0.58);
+}
+
+.veranote-theme button,
+.veranote-theme a {
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.veranote-theme button:hover,
+.veranote-theme a:hover {
+  box-shadow: 0 14px 34px rgba(20, 62, 96, 0.10);
+}
+
+.veranote-theme .bg-sky-50,
+.veranote-theme .bg-blue-50,
+.veranote-theme .bg-cyan-50 {
+  background: linear-gradient(135deg, rgba(11, 46, 74, 0.96), rgba(8, 33, 58, 0.98)) !important;
+}
+
+.veranote-theme .border-sky-200,
+.veranote-theme .border-blue-200,
+.veranote-theme .border-cyan-200 {
+  border-color: rgba(18, 181, 208, 0.24) !important;
+}
+
+.veranote-theme .text-sky-950,
+.veranote-theme .text-blue-950,
+.veranote-theme .text-cyan-950 {
+  color: #edf9ff !important;
+}
+
+.veranote-theme .text-sky-900,
+.veranote-theme .text-blue-900,
+.veranote-theme .text-cyan-900 {
+  color: #bfeeff !important;
+}
+
+.veranote-theme .text-blue-700,
+.veranote-theme .text-sky-700 {
+  color: #9fddf5 !important;
+}
+
+.veranote-theme .bg-violet-50 {
+  background: linear-gradient(135deg, rgba(19, 39, 82, 0.97), rgba(12, 28, 66, 0.99)) !important;
+}
+
+.veranote-theme .border-violet-200 {
+  border-color: rgba(86, 115, 193, 0.20) !important;
+}
+
+.veranote-theme .text-violet-950 {
+  color: #eef5ff !important;
+}
+
+.veranote-theme .text-violet-900 {
+  color: #c9d8ff !important;
+}
+
+.veranote-theme .bg-emerald-50 {
+  background: linear-gradient(135deg, rgba(8, 54, 56, 0.97), rgba(6, 39, 42, 0.99)) !important;
+}
+
+.veranote-theme .border-emerald-200 {
+  border-color: rgba(59, 224, 185, 0.24) !important;
+}
+
+.veranote-theme .text-emerald-950 {
+  color: #ecfffb !important;
+}
+
+.veranote-theme .text-emerald-900,
+.veranote-theme .text-emerald-800 {
+  color: #bef8ea !important;
+}
+
+.veranote-theme .bg-amber-50 {
+  background: linear-gradient(135deg, rgba(71, 49, 13, 0.97), rgba(50, 33, 10, 0.99)) !important;
+}
+
+.veranote-theme .border-amber-200 {
+  border-color: rgba(232, 171, 53, 0.28) !important;
+}
+
+.veranote-theme .bg-rose-50 {
+  background: linear-gradient(135deg, rgba(79, 22, 46, 0.97), rgba(56, 14, 31, 0.99)) !important;
+}
+
+.veranote-theme .border-rose-200 {
+  border-color: rgba(244, 114, 182, 0.24) !important;
+}
+
+.veranote-theme .bg-slate-50 {
+  background: linear-gradient(135deg, rgba(14, 27, 46, 0.96), rgba(8, 18, 33, 0.99)) !important;
+}
+
+.veranote-theme .border-slate-200 {
+  border-color: rgba(143, 162, 182, 0.22) !important;
+}
+
+.veranote-theme .bg-sky-100,
+.veranote-theme .bg-blue-100,
+.veranote-theme .bg-cyan-100 {
+  background: rgba(12, 52, 83, 0.92) !important;
+}
+
+.veranote-theme .bg-violet-100 {
+  background: rgba(27, 42, 84, 0.92) !important;
+}
+
+.veranote-theme .bg-emerald-100 {
+  background: rgba(8, 67, 64, 0.92) !important;
+}
+
+.veranote-theme .bg-amber-100 {
+  background: rgba(88, 58, 14, 0.92) !important;
+}
+
+.veranote-theme .bg-rose-100 {
+  background: rgba(88, 24, 52, 0.92) !important;
+}
+
+.veranote-theme .bg-slate-100 {
+  background: rgba(17, 31, 52, 0.92) !important;
+}
+
+.veranote-theme .rounded-xl,
+.veranote-theme .rounded-lg {
+  backdrop-filter: blur(18px);
+}
+
+.aurora-hero {
+  background: linear-gradient(140deg, rgba(6, 18, 34, 0.98), rgba(18, 59, 110, 0.95) 52%, rgba(19, 76, 103, 0.92));
+  color: white;
+  border: 1px solid rgba(120, 211, 231, 0.22);
+  box-shadow: 0 34px 110px rgba(9, 23, 40, 0.26);
+}
+
+.aurora-panel {
+  background:
+    linear-gradient(180deg, rgba(11, 24, 43, 0.96), rgba(7, 17, 31, 0.94)),
+    radial-gradient(circle at top left, rgba(59, 224, 185, 0.06), transparent 30%);
+  border: 1px solid rgba(122, 196, 226, 0.18);
+  box-shadow: 0 28px 90px rgba(4, 13, 27, 0.34);
+  backdrop-filter: blur(22px);
+  color: #eef8ff;
+}
+
+.aurora-soft-panel {
+  background: linear-gradient(135deg, rgba(12, 29, 50, 0.96), rgba(8, 20, 36, 0.94));
+  border: 1px solid rgba(122, 196, 226, 0.16);
+  box-shadow: 0 18px 56px rgba(4, 13, 27, 0.26);
+  color: #e8f6ff;
+}
+
+.aurora-highlight-panel {
+  background: linear-gradient(135deg, rgba(13, 54, 84, 0.97), rgba(8, 35, 61, 0.95));
+  border: 1px solid rgba(18, 181, 208, 0.22);
+  box-shadow: 0 22px 60px rgba(7, 24, 44, 0.26);
+  color: #eefaff;
+}
+
+.aurora-edge-emphasis {
+  border-left: 2px solid rgba(18, 181, 208, 0.35);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.45),
+    0 0 18px rgba(18, 181, 208, 0.08);
+}
+
+.aurora-pill {
+  border: 1px solid rgba(18, 181, 208, 0.18);
+  background: rgba(255, 255, 255, 0.10);
+  color: #dff8ff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+
+.aurora-primary-button {
+  background: linear-gradient(135deg, #12b5d0 0%, #1b8fc4 55%, #235fb0 100%);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 18px 36px rgba(18, 181, 208, 0.24);
+}
+
+.aurora-primary-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 22px 42px rgba(18, 181, 208, 0.30);
+}
+
+.aurora-secondary-button {
+  background: linear-gradient(180deg, rgba(21, 44, 72, 0.92), rgba(15, 30, 54, 0.90));
+  border: 1px solid rgba(122, 196, 226, 0.18);
+  color: #eef9ff;
+  box-shadow: 0 16px 30px rgba(6, 18, 34, 0.18);
+}
+
+.aurora-secondary-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 20px 34px rgba(6, 18, 34, 0.24);
+}
+
+.aurora-panel .text-ink,
+.aurora-soft-panel .text-ink,
+.aurora-highlight-panel .text-ink {
+  color: #eff8ff !important;
+}
+
+.aurora-panel .text-muted,
+.aurora-soft-panel .text-muted,
+.aurora-highlight-panel .text-muted {
+  color: #9db4c9 !important;
+}
+
+.aurora-panel .text-slate-500,
+.aurora-soft-panel .text-slate-500,
+.aurora-highlight-panel .text-slate-500,
+.veranote-theme .text-slate-500 {
+  color: #87a0b6 !important;
+}
+
+.aurora-panel .text-slate-600,
+.aurora-soft-panel .text-slate-600,
+.aurora-highlight-panel .text-slate-600,
+.veranote-theme .text-slate-600 {
+  color: #99b3c9 !important;
+}
+
+.aurora-panel .text-slate-700,
+.aurora-soft-panel .text-slate-700,
+.aurora-highlight-panel .text-slate-700,
+.veranote-theme .text-slate-700 {
+  color: #b7cbdd !important;
+}
+
+.aurora-panel .text-slate-800,
+.aurora-soft-panel .text-slate-800,
+.aurora-highlight-panel .text-slate-800,
+.veranote-theme .text-slate-800 {
+  color: #d5e3ef !important;
+}
+
+.aurora-panel .text-slate-900,
+.aurora-soft-panel .text-slate-900,
+.aurora-highlight-panel .text-slate-900,
+.veranote-theme .text-slate-900 {
+  color: #edf8ff !important;
+}
+
+.veranote-theme .text-amber-900,
+.veranote-theme .text-amber-950 {
+  color: #ffe7b0 !important;
+}
+
+.veranote-theme .text-amber-700 {
+  color: #ffd889 !important;
+}
+
+.veranote-theme .text-rose-900,
+.veranote-theme .text-rose-950 {
+  color: #ffd0e0 !important;
+}
+
+.veranote-theme .text-rose-700 {
+  color: #ffbdd5 !important;
+}
+
+.veranote-theme .text-emerald-700 {
+  color: #bff4e5 !important;
+}
+
+.veranote-theme .text-cyan-100 {
+  color: #d8fbff !important;
+}
+
+.veranote-theme .text-violet-700 {
+  color: #c7d7ff !important;
+}
+
+.veranote-theme [class*='bg-white/78'],
+.veranote-theme [class*='bg-white/80'] {
+  background-color: rgba(8, 20, 36, 0.92) !important;
+}
+
+.veranote-theme [class*='border-white/80'] {
+  border-color: rgba(122, 196, 226, 0.16) !important;
+}
+
+.veranote-theme select option {
+  background: #091423;
+  color: #eef8ff;
+}

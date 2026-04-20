@@ -1,0 +1,38 @@
+[
+  {
+    "id": "18",
+    "title": "Minimal input with high hallucination risk",
+    "specialty": "Psychiatry",
+    "noteType": "Psychiatry follow-up",
+    "mode": "live",
+    "warning": null,
+    "note": "Chief Concern / Interval Update: The patient presents for a brief medication check. The patient reports \"about the same\" and \"nothing major changed\" since the last visit.\n\nSymptom Review: Not documented in source.\n\nMedications / Adherence / Side Effects: The patient is currently prescribed lamotrigine 100 mg daily. A medication refill is needed.\n\nMental Status / Observations: Not documented in source.\n\nSafety / Risk: Not documented in source.\n\nAssessment: Not documented in source.\n\nPlan: Refill for lamotrigine requested. Further plan details not documented in source.",
+    "flags": [
+      "Symptom review not documented",
+      "Mental status not provided",
+      "Safety assessment details limited",
+      "Assessment details not provided",
+      "Plan details not documented in source",
+      "Follow-up interval not documented.",
+      "Side effects not addressed.",
+      "Mental status details are limited or not documented.",
+      "Plan details are limited or not documented."
+    ]
+  },
+  {
+    "id": "17",
+    "title": "Therapy intervention attempted without clear effect",
+    "specialty": "Therapy",
+    "noteType": "Therapy progress note",
+    "mode": "live",
+    "warning": null,
+    "note": "Subjective: The patient discussed work-related stress and continued to ruminate about feedback from their supervisor. They reported that the grounding exercise reviewed during the session \"didn't really help much\" when attempted.\n\nObjective: No objective data were documented.\n\nAssessment: The patient remains focused on supervisor feedback and finds grounding exercises of limited benefit at this time. No suicidal ideation was reported.\n\nPlan: No plan details were documented in the source.",
+    "flags": [
+      "No objective data documented",
+      "No plan details documented",
+      "Follow-up interval not documented.",
+      "Side effects not addressed.",
+      "Mental status details are limited or not documented."
+    ]
+  }
+]

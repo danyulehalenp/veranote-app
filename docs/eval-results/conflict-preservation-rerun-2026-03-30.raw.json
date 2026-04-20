@@ -1,0 +1,48 @@
+[
+  {
+    "id": "24",
+    "title": "No self-harm in clinician note but transcript discloses recent cutting",
+    "mode": "live",
+    "note": "Chief Concern / Interval Update: The patient reports that their mood has been worse this week. Symptom Review: The patient denies suicidal intent but reports cutting their thigh with a razor three days ago following a fight with their girlfriend, stating they were not trying to die. Medications / Adherence / Side Effects: Not documented in source. Mental Status / Observations: Not documented in source. Safety / Risk: No self-harm was reported by the patient in the clinician note; however, the patient disclosed recent cutting behavior in the transcript. Assessment: The patient denies suicidal intent and self-harm in the clinician note, while the transcript reveals recent self-injurious behavior without suicidal intent. This source conflict remains unresolved in the provided material. Plan: Plan details were not documented in the source.",
+    "flags": [
+      "Safety assessment details limited",
+      "Mental status examination not provided",
+      "Medication adherence and side effects not addressed",
+      "Plan details not documented",
+      "Follow-up interval not documented.",
+      "Side effects not addressed.",
+      "Plan details are limited or not documented."
+    ]
+  },
+  {
+    "id": "23",
+    "title": "Substance use denied despite positive screen and collateral concern",
+    "mode": "live",
+    "note": "Chief Concern / Interval Update: The patient denies recent cocaine use, while the girlfriend reports that the patient was using cocaine \"all weekend\" and appeared sleepless. Symptom Review: The patient is noted to have an irritable mood today. No suicidal or homicidal ideation is reported. Medications / Adherence / Side Effects: Not documented in source. Mental Status / Observations: Heart rate recorded at 108 beats per minute. Safety / Risk: No suicidal or homicidal ideation reported. Assessment: There is a discrepancy between the patient's denial of cocaine use and the girlfriend's report of use over the weekend, supported by a positive urine drug screen for cocaine. Plan: Plan details were not documented in the source.",
+    "flags": [
+      "Medications not addressed",
+      "Mental status examination not provided",
+      "Safety assessment details limited",
+      "Plan details not documented in source",
+      "Follow-up interval not documented.",
+      "Side effects not addressed.",
+      "Plan details are limited or not documented."
+    ]
+  },
+  {
+    "id": "21",
+    "title": "Hallucinations denied but behavior suggests internal preoccupation",
+    "mode": "live",
+    "note": "Date / Interval Update: No specific date or interval update documented in the source.\n\nSymptom Review: Patient denies auditory or visual hallucinations this morning. During the interview, the patient pauses for long stretches and appears to look toward the corner of the room before answering. Nursing overnight notes report the patient was observed laughing to self and appearing internally preoccupied.\n\nMedications / Changes / Side Effects: Patient is taking haloperidol as ordered, confirmed by medication administration record.\n\nMental Status / Observations: Patient denies hearing voices, stating \"No, I'm not hearing voices\" and \"I'm just thinking.\" Nursing notes describe the patient laughing to self, staring intermittently, and appearing internally preoccupied.\n\nInsight / Judgment: Not explicitly documented in the source.\n\nSafety / Risk: No explicit safety or risk statements documented.\n\nAssessment: Patient denies hallucinations; however, nursing observations overnight indicate laughing to self and internal preoccupation. Patient's behavior during interview includes prolonged pauses and looking toward the corner of the room. Source conflict remains unresolved in the provided material.\n\nPlan: Plan details were not documented in the source.",
+    "flags": [
+      "No explicit date or interval update documented",
+      "Insight and judgment not documented",
+      "No safety or risk assessment documented",
+      "No plan details documented",
+      "Follow-up interval not documented.",
+      "Side effects not addressed.",
+      "Mental status details are limited or not documented.",
+      "Plan details are limited or not documented."
+    ]
+  }
+]

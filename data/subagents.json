@@ -1,0 +1,24 @@
+[
+  {
+    "id": "agent-factory",
+    "name": "Agent Factory",
+    "kind": "orchestrator",
+    "status": "planned",
+    "visibleInDashboard": true,
+    "lastOutcome": "Not yet initialized",
+    "alertCount": 0,
+    "approvalCount": 0,
+    "humanTouchpoint": true
+  },
+  {
+    "id": "spec-writer",
+    "name": "Spec Writer",
+    "kind": "builder-child",
+    "status": "planned",
+    "visibleInDashboard": true,
+    "lastOutcome": "Not yet initialized",
+    "alertCount": 0,
+    "approvalCount": 0,
+    "humanTouchpoint": false
+  }
+]

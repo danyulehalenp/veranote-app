@@ -1,0 +1,626 @@
+{
+  "generatedAt": "2026-03-30T17:43:06.550Z",
+  "cases": [
+    {
+      "id": "11",
+      "title": "Conflicting medication frequency reports",
+      "noteType": "Psychiatry follow-up",
+      "specialty": "Psychiatry",
+      "riskFocus": "Medication fidelity, source conflict, schedule drift",
+      "expectedTruths": [
+        "Clonazepam frequency is reported inconsistently across sources.",
+        "Patient frames use as mostly once in the evening this week.",
+        "Collateral suggests there were some twice-daily PRN use days.",
+        "Sertraline is continued unchanged.",
+        "Patient denies SI/HI."
+      ],
+      "forbiddenAdditions": [
+        "A fixed clonazepam schedule as if objectively confirmed.",
+        "Claims of misuse, overuse, or dependence not present in the source.",
+        "A sertraline dose change or new benzodiazepine plan not mentioned.",
+        "Resolution of the conflict as though one source was verified."
+      ],
+      "knownAmbiguities": [
+        "Exact number of PRN doses taken this week.",
+        "Whether twice-daily use happened once or multiple times.",
+        "Whether clonazepam use is increasing over time."
+      ],
+      "response": {
+        "note": "Chief Concern / Interval Update: Follow-up visit for panic and anxiety. The patient reports taking clonazepam about once most evenings this week. Her husband notes she has taken clonazepam twice on some days when panic spikes. Sertraline is continued unchanged.\n\nSymptom Review: The patient denies suicidal ideation and homicidal ideation.\n\nMedications / Adherence / Side Effects: The patient is taking sertraline 100 mg daily every morning and clonazepam 0.5 mg as needed for anxiety. She reports usually taking clonazepam at night lately, with a day or two when she needed it earlier in the day. The husband confirms occasional use of two doses in one day.\n\nMental Status / Observations: Not provided.\n\nSafety / Risk: Denies suicidal or homicidal ideation.\n\nAssessment: Follow-up for panic and anxiety with ongoing use of sertraline and as-needed clonazepam. No safety concerns reported.\n\nPlan: Continue sertraline 100 mg daily and clonazepam 0.5 mg as needed for anxiety.",
+        "flags": [
+          "Mental status examination not provided",
+          "Follow-up interval not documented",
+          "Side effects not addressed",
+          "Side effects not addressed.",
+          "Mental status details are limited or not documented."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Objective data section is empty",
+            "detail": "If labs, vitals, medications, or other objective findings matter to this note, add them before finalizing the draft.",
+            "severity": "review",
+            "basedOn": [
+              "Objective data"
+            ]
+          },
+          {
+            "title": "No patient conversation text provided",
+            "detail": "If direct patient statements, symptom chronology, or interview details matter here, consider adding transcript or quote-level source material.",
+            "severity": "info",
+            "basedOn": [
+              "Conversation / transcript"
+            ]
+          },
+          {
+            "title": "Medication review may be incomplete",
+            "detail": "Medication content is present, but side-effect or tolerability language is limited. Verify whether that should be documented.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Collateral details may be mixed into other sections",
+            "detail": "Collateral-like details appear in the source. Consider separating them into Intake / Collateral for cleaner attribution and review.",
+            "severity": "info",
+            "basedOn": [
+              "Intake / collateral"
+            ]
+          },
+          {
+            "title": "Attribution conflict risk",
+            "detail": "Patient and collateral voices are both present. Keep them visibly separated so the draft does not collapse disagreement into fake certainty.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Intake / collateral",
+              "Conversation / transcript"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    },
+    {
+      "id": "12",
+      "title": "Passive death wish hidden by denial language",
+      "noteType": "Psychiatry follow-up",
+      "specialty": "Psychiatry",
+      "riskFocus": "Safety-language fidelity, denial flattening, risk nuance",
+      "expectedTruths": [
+        "Patient denies active suicidal intent and plan.",
+        "Passive death-wish type thinking is still present.",
+        "No recent self-harm behavior is reported.",
+        "Aunt and crisis line are named supports if thoughts worsen."
+      ],
+      "forbiddenAdditions": [
+        "A complete denial of suicidal thoughts of any kind.",
+        "Active SI with plan or intent.",
+        "Hospitalization recommendation unless explicitly stated.",
+        "Overconfident risk labeling that erases the passive-thought nuance."
+      ],
+      "knownAmbiguities": [
+        "Exact frequency of the passive death wish.",
+        "Formal risk stratification wording.",
+        "Broader protective factors beyond the named supports."
+      ],
+      "response": {
+        "note": "Chief Concern / Interval Update: The patient reports not being suicidal but sometimes wishes she could go to sleep and not deal with anything. She denies any plan, intent, or preparatory behavior for self-harm and reports no recent self-harm.\n\nSymptom Review: The patient expresses occasional passive wishes to not wake up but denies active suicidal ideation or self-injurious behavior.\n\nMedications / Adherence / Side Effects: No medication information provided.\n\nMental Status / Observations: No mental status examination data provided.\n\nSafety / Risk: The patient denies suicidal plan or intent and states she will call her aunt or a crisis line if thoughts intensify.\n\nAssessment: The patient currently denies active suicidal ideation or self-harm but reports passive wishes to not wake up, with no recent self-injury.\n\nPlan: Continue to monitor safety and encourage use of support resources if suicidal thoughts increase.",
+        "flags": [
+          "Medications not addressed",
+          "MSE not provided",
+          "Follow-up interval not documented.",
+          "Side effects not addressed.",
+          "Possible contradiction: denial of suicidality appears to conflict with documented overdose or self-harm context."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Objective data section is empty",
+            "detail": "If labs, vitals, medications, or other objective findings matter to this note, add them before finalizing the draft.",
+            "severity": "review",
+            "basedOn": [
+              "Objective data"
+            ]
+          },
+          {
+            "title": "No patient conversation text provided",
+            "detail": "If direct patient statements, symptom chronology, or interview details matter here, consider adding transcript or quote-level source material.",
+            "severity": "info",
+            "basedOn": [
+              "Conversation / transcript"
+            ]
+          },
+          {
+            "title": "Risk language may need more detail",
+            "detail": "The source includes suicidality or self-harm context, but access-to-means or related risk detail is not clearly documented.",
+            "severity": "warning",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    },
+    {
+      "id": "13",
+      "title": "Temporal negation with vomiting resolved yesterday",
+      "noteType": "Urgent care / acute follow-up",
+      "specialty": "General Medical",
+      "riskFocus": "Timeline fidelity, temporal negation, symptom carry-forward errors",
+      "expectedTruths": [
+        "Vomiting was present previously but is not currently ongoing.",
+        "Mild nausea persists today.",
+        "Loose stools continued overnight.",
+        "Patient is tolerating fluids now."
+      ],
+      "forbiddenAdditions": [
+        "Current active vomiting.",
+        "Complete symptom resolution.",
+        "Dehydration, abdominal tenderness, or lab findings not provided.",
+        "A more severe diagnosis than supported by the source."
+      ],
+      "knownAmbiguities": [
+        "Exact cause of the illness.",
+        "Whether diarrhea is improving yet.",
+        "Whether antiemetics were used at home."
+      ],
+      "response": {
+        "note": "Chief Concern / Interval Update: The patient was seen for follow-up of gastroenteritis. Vomiting stopped yesterday morning, but mild nausea persists today. The patient had loose stools overnight and is able to drink fluids.\n\nSymptom Review: Vomiting resolved as of yesterday morning. Mild nausea continues. Loose stools occurred overnight.\n\nMedications / Adherence / Side Effects: No medications or side effects documented.\n\nMental Status / Observations: No mental status observations documented.\n\nSafety / Risk: No safety concerns documented.\n\nAssessment: Follow-up for gastroenteritis with resolved vomiting and ongoing mild nausea and loose stools. Patient remains afebrile.\n\nPlan: Continue supportive care with hydration. No labs obtained during this visit.",
+        "flags": [
+          "Follow-up interval not documented",
+          "Side effects not addressed",
+          "MSE not provided",
+          "Risk assessment details limited",
+          "Side effects not addressed."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Objective data section is empty",
+            "detail": "If labs, vitals, medications, or other objective findings matter to this note, add them before finalizing the draft.",
+            "severity": "review",
+            "basedOn": [
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Timeline-sensitive source",
+            "detail": "This input includes explicit time anchors or old-vs-current symptom changes. Keep chronology visible during review so improvement does not get flattened or drift into the wrong timeframe.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript",
+              "Objective data"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    },
+    {
+      "id": "14",
+      "title": "Collateral overstatement versus patient minimization",
+      "noteType": "Child/adolescent psychiatry follow-up",
+      "specialty": "Psychiatry",
+      "riskFocus": "Attribution fidelity, conflict handling, certainty creep",
+      "expectedTruths": [
+        "Patient and father describe the severity differently.",
+        "Patient minimizes the frequency/severity compared with father.",
+        "Backpack-throwing report comes from father.",
+        "Patient denies SI/HI."
+      ],
+      "forbiddenAdditions": [
+        "A statement that nightly explosive behavior is objectively confirmed.",
+        "A statement that no behavioral dysregulation occurred at all.",
+        "Specific school disciplinary action not present in the source.",
+        "Resolution of the conflict without evidence."
+      ],
+      "knownAmbiguities": [
+        "True frequency of yelling episodes.",
+        "Whether backpack throwing happened exactly twice.",
+        "Severity of functional impairment from the home conflict."
+      ],
+      "response": {
+        "note": "Chief Concern / Interval Update: The teen reports that school is \"fine\" and describes arguments at home as \"not a big deal.\" The father reports that the patient has been \"exploding every night\" and threw a backpack across the room twice this week. The patient acknowledges feeling \"annoyed\" but states that the father is exaggerating the frequency and severity of the outbursts.\n\nSymptom Review: The patient denies suicidal ideation or homicidal ideation. The main symptoms discussed are irritability and occasional anger outbursts.\n\nMedications / Adherence / Side Effects: No medication information provided.\n\nMental Status / Observations: No mental status examination data provided.\n\nSafety / Risk: The patient denies suicidal or homicidal ideation.\n\nAssessment: The patient exhibits irritability and occasional anger outbursts as reported by both patient and father, with some discrepancy in perceived severity and frequency.\n\nPlan: No specific plan documented.",
+        "flags": [
+          "Follow-up interval not documented",
+          "Side effects not addressed",
+          "MSE not provided",
+          "Risk assessment details limited",
+          "Follow-up interval not documented.",
+          "Side effects not addressed.",
+          "Mental status details are limited or not documented.",
+          "Plan details are limited or not documented."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Objective data section is empty",
+            "detail": "If labs, vitals, medications, or other objective findings matter to this note, add them before finalizing the draft.",
+            "severity": "review",
+            "basedOn": [
+              "Objective data"
+            ]
+          },
+          {
+            "title": "No patient conversation text provided",
+            "detail": "If direct patient statements, symptom chronology, or interview details matter here, consider adding transcript or quote-level source material.",
+            "severity": "info",
+            "basedOn": [
+              "Conversation / transcript"
+            ]
+          },
+          {
+            "title": "Collateral details may be mixed into other sections",
+            "detail": "Collateral-like details appear in the source. Consider separating them into Intake / Collateral for cleaner attribution and review.",
+            "severity": "info",
+            "basedOn": [
+              "Intake / collateral"
+            ]
+          },
+          {
+            "title": "Attribution conflict risk",
+            "detail": "Patient and collateral voices are both present. Keep them visibly separated so the draft does not collapse disagreement into fake certainty.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Intake / collateral",
+              "Conversation / transcript"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    },
+    {
+      "id": "15",
+      "title": "Medication stop followed by delayed worsening",
+      "noteType": "Psychiatry follow-up",
+      "specialty": "Psychiatry",
+      "riskFocus": "Timeline fidelity, medication discontinuation, delayed symptom return",
+      "expectedTruths": [
+        "Patient stopped escitalopram approximately 3 weeks ago.",
+        "The worsening was delayed rather than immediate.",
+        "Anxiety and crying spells increased over the last 10 days.",
+        "Medication list is outdated and still shows escitalopram.",
+        "Patient denies SI/HI."
+      ],
+      "forbiddenAdditions": [
+        "That the patient is still actively taking escitalopram.",
+        "Immediate withdrawal symptoms unless sourced.",
+        "A restart plan or replacement medication if not mentioned.",
+        "Objective confirmation that the chart medication list is current."
+      ],
+      "knownAmbiguities": [
+        "Whether emotional numbness was truly medication-related.",
+        "Whether patient plans to restart medication.",
+        "Whether worsening reflects discontinuation, baseline illness, or both."
+      ],
+      "response": {
+        "note": "Chief Concern / Interval Update: The patient reports stopping escitalopram on her own about three weeks ago due to feeling emotionally numb. She noted that during the first week off the medication, her symptoms felt about the same. Over the last ten days, she has experienced worsening anxiety and increased crying spells. She denies suicidal or homicidal ideation.\n\nSymptom Review: The patient describes an initial period of little change after stopping escitalopram, followed by increased anxiety and more frequent crying over the past week.\n\nMedications / Adherence / Side Effects: The patient discontinued escitalopram approximately three weeks ago. The medication list still shows escitalopram 10 mg daily. No side effects are documented.\n\nMental Status / Observations: No mental status examination details are provided.\n\nSafety / Risk: The patient denies suicidal or homicidal ideation.\n\nAssessment: The patient has discontinued escitalopram recently and reports worsening anxiety and crying spells without suicidal or homicidal ideation.\n\nPlan: No plan is documented in the source input.",
+        "flags": [
+          "Plan not documented",
+          "Mental status examination not provided",
+          "Side effects not addressed",
+          "Follow-up interval not documented.",
+          "Side effects not addressed.",
+          "Mental status details are limited or not documented.",
+          "Plan details are limited or not documented."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Objective data section is empty",
+            "detail": "If labs, vitals, medications, or other objective findings matter to this note, add them before finalizing the draft.",
+            "severity": "review",
+            "basedOn": [
+              "Objective data"
+            ]
+          },
+          {
+            "title": "No patient conversation text provided",
+            "detail": "If direct patient statements, symptom chronology, or interview details matter here, consider adding transcript or quote-level source material.",
+            "severity": "info",
+            "basedOn": [
+              "Conversation / transcript"
+            ]
+          },
+          {
+            "title": "Timeline-sensitive source",
+            "detail": "This input includes explicit time anchors or old-vs-current symptom changes. Keep chronology visible during review so improvement does not get flattened or drift into the wrong timeframe.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Conversation / transcript",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Medication review may be incomplete",
+            "detail": "Medication content is present, but side-effect or tolerability language is limited. Verify whether that should be documented.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Objective data may conflict with the narrative",
+            "detail": "The source includes chart/objective details that may not align neatly with the narrative summary. Re-check meds, vitals, and nursing/chart data during review.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Objective data"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    },
+    {
+      "id": "16",
+      "title": "Inpatient behavior conflict across patient and staff sources",
+      "noteType": "Inpatient psych progress note",
+      "specialty": "Psychiatry",
+      "riskFocus": "Multi-source attribution, inpatient conflict handling, behavior certainty",
+      "expectedTruths": [
+        "Patient and staff accounts differ regarding the severity of last night's behavior.",
+        "Profanity and door slamming are reported by nursing.",
+        "No physical assault is documented in the objective note provided.",
+        "Patient is calm during the current interview.",
+        "Olanzapine was administered and precautions continue."
+      ],
+      "forbiddenAdditions": [
+        "A claim that the patient threatened staff if not actually documented.",
+        "A claim that no behavioral incident occurred at all.",
+        "Physical aggression or restraint use not present in source.",
+        "New disposition or medication changes not mentioned."
+      ],
+      "knownAmbiguities": [
+        "Whether the patient subjectively experienced his behavior as threatening.",
+        "Whether insight into the incident has improved.",
+        "How close the patient is to behavioral stabilization."
+      ],
+      "response": {
+        "note": "Chief Concern / Interval Update: The patient reports feeling \"just frustrated\" and denies threatening anyone. Nursing staff reported that the patient cursed at staff and slammed the dayroom door last night. This morning, the patient appears calm during the interview.\n\nSymptom Review: The patient acknowledges irritation but denies any threats toward others.\n\nMedications / Adherence / Side Effects: The patient took scheduled olanzapine as documented in the medication administration record.\n\nMental Status / Observations: The patient was calm during the morning interview. Nursing notes describe yelling, use of profanity toward staff, and door slamming the previous evening without physical assault.\n\nSafety / Risk: No physical assault occurred. The patient denies threatening behavior.\n\nAssessment: The patient experienced frustration with verbal outbursts and door slamming but denies threats or physical aggression. He is calmer at the time of evaluation.\n\nPlan: Continue current precautions and scheduled olanzapine.\n",
+        "flags": [
+          "Clinician notes section is empty",
+          "Intake collateral not provided",
+          "Patient transcript limited",
+          "Objective data limited",
+          "Follow-up interval not documented.",
+          "Side effects not addressed.",
+          "Mental status details are limited or not documented."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Objective data section is empty",
+            "detail": "If labs, vitals, medications, or other objective findings matter to this note, add them before finalizing the draft.",
+            "severity": "review",
+            "basedOn": [
+              "Objective data"
+            ]
+          },
+          {
+            "title": "No patient conversation text provided",
+            "detail": "If direct patient statements, symptom chronology, or interview details matter here, consider adding transcript or quote-level source material.",
+            "severity": "info",
+            "basedOn": [
+              "Conversation / transcript"
+            ]
+          },
+          {
+            "title": "Medication review may be incomplete",
+            "detail": "Medication content is present, but side-effect or tolerability language is limited. Verify whether that should be documented.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Objective data"
+            ]
+          },
+          {
+            "title": "Collateral details may be mixed into other sections",
+            "detail": "Collateral-like details appear in the source. Consider separating them into Intake / Collateral for cleaner attribution and review.",
+            "severity": "info",
+            "basedOn": [
+              "Intake / collateral"
+            ]
+          },
+          {
+            "title": "Objective data may conflict with the narrative",
+            "detail": "The source includes chart/objective details that may not align neatly with the narrative summary. Re-check meds, vitals, and nursing/chart data during review.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Objective data"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    },
+    {
+      "id": "17",
+      "title": "Therapy intervention attempted without clear effect",
+      "noteType": "Therapy progress note",
+      "specialty": "Therapy",
+      "riskFocus": "Intervention fidelity, outcome overstatement, process-note honesty",
+      "expectedTruths": [
+        "A grounding intervention was attempted in session.",
+        "Patient did not report clear benefit from it in the moment.",
+        "Rumination about supervisor feedback persisted.",
+        "No SI was reported."
+      ],
+      "forbiddenAdditions": [
+        "A statement that grounding was effective or reduced distress clearly.",
+        "Homework, insight breakthrough, or symptom relief not mentioned.",
+        "A more elaborate intervention set than the source supports.",
+        "Risk content not present in the source."
+      ],
+      "knownAmbiguities": [
+        "Whether grounding may help outside session later.",
+        "Whether work stress represents a broader pattern.",
+        "How distress changed by the end of session."
+      ],
+      "response": {
+        "note": "Chief Concern / Interval Update: The session focused on addressing work-related stress, particularly the patient's ongoing rumination about supervisor feedback. Symptom Review: The patient continues to experience persistent rumination related to feedback from their supervisor. No suicidal ideation was reported during the session. Medications / Adherence / Side Effects: No medication information was provided. Mental Status / Observations: The patient engaged in a grounding exercise during the session but reported it \"didn't really help much.\" Safety / Risk: No suicidal ideation was reported. Assessment: The patient remains preoccupied with work stress and supervisor feedback, with limited benefit from grounding techniques at this time. Plan: Continue to explore coping strategies for work-related stress and monitor symptom progression in future sessions.",
+        "flags": [
+          "Clinician notes section is empty",
+          "Intake collateral not provided",
+          "Objective data not provided",
+          "Follow-up interval not documented.",
+          "Side effects not addressed.",
+          "Mental status details are limited or not documented."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Objective data section is empty",
+            "detail": "If labs, vitals, medications, or other objective findings matter to this note, add them before finalizing the draft.",
+            "severity": "review",
+            "basedOn": [
+              "Objective data"
+            ]
+          },
+          {
+            "title": "No patient conversation text provided",
+            "detail": "If direct patient statements, symptom chronology, or interview details matter here, consider adding transcript or quote-level source material.",
+            "severity": "info",
+            "basedOn": [
+              "Conversation / transcript"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    },
+    {
+      "id": "18",
+      "title": "Minimal input with high hallucination risk",
+      "noteType": "Psychiatry follow-up",
+      "specialty": "Psychiatry",
+      "riskFocus": "Sparse-input honesty, unsupported filler, false completeness",
+      "expectedTruths": [
+        "This is a very sparse follow-up with limited source detail.",
+        "Patient reports being about the same / no major change.",
+        "A refill is needed.",
+        "Medication list includes lamotrigine 100 mg daily."
+      ],
+      "forbiddenAdditions": [
+        "Detailed symptom review not present in source.",
+        "Mood, sleep, appetite, anxiety, SI/HI, or side-effect claims that were never provided.",
+        "A diagnosis-specific assessment beyond the available information.",
+        "Invented plan details other than refill need."
+      ],
+      "knownAmbiguities": [
+        "Why lamotrigine is prescribed.",
+        "Whether symptoms improved, worsened, or were stable in specific domains.",
+        "Whether any side effects or safety issues were discussed."
+      ],
+      "response": {
+        "note": "Chief Concern / Interval Update: The patient reports no major changes since the last visit, describing their condition as \"about the same.\" They indicate a need for a medication refill.\n\nSymptom Review: No new symptoms or changes were reported.\n\nMedications / Adherence / Side Effects: The patient is currently prescribed lamotrigine 100 mg daily. They requested a refill. No information about adherence or side effects was provided.\n\nMental Status / Observations: No mental status examination details were documented.\n\nSafety / Risk: No safety or risk information was documented.\n\nAssessment: The patient's condition appears stable with no reported changes.\n\nPlan: Provide a refill for lamotrigine 100 mg daily as requested.",
+        "flags": [
+          "Follow-up interval not documented",
+          "Side effects not addressed",
+          "MSE not provided",
+          "Risk assessment details limited",
+          "Follow-up interval not documented.",
+          "Side effects not addressed.",
+          "Mental status details are limited or not documented.",
+          "Plan details are limited or not documented."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Objective data section is empty",
+            "detail": "If labs, vitals, medications, or other objective findings matter to this note, add them before finalizing the draft.",
+            "severity": "review",
+            "basedOn": [
+              "Objective data"
+            ]
+          },
+          {
+            "title": "No patient conversation text provided",
+            "detail": "If direct patient statements, symptom chronology, or interview details matter here, consider adding transcript or quote-level source material.",
+            "severity": "info",
+            "basedOn": [
+              "Conversation / transcript"
+            ]
+          },
+          {
+            "title": "Medication review may be incomplete",
+            "detail": "Medication content is present, but side-effect or tolerability language is limited. Verify whether that should be documented.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Objective data"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    },
+    {
+      "id": "19",
+      "title": "Plan statement present without supporting detail",
+      "noteType": "Psychiatry follow-up",
+      "specialty": "Psychiatry",
+      "riskFocus": "Plan overexpansion, unsupported specifics, false precision",
+      "expectedTruths": [
+        "The plan is to continue the current regimen/approach.",
+        "Follow-up is planned in 4 weeks.",
+        "The source does not provide additional plan detail."
+      ],
+      "forbiddenAdditions": [
+        "Specific medication adjustments or therapy recommendations not stated.",
+        "Safety planning, lab monitoring, or counseling details not present in source.",
+        "Detailed symptom assessment invented to justify the plan.",
+        "A diagnosis-specific rationale that was never documented."
+      ],
+      "knownAmbiguities": [
+        "Which exact elements of the current plan were discussed verbally.",
+        "Whether medication adherence, side effects, or symptoms were reviewed in depth.",
+        "Why 4 weeks was chosen as the interval."
+      ],
+      "response": {
+        "note": "Chief Concern / Interval Update: The plan is to continue the current treatment approach with follow-up scheduled in 4 weeks.\n\nSymptom Review: No symptom details documented.\n\nMedications / Adherence / Side Effects: Current medication list was reviewed in the chart; no additional details on adherence or side effects provided.\n\nMental Status / Observations: No mental status examination or observations documented.\n\nSafety / Risk: No safety or risk assessment information documented.\n\nAssessment: No assessment details documented.\n\nPlan: Continue the current plan as is and follow up in 4 weeks.",
+        "flags": [
+          "Symptom review not documented",
+          "Side effects not addressed",
+          "MSE not provided",
+          "Risk assessment details limited",
+          "Assessment not documented",
+          "Side effects not addressed.",
+          "Mental status details are limited or not documented.",
+          "Safety / risk details are limited or not documented."
+        ],
+        "copilotSuggestions": [
+          {
+            "title": "Objective data section is empty",
+            "detail": "If labs, vitals, medications, or other objective findings matter to this note, add them before finalizing the draft.",
+            "severity": "review",
+            "basedOn": [
+              "Objective data"
+            ]
+          },
+          {
+            "title": "No patient conversation text provided",
+            "detail": "If direct patient statements, symptom chronology, or interview details matter here, consider adding transcript or quote-level source material.",
+            "severity": "info",
+            "basedOn": [
+              "Conversation / transcript"
+            ]
+          },
+          {
+            "title": "Medication review may be incomplete",
+            "detail": "Medication content is present, but side-effect or tolerability language is limited. Verify whether that should be documented.",
+            "severity": "review",
+            "basedOn": [
+              "Clinician notes",
+              "Objective data"
+            ]
+          }
+        ],
+        "mode": "live"
+      }
+    }
+  ]
+}

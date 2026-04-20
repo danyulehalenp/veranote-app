@@ -1,0 +1,10 @@
+[
+  {
+    "id": "af-alert-001",
+    "level": "info",
+    "title": "Agent Factory initialized",
+    "message": "Waiting for first approved build request.",
+    "status": "open",
+    "createdAt": "2026-04-14T12:00:00.000Z"
+  }
+]

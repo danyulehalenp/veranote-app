@@ -1,0 +1,180 @@
+{
+  "runLabel": "task-1-high-risk-2026-03-30",
+  "date": "2026-03-30",
+  "basis": "Task #1 high-risk subset (cases 20-25)",
+  "rawArtifact": "docs/eval-results/task-1-high-risk-2026-03-30.raw.json",
+  "executed": {
+    "usedLiveApi": true,
+    "endpoint": "/api/generate-note",
+    "baseUrl": "http://127.0.0.1:3001",
+    "casesRun": ["20", "21", "22", "23", "24", "25"],
+    "uiManualEvalExecuted": false,
+    "notes": [
+      "Built app served locally via next start on port 3001",
+      "Live requests were sent through the app's real generation path",
+      "Summary judgments were then made manually against the repo's fidelity rubric and explicit case truths/forbidden additions"
+    ],
+    "validation": {
+      "build": "pass",
+      "lint": "fail",
+      "lintFailure": "ESLint 10 flat config missing; eslint.config.* not present"
+    }
+  },
+  "overall": {
+    "status": "needs-revision",
+    "strongestVulnerability": "Conflict adjudication instead of conflict preservation in assessment-level prose",
+    "secondaryVulnerabilities": [
+      "Psychosis denial vs observed-behavior compression",
+      "Transcript-vs-clinician contradiction handling for recent self-harm",
+      "Objective data and collateral can overpower denial too cleanly",
+      "Narrow-plan detection still produces section-level awkwardness"
+    ]
+  },
+  "cases": [
+    {
+      "id": "20",
+      "title": "Mother reports active SI while patient denies current SI",
+      "rating": "yellow-green",
+      "strengths": [
+        "Preserved patient denial of current SI/plan/intent",
+        "Preserved mother-reported concerning text from last night",
+        "Kept disagreement explicit",
+        "Did not invent attempt, hold, or disposition"
+      ],
+      "issues": [
+        "Chief-concern framing sounds slightly more resolved than the source conflict warrants",
+        "Could use a more specific current-denial-vs-recent-collateral-risk warning"
+      ],
+      "warningsFired": [
+        "Risk language may need more detail",
+        "Timeline-sensitive source",
+        "Attribution conflict risk",
+        "Plan details may be narrower than they look"
+      ],
+      "warningsShouldHaveFired": [
+        "Current denial vs recent collateral-reported SI warning"
+      ]
+    },
+    {
+      "id": "21",
+      "title": "Hallucinations denied but behavior suggests internal preoccupation",
+      "rating": "yellow",
+      "strengths": [
+        "Preserved denial of AH/VH",
+        "Preserved behavioral observations and nursing concern",
+        "Preserved haloperidol administration",
+        "Did not invent med changes or discharge planning"
+      ],
+      "issues": [
+        "Assessment turns behavior into a more settled internal-preoccupation conclusion than the source fully earns",
+        "Needs a stronger psychosis-denial vs observed-behavior guardrail"
+      ],
+      "warningsFired": [
+        "Objective data may conflict with the narrative",
+        "Sparse-input overreach risk",
+        "Plan details may be narrower than they look"
+      ],
+      "warningsShouldHaveFired": [
+        "Psychosis denial versus observed internal preoccupation warning"
+      ]
+    },
+    {
+      "id": "22",
+      "title": "Sertraline dose conflict across clinician note, patient report, and chart",
+      "rating": "yellow-green",
+      "strengths": [
+        "Strong preservation of 50 mg vs 100 mg conflict",
+        "Preserved anxiety as about the same",
+        "Preserved unreviewed pharmacy history",
+        "Did not invent today's medication decision"
+      ],
+      "issues": [
+        "Assessment still reads slightly more settled than the underlying adherence/chart conflict",
+        "Could use a more direct unresolved-active-dose warning"
+      ],
+      "warningsFired": [
+        "Timeline-sensitive source",
+        "Medication review may be incomplete",
+        "Sparse-input overreach risk"
+      ],
+      "warningsShouldHaveFired": [
+        "Medication conflict / active dose unresolved warning"
+      ]
+    },
+    {
+      "id": "23",
+      "title": "Substance use denied despite positive screen and collateral concern",
+      "rating": "yellow-red",
+      "strengths": [
+        "Preserved patient denial",
+        "Preserved collateral report and positive UDS",
+        "Preserved irritable mood and no SI/HI",
+        "Did not invent detox, hospitalization, or detailed intoxication claims"
+      ],
+      "issues": [
+        "Assessment adjudicates the conflict too strongly by concluding recent cocaine use from mixed evidence",
+        "Timing and pattern ambiguity is not preserved sharply enough"
+      ],
+      "warningsFired": [
+        "Timeline-sensitive source",
+        "Medication review may be incomplete",
+        "Collateral details may be mixed into other sections",
+        "Sparse-input overreach risk",
+        "Plan details may be narrower than they look"
+      ],
+      "warningsShouldHaveFired": [
+        "Patient denial vs positive screen/collateral conflict warning",
+        "Avoid turning conflicting evidence into a settled use pattern cue"
+      ]
+    },
+    {
+      "id": "24",
+      "title": "No self-harm in clinician note but transcript discloses recent cutting",
+      "rating": "red",
+      "strengths": [
+        "Preserved recent cutting disclosure",
+        "Preserved denial of suicidal intent",
+        "Did not label the act a suicide attempt",
+        "Did not invent wound severity or treatment"
+      ],
+      "issues": [
+        "Symptom-review wording becomes internally contradictory by saying no self-harm was reported while also documenting cutting disclosure",
+        "Assessment drifts toward a stronger NSSI-style label than the exact source wording"
+      ],
+      "warningsFired": [
+        "Risk language may need more detail",
+        "Timeline-sensitive source",
+        "Sparse-input overreach risk",
+        "Plan details may be narrower than they look"
+      ],
+      "warningsShouldHaveFired": [
+        "Transcript overrides cleaner clinician summary warning",
+        "Recent self-harm disclosure conflicts with no-self-harm summary warning",
+        "Do not up-label cutting disclosure into broader NSSI terminology unless explicit"
+      ]
+    },
+    {
+      "id": "25",
+      "title": "Passive homicidal fantasy versus active violent intent",
+      "rating": "yellow",
+      "strengths": [
+        "Preserved violent-thought content",
+        "Preserved denial of intent, plan, weapon access, and steps toward harm",
+        "Preserved no recent assaultive behavior",
+        "Preserved brother-based coping strategy"
+      ],
+      "issues": [
+        "Assessment slightly smooths vivid source language into cleaner generic phrasing",
+        "Plan section awkwardly includes supported coping content and then says plan details were not documented"
+      ],
+      "warningsFired": [
+        "Sparse-input overreach risk",
+        "Plan details may be narrower than they look"
+      ],
+      "warningsShouldHaveFired": [
+        "Violent fantasy vs active intent warning"
+      ]
+    }
+  ],
+  "recommendedNextMove": "Tighten assessment-layer prompt behavior so unresolved source conflicts stay unresolved in the note. Specifically add explicit conflict-preservation rules and warning cues for cases 24, 23, and 21, then rerun those three first."
+}

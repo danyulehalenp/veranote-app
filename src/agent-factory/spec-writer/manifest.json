@@ -1,0 +1,9 @@
+{
+  "id": "spec-writer",
+  "name": "Spec Writer",
+  "parent": "agent-factory",
+  "kind": "builder-child",
+  "visibleInDashboard": true,
+  "requiresHumanApproval": false,
+  "description": "Turns rough subagent ideas into structured build specs."
+}

@@ -1,0 +1,244 @@
+[
+  {
+    "id": "12",
+    "status": 200,
+    "data": {
+      "note": "Chief Concern / Interval Update: The patient reports not being suicidal but sometimes wishes she could go to sleep and not deal with anything. She denies any plan, intent, or preparatory behavior for self-harm and reports no recent self-harm.\n\nSymptom Review: The patient expresses occasional wishes to not wake up but denies active suicidal ideation or self-injurious behavior.\n\nMedications / Adherence / Side Effects: No medication information provided.\n\nMental Status / Observations: No objective mental status data documented.\n\nSafety / Risk: The patient denies suicidal intent and plans. She states she will call her aunt or a crisis line if her thoughts intensify.\n\nAssessment: The patient currently denies suicidal ideation with plan or intent but reports passive wishes to not wake up. No recent self-harm is reported.\n\nPlan: Plan details not documented in source.",
+      "flags": [
+        "Medications not addressed",
+        "Mental status examination not provided",
+        "Plan details not documented",
+        "Follow-up interval not documented.",
+        "Side effects not addressed."
+      ],
+      "copilotSuggestions": [
+        {
+          "title": "Objective data section is empty",
+          "detail": "If labs, vitals, medications, or other objective findings matter to this note, add them before finalizing the draft.",
+          "severity": "review",
+          "basedOn": [
+            "Objective data"
+          ]
+        },
+        {
+          "title": "No patient conversation text provided",
+          "detail": "If direct patient statements, symptom chronology, or interview details matter here, consider adding transcript or quote-level source material.",
+          "severity": "info",
+          "basedOn": [
+            "Conversation / transcript"
+          ]
+        },
+        {
+          "title": "Risk language may need more detail",
+          "detail": "The source includes suicidality or self-harm context, but access-to-means or related risk detail is not clearly documented.",
+          "severity": "warning",
+          "basedOn": [
+            "Clinician notes",
+            "Conversation / transcript"
+          ]
+        },
+        {
+          "title": "Passive death-wish nuance needs careful wording",
+          "detail": "The source mixes passive death-wish language with denial of active plan/intent. Preserve that nuance instead of rounding it into either clean SI denial or active suicidality.",
+          "severity": "warning",
+          "basedOn": [
+            "Clinician notes",
+            "Conversation / transcript"
+          ]
+        },
+        {
+          "title": "Sparse-input overreach risk",
+          "detail": "This source is thin. Keep the draft visibly sparse and do not smooth it into stability, completeness, or routine follow-up language that was never documented.",
+          "severity": "warning",
+          "basedOn": [
+            "Clinician notes",
+            "Conversation / transcript",
+            "Objective data"
+          ]
+        },
+        {
+          "title": "Plan details may be narrower than they look",
+          "detail": "The source supports only minimal plan content. Keep the Plan section limited to what is explicitly documented rather than expanding into monitoring, counseling, or routine management language.",
+          "severity": "warning",
+          "basedOn": [
+            "Clinician notes",
+            "Conversation / transcript"
+          ]
+        }
+      ],
+      "mode": "live"
+    }
+  },
+  {
+    "id": "13",
+    "status": 200,
+    "data": {
+      "note": "Chief Concern / Interval Update: The patient was seen for follow-up of gastroenteritis. Vomiting stopped yesterday morning, but mild nausea persists today. The patient reports having loose stools overnight and is able to keep fluids down.\n\nSymptom Review: Vomiting resolved as of yesterday morning. Mild nausea continues. Loose stools occurred overnight.\n\nMedications / Adherence / Side Effects: No medications or side effects documented.\n\nMental Status / Observations: No mental status observations documented.\n\nSafety / Risk: No safety or risk concerns documented.\n\nAssessment: Follow-up for gastroenteritis with resolved vomiting and ongoing mild nausea and loose stools.\n\nPlan: No labs obtained during this visit. No further plan details documented in source.",
+      "flags": [
+        "Medications not addressed",
+        "Mental status examination not provided",
+        "Safety and risk assessment details limited",
+        "Plan details not documented in source",
+        "Side effects not addressed."
+      ],
+      "copilotSuggestions": [
+        {
+          "title": "Objective data section is empty",
+          "detail": "If labs, vitals, medications, or other objective findings matter to this note, add them before finalizing the draft.",
+          "severity": "review",
+          "basedOn": [
+            "Objective data"
+          ]
+        },
+        {
+          "title": "Timeline-sensitive source",
+          "detail": "This input includes explicit time anchors or old-vs-current symptom changes. Keep chronology visible during review so improvement does not get flattened or drift into the wrong timeframe.",
+          "severity": "review",
+          "basedOn": [
+            "Clinician notes",
+            "Conversation / transcript",
+            "Objective data"
+          ]
+        },
+        {
+          "title": "Sparse-input overreach risk",
+          "detail": "This source is thin. Keep the draft visibly sparse and do not smooth it into stability, completeness, or routine follow-up language that was never documented.",
+          "severity": "warning",
+          "basedOn": [
+            "Clinician notes",
+            "Conversation / transcript",
+            "Objective data"
+          ]
+        }
+      ],
+      "mode": "live"
+    }
+  },
+  {
+    "id": "17",
+    "status": 200,
+    "data": {
+      "note": "Chief Concern / Interval Update: The patient discussed work-related stress, particularly rumination about supervisor feedback. Symptom Review: The patient reported continued rumination about feedback from their supervisor but denied suicidal ideation. Medications / Adherence / Side Effects: No medication information provided. Mental Status / Observations: No mental status observations documented. Safety / Risk: No suicidal ideation reported. Assessment: The patient continues to experience work-related stress with persistent rumination about supervisor feedback. Plan: Plan details not documented in source.",
+      "flags": [
+        "Objective data not provided",
+        "Medication details not addressed",
+        "Mental status examination not provided",
+        "Safety assessment details limited",
+        "Follow-up interval not documented.",
+        "Side effects not addressed.",
+        "Mental status details are limited or not documented."
+      ],
+      "copilotSuggestions": [
+        {
+          "title": "Objective data section is empty",
+          "detail": "If labs, vitals, medications, or other objective findings matter to this note, add them before finalizing the draft.",
+          "severity": "review",
+          "basedOn": [
+            "Objective data"
+          ]
+        },
+        {
+          "title": "No patient conversation text provided",
+          "detail": "If direct patient statements, symptom chronology, or interview details matter here, consider adding transcript or quote-level source material.",
+          "severity": "info",
+          "basedOn": [
+            "Conversation / transcript"
+          ]
+        },
+        {
+          "title": "Sparse-input overreach risk",
+          "detail": "This source is thin. Keep the draft visibly sparse and do not smooth it into stability, completeness, or routine follow-up language that was never documented.",
+          "severity": "warning",
+          "basedOn": [
+            "Clinician notes",
+            "Conversation / transcript",
+            "Objective data"
+          ]
+        },
+        {
+          "title": "Plan details may be narrower than they look",
+          "detail": "No explicit plan details were found in the source. Prefer a sparse Plan section that states the plan was not documented rather than inventing likely next steps.",
+          "severity": "warning",
+          "basedOn": [
+            "Clinician notes",
+            "Conversation / transcript"
+          ]
+        },
+        {
+          "title": "Therapy intervention documented without clear benefit",
+          "detail": "The source says an intervention was attempted but not clearly helpful. Do not turn that into progress, coping success, or future-session planning unless the source actually says so.",
+          "severity": "warning",
+          "basedOn": [
+            "Clinician notes",
+            "Conversation / transcript"
+          ]
+        }
+      ],
+      "mode": "live"
+    }
+  },
+  {
+    "id": "18",
+    "status": 200,
+    "data": {
+      "note": "Chief Concern / Interval Update: The patient presents for a brief medication check. They report that their condition is \"about the same\" with \"nothing major changed.\" Symptom Review: No new symptom details were provided during this visit. Medications / Adherence / Side Effects: The patient is currently prescribed lamotrigine 100 mg daily. They report needing a refill. Mental Status / Observations: No mental status examination details were documented. Safety / Risk: No safety or risk information was provided. Assessment: The patient's status appears unchanged based on their report. Plan: Refill for lamotrigine is needed; no further plan details were documented.",
+      "flags": [
+        "Follow-up interval not documented",
+        "Side effects not addressed",
+        "MSE not provided",
+        "Risk assessment details limited",
+        "Follow-up interval not documented.",
+        "Side effects not addressed.",
+        "Mental status details are limited or not documented.",
+        "Plan details are limited or not documented."
+      ],
+      "copilotSuggestions": [
+        {
+          "title": "Objective data section is empty",
+          "detail": "If labs, vitals, medications, or other objective findings matter to this note, add them before finalizing the draft.",
+          "severity": "review",
+          "basedOn": [
+            "Objective data"
+          ]
+        },
+        {
+          "title": "No patient conversation text provided",
+          "detail": "If direct patient statements, symptom chronology, or interview details matter here, consider adding transcript or quote-level source material.",
+          "severity": "info",
+          "basedOn": [
+            "Conversation / transcript"
+          ]
+        },
+        {
+          "title": "Medication review may be incomplete",
+          "detail": "Medication content is present, but side-effect or tolerability language is limited. Verify whether that should be documented.",
+          "severity": "review",
+          "basedOn": [
+            "Clinician notes",
+            "Objective data"
+          ]
+        },
+        {
+          "title": "Sparse-input overreach risk",
+          "detail": "This source is thin. Keep the draft visibly sparse and do not smooth it into stability, completeness, or routine follow-up language that was never documented.",
+          "severity": "warning",
+          "basedOn": [
+            "Clinician notes",
+            "Conversation / transcript",
+            "Objective data"
+          ]
+        },
+        {
+          "title": "Plan details may be narrower than they look",
+          "detail": "The source supports only minimal plan content. Keep the Plan section limited to what is explicitly documented rather than expanding into monitoring, counseling, or routine management language.",
+          "severity": "warning",
+          "basedOn": [
+            "Clinician notes",
+            "Conversation / transcript"
+          ]
+        }
+      ],
+      "mode": "live"
+    }
+  }
+]

@@ -1,0 +1,463 @@
+{
+  "libraryVersion": "veranote-psych-med-warning-v1",
+  "generatedAt": "2026-04-18T05:36:37.065Z",
+  "sourceSummary": [
+    "Imported from /Users/danielhale/Desktop/veranote-medication-research/app_integration",
+    "Provisional warning scaffold with 18 rules.",
+    "Hard-stop rules downgrade when required context is missing and always require clinician review.",
+    "This warning bundle is additive review support, not prescribing guidance."
+  ],
+  "rules": [
+    {
+      "ruleId": "maoi_conflict_hard_stop",
+      "status": "seed_provisional",
+      "severity": "hard_stop",
+      "category": "drug_drug_interaction",
+      "triggerDescription": "Any MAOI or recent MAOI exposure combined with serotonergic antidepressants, stimulant amphetamines, methylphenidate family where applicable, certain opioids, linezolid, or other contraindicated interacting agents.",
+      "actionSummary": "Block or require high-severity override workflow. Surface washout reminder and contraindication summary.",
+      "medicationTags": [
+        "maoi_contraindication"
+      ],
+      "medicationIds": [
+        "phenelzine",
+        "tranylcypromine",
+        "selegiline_transdermal"
+      ],
+      "contextInputs": [
+        "active_medications",
+        "recent_medications",
+        "start_stop_dates"
+      ],
+      "filters": {},
+      "evidenceBasis": "source_backed_label_anchor",
+      "sourceDocumentIds": [
+        "dailymed_phenelzine",
+        "dailymed_tranylcypromine",
+        "dailymed_selegiline_transdermal"
+      ],
+      "provisional": true,
+      "sourceBacked": true
+    },
+    {
+      "ruleId": "serotonin_stack_warning",
+      "status": "seed_provisional",
+      "severity": "major",
+      "category": "drug_drug_interaction",
+      "triggerDescription": "Two or more serotonergic agents, especially with dose escalation or additional serotonergic non-psych medications.",
+      "actionSummary": "Warn about serotonin syndrome risk and display symptom checklist plus monitoring advice.",
+      "medicationTags": [
+        "serotonergic"
+      ],
+      "medicationIds": [],
+      "contextInputs": [
+        "active_medications",
+        "recent_medication_changes"
+      ],
+      "filters": {},
+      "evidenceBasis": "provisional_seed_logic",
+      "sourceDocumentIds": [],
+      "provisional": true,
+      "sourceBacked": false
+    },
+    {
+      "ruleId": "antidepressant_suicidality_age_warning",
+      "status": "seed_provisional",
+      "severity": "major",
+      "category": "boxed_warning",
+      "triggerDescription": "Antidepressant or atomoxetine selected in age bands covered by boxed suicidality warnings.",
+      "actionSummary": "Show boxed warning summary and prompt close monitoring for worsening depression, agitation, or suicidality.",
+      "medicationTags": [
+        "suicidality_boxed_warning_age_dependent"
+      ],
+      "medicationIds": [],
+      "contextInputs": [
+        "age",
+        "active_medications",
+        "new_start_or_dose_change"
+      ],
+      "filters": {},
+      "evidenceBasis": "provisional_seed_logic",
+      "sourceDocumentIds": [],
+      "provisional": true,
+      "sourceBacked": false
+    },
+    {
+      "ruleId": "bipolar_switch_risk_antidepressant_monotherapy",
+      "status": "seed_provisional",
+      "severity": "major",
+      "category": "diagnostic_context_warning",
+      "triggerDescription": "Antidepressant with mania-switch tag used when bipolar disorder or mania history is present and no mood stabilizing coverage is documented.",
+      "actionSummary": "Prompt bipolar-spectrum review before antidepressant monotherapy and suggest clinician confirmation.",
+      "medicationTags": [
+        "mania_switch_risk"
+      ],
+      "medicationIds": [],
+      "contextInputs": [
+        "diagnoses",
+        "problem_list",
+        "history_of_mania",
+        "active_medications"
+      ],
+      "filters": {},
+      "evidenceBasis": "provisional_seed_logic",
+      "sourceDocumentIds": [],
+      "provisional": true,
+      "sourceBacked": false
+    },
+    {
+      "ruleId": "seizure_threshold_warning",
+      "status": "seed_provisional",
+      "severity": "major",
+      "category": "drug_disease_interaction",
+      "triggerDescription": "Medication with seizure-risk tag in patient with seizure disorder, eating disorder, alcohol withdrawal risk, or interacting seizure-threshold-lowering stack.",
+      "actionSummary": "Display caution or avoid guidance depending on exact medication and context.",
+      "medicationTags": [
+        "seizure_risk"
+      ],
+      "medicationIds": [],
+      "contextInputs": [
+        "diagnoses",
+        "history_of_seizure",
+        "eating_disorder_history",
+        "active_medications",
+        "substance_use_context"
+      ],
+      "filters": {},
+      "evidenceBasis": "provisional_seed_logic",
+      "sourceDocumentIds": [],
+      "provisional": true,
+      "sourceBacked": false
+    },
+    {
+      "ruleId": "qt_stack_warning",
+      "status": "seed_provisional",
+      "severity": "major",
+      "category": "drug_drug_interaction",
+      "triggerDescription": "One or more QT-risk psychiatric agents combined with other QT-risk drugs or patient-specific cardiac/electrolyte risk.",
+      "actionSummary": "Warn about additive QT risk and suggest EKG/electrolyte review when appropriate.",
+      "medicationTags": [
+        "qt_risk",
+        "qt_risk_high"
+      ],
+      "medicationIds": [],
+      "contextInputs": [
+        "active_medications",
+        "cardiac_history",
+        "syncope_history",
+        "electrolyte_risk",
+        "ekg_data_if_available"
+      ],
+      "filters": {},
+      "evidenceBasis": "provisional_seed_logic",
+      "sourceDocumentIds": [],
+      "provisional": true,
+      "sourceBacked": false
+    },
+    {
+      "ruleId": "clozapine_monitoring_bundle",
+      "status": "seed_provisional",
+      "severity": "hard_stop",
+      "category": "monitoring_requirement",
+      "triggerDescription": "Clozapine selected or active.",
+      "actionSummary": "Prompt ANC/CBC monitoring, constipation risk review, myocarditis awareness, seizure caution, and smoking-status review. REMS/site workflow should be attached later.",
+      "medicationTags": [
+        "agranulocytosis_neutropenia",
+        "myocarditis_risk",
+        "severe_constipation_ileus_risk"
+      ],
+      "medicationIds": [
+        "clozapine"
+      ],
+      "contextInputs": [
+        "cbc_anc_data",
+        "constipation_history",
+        "smoking_status",
+        "cardiac_symptoms",
+        "seizure_history",
+        "cbc_anc"
+      ],
+      "filters": {},
+      "evidenceBasis": "source_backed_label_anchor",
+      "sourceDocumentIds": [
+        "dailymed_clozapine",
+        "openfda_clozapine"
+      ],
+      "provisional": true,
+      "sourceBacked": true
+    },
+    {
+      "ruleId": "lithium_toxicity_monitoring_bundle",
+      "status": "seed_provisional",
+      "severity": "major",
+      "category": "monitoring_requirement",
+      "triggerDescription": "Lithium selected or active, especially with interacting medications or dehydration risk.",
+      "actionSummary": "Prompt lithium level review, renal and thyroid monitoring, and interaction check for NSAIDs, ACE inhibitors/ARBs, and diuretics.",
+      "medicationTags": [],
+      "medicationIds": [
+        "lithium"
+      ],
+      "contextInputs": [
+        "renal_function",
+        "thyroid_status",
+        "active_medications",
+        "dehydration_risk",
+        "lithium_level_if_available",
+        "lithium_level"
+      ],
+      "filters": {},
+      "evidenceBasis": "source_backed_label_anchor",
+      "sourceDocumentIds": [
+        "dailymed_lithium",
+        "openfda_lithium"
+      ],
+      "provisional": true,
+      "sourceBacked": true
+    },
+    {
+      "ruleId": "valproate_reproductive_warning",
+      "status": "seed_provisional",
+      "severity": "hard_stop",
+      "category": "special_population_warning",
+      "triggerDescription": "Valproate or divalproex present in pregnancy or in a patient who could become pregnant and reproductive context is relevant.",
+      "actionSummary": "Show high-severity reproductive risk warning and require clinician review workflow.",
+      "medicationTags": [
+        "teratogenicity_reproductive_high_risk"
+      ],
+      "medicationIds": [
+        "divalproex",
+        "valproic_acid"
+      ],
+      "contextInputs": [
+        "pregnancy_status",
+        "reproductive_potential",
+        "indication_context"
+      ],
+      "filters": {},
+      "evidenceBasis": "source_backed_label_anchor",
+      "sourceDocumentIds": [
+        "dailymed_divalproex",
+        "openfda_divalproex",
+        "dailymed_valproic_acid",
+        "openfda_valproic_acid"
+      ],
+      "provisional": true,
+      "sourceBacked": true
+    },
+    {
+      "ruleId": "lamotrigine_rash_titration_warning",
+      "status": "seed_provisional",
+      "severity": "major",
+      "category": "monitoring_requirement",
+      "triggerDescription": "Lamotrigine initiated, restarted after lapse, titrated rapidly, or combined with valproate.",
+      "actionSummary": "Warn about serious rash risk, enforce slow-titration workflow, and highlight valproate interaction risk.",
+      "medicationTags": [],
+      "medicationIds": [
+        "lamotrigine"
+      ],
+      "contextInputs": [
+        "start_date",
+        "dose_changes",
+        "active_medications",
+        "restart_after_gap"
+      ],
+      "filters": {},
+      "evidenceBasis": "source_backed_label_anchor",
+      "sourceDocumentIds": [
+        "dailymed_lamotrigine",
+        "openfda_lamotrigine"
+      ],
+      "provisional": true,
+      "sourceBacked": true
+    },
+    {
+      "ruleId": "sga_metabolic_monitoring",
+      "status": "seed_provisional",
+      "severity": "major",
+      "category": "monitoring_requirement",
+      "triggerDescription": "Second-generation antipsychotic with metabolic-risk tag is selected or active.",
+      "actionSummary": "Prompt baseline and longitudinal metabolic monitoring, with stronger emphasis for high-risk agents such as olanzapine and clozapine.",
+      "medicationTags": [
+        "metabolic_risk",
+        "metabolic_risk_high"
+      ],
+      "medicationIds": [],
+      "contextInputs": [
+        "weight_bmi",
+        "blood_pressure",
+        "lipids",
+        "a1c_or_glucose",
+        "diabetes_history"
+      ],
+      "filters": {},
+      "evidenceBasis": "provisional_seed_logic",
+      "sourceDocumentIds": [],
+      "provisional": true,
+      "sourceBacked": false
+    },
+    {
+      "ruleId": "antipsychotic_eps_td_monitoring",
+      "status": "seed_provisional",
+      "severity": "moderate",
+      "category": "monitoring_requirement",
+      "triggerDescription": "Any antipsychotic active, especially agents with higher EPS risk.",
+      "actionSummary": "Prompt movement-disorder monitoring and AIMS workflow where appropriate.",
+      "medicationTags": [
+        "eps_risk",
+        "eps_risk_high",
+        "td_risk"
+      ],
+      "medicationIds": [],
+      "contextInputs": [
+        "active_medications",
+        "movement_disorder_history",
+        "aims_if_available"
+      ],
+      "filters": {},
+      "evidenceBasis": "provisional_seed_logic",
+      "sourceDocumentIds": [],
+      "provisional": true,
+      "sourceBacked": false
+    },
+    {
+      "ruleId": "benzo_opioid_cns_depression",
+      "status": "seed_provisional",
+      "severity": "hard_stop",
+      "category": "drug_drug_interaction",
+      "triggerDescription": "Benzodiazepine combined with opioid, methadone, buprenorphine, or multiple sedating agents.",
+      "actionSummary": "Warn about respiratory/CNS depression and overdose risk; require clinician review for high-risk combinations.",
+      "medicationTags": [
+        "opioid_combination_risk"
+      ],
+      "medicationIds": [],
+      "contextInputs": [
+        "active_medications",
+        "respiratory_disease_history",
+        "substance_use_history"
+      ],
+      "filters": {},
+      "evidenceBasis": "provisional_seed_logic",
+      "sourceDocumentIds": [],
+      "provisional": true,
+      "sourceBacked": false
+    },
+    {
+      "ruleId": "stimulant_cardiovascular_misuse_warning",
+      "status": "seed_provisional",
+      "severity": "major",
+      "category": "special_population_warning",
+      "triggerDescription": "Stimulant selected in patient with cardiovascular disease, uncontrolled hypertension, or substance misuse risk context.",
+      "actionSummary": "Show cardiovascular and misuse monitoring warning and prompt risk review before initiation.",
+      "medicationTags": [
+        "abuse_misuse_dependence",
+        "cardiovascular_risk_context_dependent"
+      ],
+      "medicationIds": [],
+      "contextInputs": [
+        "cardiac_history",
+        "blood_pressure",
+        "heart_rate",
+        "substance_use_history"
+      ],
+      "filters": {},
+      "evidenceBasis": "provisional_seed_logic",
+      "sourceDocumentIds": [],
+      "provisional": true,
+      "sourceBacked": false
+    },
+    {
+      "ruleId": "atomoxetine_monitoring_warning",
+      "status": "seed_provisional",
+      "severity": "major",
+      "category": "monitoring_requirement",
+      "triggerDescription": "Atomoxetine selected or active.",
+      "actionSummary": "Prompt suicidality monitoring where age-relevant, cardiovascular monitoring, and hepatic symptom review.",
+      "medicationTags": [],
+      "medicationIds": [
+        "atomoxetine"
+      ],
+      "contextInputs": [
+        "age",
+        "blood_pressure",
+        "heart_rate",
+        "mood_history",
+        "hepatic_history"
+      ],
+      "filters": {},
+      "evidenceBasis": "provisional_seed_logic",
+      "sourceDocumentIds": [],
+      "provisional": true,
+      "sourceBacked": false
+    },
+    {
+      "ruleId": "lai_operational_warning",
+      "status": "seed_provisional",
+      "severity": "major",
+      "category": "administration_workflow",
+      "triggerDescription": "Any LAI antipsychotic selected.",
+      "actionSummary": "Prompt product-specific initiation, oral overlap, missed-dose, and observation workflow once those profiles are attached.",
+      "medicationTags": [],
+      "medicationIds": [],
+      "contextInputs": [
+        "last_injection_date",
+        "planned_product",
+        "oral_tolerability_documented",
+        "care_setting"
+      ],
+      "filters": {
+        "is_lai": "true"
+      },
+      "evidenceBasis": "provisional_seed_logic",
+      "sourceDocumentIds": [],
+      "provisional": true,
+      "sourceBacked": false
+    },
+    {
+      "ruleId": "olanzapine_relprevv_observation_warning",
+      "status": "seed_provisional",
+      "severity": "hard_stop",
+      "category": "administration_workflow",
+      "triggerDescription": "Olanzapine pamoate LAI selected.",
+      "actionSummary": "Require operational review for post-injection delirium/sedation syndrome observation requirements.",
+      "medicationTags": [],
+      "medicationIds": [
+        "olanzapine_pamoate_lai"
+      ],
+      "contextInputs": [
+        "care_setting",
+        "observation_capacity"
+      ],
+      "filters": {},
+      "evidenceBasis": "source_backed_label_anchor",
+      "sourceDocumentIds": [
+        "dailymed_olanzapine_pamoate_lai",
+        "openfda_olanzapine_pamoate_lai"
+      ],
+      "provisional": true,
+      "sourceBacked": true
+    },
+    {
+      "ruleId": "anticholinergic_burden_warning",
+      "status": "seed_provisional",
+      "severity": "moderate",
+      "category": "drug_drug_interaction",
+      "triggerDescription": "Multiple medications with anticholinergic burden in older adult or constipation/cognitive risk context.",
+      "actionSummary": "Warn about confusion, constipation, urinary retention, and fall risk from cumulative anticholinergic exposure.",
+      "medicationTags": [
+        "anticholinergic_burden"
+      ],
+      "medicationIds": [],
+      "contextInputs": [
+        "active_medications",
+        "age",
+        "cognitive_impairment_history",
+        "constipation_history",
+        "urinary_retention_history"
+      ],
+      "filters": {},
+      "evidenceBasis": "provisional_seed_logic",
+      "sourceDocumentIds": [],
+      "provisional": true,
+      "sourceBacked": false
+    }
+  ]
+}
