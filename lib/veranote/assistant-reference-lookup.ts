@@ -20,12 +20,14 @@ export async function hydrateTrustedReferenceSources(
   const hydrated = await Promise.all(
     candidates.map(async (reference) => {
       const title = await fetchPageTitle(reference.url, fetcher);
-      return title && !isGenericTitle(title)
-        ? {
-            label: title,
-            url: reference.url,
-          }
-        : reference;
+      if (title && !isGenericTitle(title) && isPlaceholderLabel(reference.label)) {
+        return {
+          ...reference,
+          label: title,
+        };
+      }
+
+      return reference;
     }),
   );
 
@@ -109,6 +111,10 @@ function cleanupTitle(title: string) {
 
 function isGenericTitle(title: string) {
   return /^(search|search results)$/i.test(title.trim());
+}
+
+function isPlaceholderLabel(label: string) {
+  return /site search|documentation search|search path|search route/i.test(label.trim());
 }
 
 function decodeHtmlEntities(value: string) {

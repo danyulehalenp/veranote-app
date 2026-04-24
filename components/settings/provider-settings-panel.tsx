@@ -2,11 +2,19 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '@/lib/constants/settings';
 import { findProviderProfile, providerProfiles } from '@/lib/constants/provider-profiles';
 import type { NoteSectionKey, OutputScope } from '@/lib/note/section-profiles';
 import { buildLanePreferencePrompt } from '@/lib/veranote/preference-draft';
 import { assistantMemoryService } from '@/lib/veranote/assistant-memory-service';
+import {
+  getOutputDestinationMeta,
+  getOutputDestinationOptions,
+  getOutputNoteFocusLabel,
+  inferOutputNoteFocus,
+  OUTPUT_NOTE_FOCUSES,
+} from '@/lib/veranote/output-destinations';
 import {
   describeAcceptedLedgerReopenTarget,
   resolveAcceptedLedgerReopenTarget,
@@ -16,8 +24,7 @@ import {
   resolveRewriteLedgerRecord,
 } from '@/lib/veranote/vera-memory-ledger-service';
 import type { AssistantLearningStore } from '@/lib/veranote/assistant-learning';
-import { ASSISTANT_PENDING_ACTION_KEY } from '@/lib/veranote/assistant-context';
-import { getCurrentProviderId, getVeraMemoryAckStorageKey, getProviderSettingsStorageKey } from '@/lib/veranote/provider-identity';
+import { getCurrentProviderId, getVeraMemoryAckStorageKey, getProviderSettingsStorageKey, getAssistantPendingActionStorageKey } from '@/lib/veranote/provider-identity';
 import { buildVeraIntro, resolveVeraAddress, veraInteractionStyleLabel, veraProactivityLabel } from '@/lib/veranote/vera-relationship';
 import type { VeraMemoryCategory, VeraMemoryLedger, VeraMemoryLedgerItem } from '@/types/vera-memory';
 
@@ -316,13 +323,13 @@ function recentMemoryChangeDetail(item: RecentMemoryActivityItem) {
     : 'Vera noticed this provider-level preference pattern surfacing again.';
 }
 
-function readAcknowledgedMemoryTokens() {
+function readAcknowledgedMemoryTokens(providerId?: string) {
   if (typeof window === 'undefined') {
     return [] as string[];
   }
 
   try {
-    const raw = window.localStorage.getItem(getVeraMemoryAckStorageKey(getCurrentProviderId()));
+    const raw = window.localStorage.getItem(getVeraMemoryAckStorageKey(providerId || getCurrentProviderId()));
 
     if (!raw) {
       return [] as string[];
@@ -335,12 +342,12 @@ function readAcknowledgedMemoryTokens() {
   }
 }
 
-function writeAcknowledgedMemoryTokens(tokens: string[]) {
+function writeAcknowledgedMemoryTokens(tokens: string[], providerId?: string) {
   if (typeof window === 'undefined') {
     return;
   }
 
-  window.localStorage.setItem(getVeraMemoryAckStorageKey(getCurrentProviderId()), JSON.stringify(tokens));
+  window.localStorage.setItem(getVeraMemoryAckStorageKey(providerId || getCurrentProviderId()), JSON.stringify(tokens));
 }
 
 function recentMemoryAckToken(item: RecentMemoryActivityItem) {
@@ -354,8 +361,13 @@ function pruneAcknowledgedMemoryTokens(tokens: string[], items: RecentMemoryActi
 
 export function ProviderSettingsPanel() {
   const router = useRouter();
+  const { data: session } = useSession();
   const [settings, setSettings] = useState<ProviderSettings>(DEFAULT_PROVIDER_SETTINGS);
   const [message, setMessage] = useState('');
+  const [outputProfileName, setOutputProfileName] = useState('');
+  const [outputProfileSiteLabel, setOutputProfileSiteLabel] = useState('');
+  const [editingOutputProfileId, setEditingOutputProfileId] = useState<string | null>(null);
+  const resolvedProviderIdentityId = session?.user?.providerIdentityId || getCurrentProviderId();
   const activeProfile = findProviderProfile(settings.providerProfileId);
   const veraAddress = resolveVeraAddress(settings, activeProfile?.name);
   const [workflowInsights, setWorkflowInsights] = useState<ReturnType<typeof assistantMemoryService.getWorkflowInsights>>({
@@ -433,13 +445,12 @@ export function ProviderSettingsPanel() {
     setWorkflowInsights(assistantMemoryService.getWorkflowInsights({
       profileId: nextSettings.providerProfileId,
       noteTypes: nextProfile?.defaults.noteTypePriority || [],
-    }));
+    }, resolvedProviderIdentityId));
   }
 
   useEffect(() => {
     async function hydrateSettings() {
-      const providerId = getCurrentProviderId();
-      const storageKey = getProviderSettingsStorageKey(providerId);
+      const storageKey = getProviderSettingsStorageKey(resolvedProviderIdentityId);
       const raw = localStorage.getItem(storageKey);
       if (raw) {
         try {
@@ -452,7 +463,7 @@ export function ProviderSettingsPanel() {
       }
 
       try {
-        const response = await fetch(`/api/settings/provider?providerId=${encodeURIComponent(providerId)}`, { cache: 'no-store' });
+        const response = await fetch(`/api/settings/provider?providerId=${encodeURIComponent(resolvedProviderIdentityId)}`, { cache: 'no-store' });
         const data = (await response.json()) as { settings?: ProviderSettings };
         const merged = { ...DEFAULT_PROVIDER_SETTINGS, ...(data?.settings || {}) };
         setSettings(merged);
@@ -463,18 +474,18 @@ export function ProviderSettingsPanel() {
     }
 
     void hydrateSettings();
-  }, []);
+  }, [resolvedProviderIdentityId]);
 
   useEffect(() => {
     refreshWorkflowInsights();
-  }, [activeProfile, settings.providerProfileId]);
+  }, [activeProfile, resolvedProviderIdentityId, settings.providerProfileId]);
 
   useEffect(() => {
     let isMounted = true;
 
     async function hydrateLearning() {
       try {
-        const bundle = await assistantMemoryService.hydrateMemoryBundle();
+        const bundle = await assistantMemoryService.hydrateMemoryBundle(resolvedProviderIdentityId);
         if (isMounted) {
           setAssistantLearningStore(bundle.learningStore);
           setVeraMemoryLedger(bundle.veraMemoryLedger);
@@ -490,28 +501,117 @@ export function ProviderSettingsPanel() {
     return () => {
       isMounted = false;
     };
-  }, [settings.providerProfileId]);
+  }, [resolvedProviderIdentityId, settings.providerProfileId]);
 
   useEffect(() => {
-    setAcknowledgedMemoryTokens(readAcknowledgedMemoryTokens());
-  }, []);
+    setAcknowledgedMemoryTokens(readAcknowledgedMemoryTokens(resolvedProviderIdentityId));
+  }, [resolvedProviderIdentityId]);
 
   useEffect(() => {
     const pruned = pruneAcknowledgedMemoryTokens(acknowledgedMemoryTokens, recentMemoryActivity);
 
     if (pruned.length !== acknowledgedMemoryTokens.length) {
       setAcknowledgedMemoryTokens(pruned);
-      writeAcknowledgedMemoryTokens(pruned);
+      writeAcknowledgedMemoryTokens(pruned, resolvedProviderIdentityId);
     }
-  }, [acknowledgedMemoryTokens, recentMemoryActivity]);
+  }, [acknowledgedMemoryTokens, recentMemoryActivity, resolvedProviderIdentityId]);
 
   function updateSetting<K extends keyof ProviderSettings>(key: K, value: ProviderSettings[K]) {
     setSettings((current) => ({ ...current, [key]: value }));
   }
 
+  function applyOutputProfile(profileId: string) {
+    setSettings((current) => {
+      const profile = current.outputProfiles.find((item) => item.id === profileId);
+      if (!profile) {
+        return current;
+      }
+
+      return {
+        ...current,
+        outputDestination: profile.destination,
+        outputNoteFocus: profile.noteFocus,
+        asciiSafe: profile.asciiSafe,
+        paragraphOnly: profile.paragraphOnly,
+        wellskyFriendly: profile.wellskyFriendly,
+        activeOutputProfileId: profile.id,
+      };
+    });
+    setMessage('Applied saved site/EHR output preset.');
+    window.setTimeout(() => setMessage(''), 2200);
+  }
+
+  function resetOutputProfileEditor() {
+    setOutputProfileName('');
+    setOutputProfileSiteLabel('');
+    setEditingOutputProfileId(null);
+  }
+
+  function handleSaveOutputProfile() {
+    const trimmedName = outputProfileName.trim();
+    const trimmedSiteLabel = outputProfileSiteLabel.trim();
+
+    if (!trimmedName || !trimmedSiteLabel) {
+      setMessage('Add both a preset name and a site label before saving this output preset.');
+      window.setTimeout(() => setMessage(''), 2400);
+      return;
+    }
+
+    setSettings((current) => {
+      const nextProfile = {
+        id: editingOutputProfileId || `output-profile-${Date.now()}`,
+        name: trimmedName,
+        siteLabel: trimmedSiteLabel,
+        destination: current.outputDestination,
+        noteFocus: current.outputNoteFocus || inferOutputNoteFocus(trimmedName),
+        asciiSafe: current.asciiSafe,
+        paragraphOnly: current.paragraphOnly,
+        wellskyFriendly: current.wellskyFriendly,
+      };
+
+      const nextProfiles = editingOutputProfileId
+        ? current.outputProfiles.map((profile) => profile.id === editingOutputProfileId ? nextProfile : profile)
+        : [nextProfile, ...current.outputProfiles.filter((profile) => profile.id !== nextProfile.id)];
+
+      return {
+        ...current,
+        outputProfiles: nextProfiles,
+        activeOutputProfileId: nextProfile.id,
+      };
+    });
+
+    resetOutputProfileEditor();
+    setMessage(editingOutputProfileId ? 'Updated saved site/EHR output preset.' : 'Saved current settings as a reusable site/EHR output preset.');
+    window.setTimeout(() => setMessage(''), 2400);
+  }
+
+  function handleEditOutputProfile(profileId: string) {
+    const profile = settings.outputProfiles.find((item) => item.id === profileId);
+    if (!profile) {
+      return;
+    }
+
+    setOutputProfileName(profile.name);
+    setOutputProfileSiteLabel(profile.siteLabel);
+    setEditingOutputProfileId(profile.id);
+  }
+
+  function handleDeleteOutputProfile(profileId: string) {
+    setSettings((current) => ({
+      ...current,
+      outputProfiles: current.outputProfiles.filter((profile) => profile.id !== profileId),
+      activeOutputProfileId: current.activeOutputProfileId === profileId ? '' : current.activeOutputProfileId,
+    }));
+    if (editingOutputProfileId === profileId) {
+      resetOutputProfileEditor();
+    }
+    setMessage('Removed saved site/EHR output preset.');
+    window.setTimeout(() => setMessage(''), 2200);
+  }
+
   function scheduleMemorySync() {
     window.setTimeout(() => {
-      void assistantMemoryService.hydrateMemoryBundle().then((bundle) => {
+      void assistantMemoryService.hydrateMemoryBundle(resolvedProviderIdentityId).then((bundle) => {
         setAssistantLearningStore(bundle.learningStore);
         setVeraMemoryLedger(bundle.veraMemoryLedger);
         refreshWorkflowInsights();
@@ -552,15 +652,14 @@ export function ProviderSettingsPanel() {
   }
 
   async function handleSave() {
-    const providerId = getCurrentProviderId();
-    const storageKey = getProviderSettingsStorageKey(providerId);
+    const storageKey = getProviderSettingsStorageKey(resolvedProviderIdentityId);
     localStorage.setItem(storageKey, JSON.stringify(settings));
 
     try {
       await fetch('/api/settings/provider', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...settings, providerId }),
+        body: JSON.stringify({ ...settings, providerId: resolvedProviderIdentityId }),
       });
       setMessage('Settings saved locally and in the prototype backend store.');
     } catch {
@@ -568,7 +667,7 @@ export function ProviderSettingsPanel() {
     }
 
     try {
-      const bundle = await assistantMemoryService.hydrateMemoryBundle(providerId);
+      const bundle = await assistantMemoryService.hydrateMemoryBundle(resolvedProviderIdentityId);
       setAssistantLearningStore(bundle.learningStore);
       setVeraMemoryLedger(bundle.veraMemoryLedger);
       refreshWorkflowInsights();
@@ -581,13 +680,14 @@ export function ProviderSettingsPanel() {
 
   function handleReset() {
     setSettings(DEFAULT_PROVIDER_SETTINGS);
-    localStorage.removeItem(getProviderSettingsStorageKey(getCurrentProviderId()));
+    resetOutputProfileEditor();
+    localStorage.removeItem(getProviderSettingsStorageKey(resolvedProviderIdentityId));
     setMessage('');
   }
 
   function openWorkspaceWithPreference(instructions: string, onUsed?: () => void) {
     onUsed?.();
-    localStorage.setItem(ASSISTANT_PENDING_ACTION_KEY, JSON.stringify({
+    localStorage.setItem(getAssistantPendingActionStorageKey(resolvedProviderIdentityId), JSON.stringify({
       type: 'append-preferences',
       instructions,
     }));
@@ -606,7 +706,7 @@ export function ProviderSettingsPanel() {
       const noteType = item.noteType;
       const rewriteTone = item.rewriteTone;
       openReviewForRewriteStyle(() => {
-        assistantMemoryService.markRewriteUsed(noteType, rewriteTone);
+        assistantMemoryService.markRewriteUsed(noteType, rewriteTone, resolvedProviderIdentityId);
         refreshWorkflowInsights();
       });
       return;
@@ -617,7 +717,7 @@ export function ProviderSettingsPanel() {
       const promptKey = item.promptKey;
       const profileId = settings.providerProfileId;
       openWorkspaceWithPreference(item.seedPrompt, () => {
-        assistantMemoryService.markProfilePromptUsed(profileId, promptKey);
+        assistantMemoryService.markProfilePromptUsed(profileId, promptKey, resolvedProviderIdentityId);
         refreshWorkflowInsights();
       });
       return;
@@ -628,7 +728,7 @@ export function ProviderSettingsPanel() {
       const seedPrompt = item.seedPrompt;
       const promptKey = item.promptKey;
       openWorkspaceWithPreference(item.seedPrompt, () => {
-        assistantMemoryService.markPromptUsed(noteType, promptKey);
+        assistantMemoryService.markPromptUsed(noteType, promptKey, resolvedProviderIdentityId);
         refreshWorkflowInsights();
       });
       return;
@@ -647,7 +747,7 @@ export function ProviderSettingsPanel() {
           requestedSections: laneConfig.requestedSections,
         }),
         () => {
-          assistantMemoryService.markLaneUsed(noteType, laneKey);
+          assistantMemoryService.markLaneUsed(noteType, laneKey, resolvedProviderIdentityId);
           refreshWorkflowInsights();
         },
       );
@@ -658,12 +758,12 @@ export function ProviderSettingsPanel() {
     const token = recentMemoryAckToken(item);
     const nextTokens = Array.from(new Set([...acknowledgedMemoryTokens, token]));
     setAcknowledgedMemoryTokens(nextTokens);
-    writeAcknowledgedMemoryTokens(nextTokens);
+    writeAcknowledgedMemoryTokens(nextTokens, resolvedProviderIdentityId);
   }
 
   function clearAcknowledgedMemory() {
     setAcknowledgedMemoryTokens([]);
-    writeAcknowledgedMemoryTokens([]);
+    writeAcknowledgedMemoryTokens([], resolvedProviderIdentityId);
   }
 
   function openSettingsSection(sectionId: string) {
@@ -682,18 +782,18 @@ export function ProviderSettingsPanel() {
     return {
       primaryLabel: 'Open in workspace',
       onPrimary: () => openWorkspaceWithPreference(promptRecord.seedPrompt, () => {
-        assistantMemoryService.markPromptUsed(promptRecord.noteType, promptRecord.key);
+        assistantMemoryService.markPromptUsed(promptRecord.noteType, promptRecord.key, resolvedProviderIdentityId);
         scheduleMemorySync();
       }),
       onAccept: item.category === 'observed-workflow'
         ? () => {
-            assistantMemoryService.acceptPromptSuggestion(promptRecord.noteType, promptRecord.key);
+            assistantMemoryService.acceptPromptSuggestion(promptRecord.noteType, promptRecord.key, resolvedProviderIdentityId);
             scheduleMemorySync();
           }
         : undefined,
       onDismiss: item.category === 'observed-workflow'
         ? () => {
-            assistantMemoryService.dismissPromptSuggestion(promptRecord.noteType, promptRecord.key);
+            assistantMemoryService.dismissPromptSuggestion(promptRecord.noteType, promptRecord.key, resolvedProviderIdentityId);
             scheduleMemorySync();
           }
         : undefined,
@@ -713,18 +813,18 @@ export function ProviderSettingsPanel() {
     return {
       primaryLabel: 'Open in workspace',
       onPrimary: () => openWorkspaceWithPreference(profileRecord.seedPrompt, () => {
-        assistantMemoryService.markProfilePromptUsed(profileRecord.profileId, profileRecord.key);
+        assistantMemoryService.markProfilePromptUsed(profileRecord.profileId, profileRecord.key, resolvedProviderIdentityId);
         scheduleMemorySync();
       }),
       onAccept: item.category === 'observed-workflow'
         ? () => {
-            assistantMemoryService.acceptProfilePromptSuggestion(profileRecord.profileId, profileRecord.key);
+            assistantMemoryService.acceptProfilePromptSuggestion(profileRecord.profileId, profileRecord.key, resolvedProviderIdentityId);
             scheduleMemorySync();
           }
         : undefined,
       onDismiss: item.category === 'observed-workflow'
         ? () => {
-            assistantMemoryService.dismissProfilePromptSuggestion(profileRecord.profileId, profileRecord.key);
+            assistantMemoryService.dismissProfilePromptSuggestion(profileRecord.profileId, profileRecord.key, resolvedProviderIdentityId);
             scheduleMemorySync();
           }
         : undefined,
@@ -740,18 +840,18 @@ export function ProviderSettingsPanel() {
     return {
       primaryLabel: 'Open in review',
       onPrimary: () => openReviewForRewriteStyle(() => {
-        assistantMemoryService.markRewriteUsed(rewriteRecord.noteType, rewriteRecord.tone);
+        assistantMemoryService.markRewriteUsed(rewriteRecord.noteType, rewriteRecord.tone, resolvedProviderIdentityId);
         scheduleMemorySync();
       }),
       onAccept: item.category === 'observed-workflow'
         ? () => {
-            assistantMemoryService.acceptRewriteSuggestion(rewriteRecord.noteType, rewriteRecord.tone);
+            assistantMemoryService.acceptRewriteSuggestion(rewriteRecord.noteType, rewriteRecord.tone, resolvedProviderIdentityId);
             scheduleMemorySync();
           }
         : undefined,
       onDismiss: item.category === 'observed-workflow'
         ? () => {
-            assistantMemoryService.dismissRewriteSuggestion(rewriteRecord.noteType, rewriteRecord.tone);
+            assistantMemoryService.dismissRewriteSuggestion(rewriteRecord.noteType, rewriteRecord.tone, resolvedProviderIdentityId);
             scheduleMemorySync();
           }
         : undefined,
@@ -769,16 +869,16 @@ export function ProviderSettingsPanel() {
       onPrimary: () => openWorkspaceWithPreference(
         laneRecord.prompt,
         () => {
-          assistantMemoryService.markLaneUsed(laneRecord.noteType, laneRecord.key);
+          assistantMemoryService.markLaneUsed(laneRecord.noteType, laneRecord.key, resolvedProviderIdentityId);
           scheduleMemorySync();
         },
       ),
       onAccept: item.category === 'observed-workflow' ? () => {
-        assistantMemoryService.acceptLaneSuggestion(laneRecord.noteType, laneRecord.key);
+        assistantMemoryService.acceptLaneSuggestion(laneRecord.noteType, laneRecord.key, resolvedProviderIdentityId);
         scheduleMemorySync();
       } : undefined,
       onDismiss: item.category === 'observed-workflow' ? () => {
-        assistantMemoryService.dismissLaneSuggestion(laneRecord.noteType, laneRecord.key);
+        assistantMemoryService.dismissLaneSuggestion(laneRecord.noteType, laneRecord.key, resolvedProviderIdentityId);
         scheduleMemorySync();
       } : undefined,
     };
@@ -949,8 +1049,9 @@ export function ProviderSettingsPanel() {
               onChange={(event) => updateSetting('outputDestination', event.target.value as ProviderSettings['outputDestination'])}
               className="rounded-xl border border-violet-200 bg-white p-3 text-sm"
             >
-              <option>Generic</option>
-              <option>WellSky</option>
+              {getOutputDestinationOptions().map((destination) => (
+                <option key={destination.label} value={destination.label}>{destination.label}</option>
+              ))}
             </select>
           </label>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -974,7 +1075,7 @@ export function ProviderSettingsPanel() {
             <button
               type="button"
               onClick={() => {
-                assistantMemoryService.reopenAcceptedLedgerSuggestion(item.id);
+                assistantMemoryService.reopenAcceptedLedgerSuggestion(item.id, resolvedProviderIdentityId);
                 scheduleMemorySync();
                 setExpandedLedgerEditorId(null);
               }}
@@ -1065,13 +1166,113 @@ export function ProviderSettingsPanel() {
         <label className="grid gap-2 text-sm font-medium">
           <span>Output destination</span>
           <select value={settings.outputDestination} onChange={(event) => updateSetting('outputDestination', event.target.value as ProviderSettings['outputDestination'])} className="rounded-xl border border-border bg-white p-3">
-            <option>Generic</option>
-            <option>WellSky</option>
+            {getOutputDestinationOptions().map((destination) => (
+              <option key={destination.label} value={destination.label}>{destination.label}</option>
+            ))}
           </select>
         </label>
 
-        <div className="rounded-lg border border-border bg-paper p-4 text-sm text-muted">
-          This layer is where provider style, facility rules, and EHR formatting can eventually stop fighting each other quite so much.
+        <label className="grid gap-2 text-sm font-medium">
+          <span>Note focus</span>
+          <select value={settings.outputNoteFocus} onChange={(event) => updateSetting('outputNoteFocus', event.target.value as ProviderSettings['outputNoteFocus'])} className="rounded-xl border border-border bg-white p-3">
+            {OUTPUT_NOTE_FOCUSES.map((focus) => (
+              <option key={focus} value={focus}>{getOutputNoteFocusLabel(focus)}</option>
+            ))}
+          </select>
+        </label>
+
+        <div className="rounded-lg border border-border bg-paper p-4 text-sm text-muted md:col-span-2">
+          <div className="font-medium text-ink">{getOutputDestinationMeta(settings.outputDestination).summaryLabel}</div>
+          <div className="mt-1">{getOutputDestinationMeta(settings.outputDestination).pasteExpectation}</div>
+          <div className="mt-2 text-xs text-slate-600">
+            Current note focus: {getOutputNoteFocusLabel(settings.outputNoteFocus)}
+          </div>
+        </div>
+
+        <div className="aurora-soft-panel rounded-[18px] border border-violet-200 p-4 md:col-span-2">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-violet-950">Multi-site output presets</div>
+              <p className="mt-1 text-sm text-violet-900/78">
+                Save different site and EHR combinations so a provider can jump between multiple workplaces without rebuilding output rules each time.
+              </p>
+            </div>
+            <div className="text-xs text-violet-900/68">
+              Save the current destination, note focus, and formatting rules as a reusable preset.
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-violet-950">
+              <span>Preset name</span>
+              <input
+                value={outputProfileName}
+                onChange={(event) => setOutputProfileName(event.target.value)}
+                placeholder="Example: Hospital A - Tebra Psych Initial"
+                className="rounded-xl border border-violet-200 bg-white p-3"
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-violet-950">
+              <span>Site label</span>
+              <input
+                value={outputProfileSiteLabel}
+                onChange={(event) => setOutputProfileSiteLabel(event.target.value)}
+                placeholder="Example: Hospital A"
+                className="rounded-xl border border-violet-200 bg-white p-3"
+              />
+            </label>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button type="button" onClick={handleSaveOutputProfile} className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium">
+              {editingOutputProfileId ? 'Update output preset' : 'Save current as output preset'}
+            </button>
+            {editingOutputProfileId ? (
+              <button type="button" onClick={resetOutputProfileEditor} className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium">
+                Cancel edit
+              </button>
+            ) : null}
+          </div>
+
+          {settings.outputProfiles.length ? (
+            <div className="mt-5 grid gap-3">
+              {settings.outputProfiles.map((profile) => (
+                <div key={profile.id} className="rounded-[16px] border border-violet-200 bg-white/80 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="text-sm font-semibold text-violet-950">{profile.name}</div>
+                      <div className="mt-1 text-sm text-violet-900/76">
+                        {profile.siteLabel} • {profile.destination} • {getOutputNoteFocusLabel(profile.noteFocus)}
+                      </div>
+                      <div className="mt-2 text-xs text-violet-900/68">
+                        {profile.asciiSafe ? 'ASCII-safe' : 'Standard punctuation'} • {profile.paragraphOnly ? 'Paragraph-first' : 'Headings allowed'} • {profile.wellskyFriendly ? 'Strict template cleanup' : 'Standard cleanup'}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => applyOutputProfile(profile.id)} className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium">
+                        Apply
+                      </button>
+                      <button type="button" onClick={() => handleEditOutputProfile(profile.id)} className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium">
+                        Edit
+                      </button>
+                      <button type="button" onClick={() => handleDeleteOutputProfile(profile.id)} className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium">
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                  {settings.activeOutputProfileId === profile.id ? (
+                    <div className="mt-3 text-xs font-medium uppercase tracking-[0.14em] text-violet-700">
+                      Active preset
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-5 rounded-[16px] border border-dashed border-violet-200 bg-white/60 p-4 text-sm text-violet-900/72">
+              No saved site/EHR presets yet. Save the current setup once and it will be available for reuse across sites.
+            </div>
+          )}
         </div>
       </div>
 
@@ -1216,7 +1417,7 @@ export function ProviderSettingsPanel() {
               assistantMemoryService.resetLearningForProfile({
                 profileId: settings.providerProfileId,
                 noteTypes: activeProfile?.defaults.noteTypePriority || [],
-              });
+              }, resolvedProviderIdentityId);
               refreshWorkflowInsights();
               setMessage('Vera memory reset for this provider profile.');
               window.setTimeout(() => setMessage(''), 2200);
@@ -1449,7 +1650,11 @@ export function ProviderSettingsPanel() {
                         if (!settings.providerProfileId) {
                           return;
                         }
-                        assistantMemoryService.markProfilePromptUsed(settings.providerProfileId, workflowInsights.profilePromptSuggestion!.key);
+                        assistantMemoryService.markProfilePromptUsed(
+                          settings.providerProfileId,
+                          workflowInsights.profilePromptSuggestion!.key,
+                          resolvedProviderIdentityId,
+                        );
                         refreshWorkflowInsights();
                       },
                     )}
@@ -1463,7 +1668,11 @@ export function ProviderSettingsPanel() {
                       if (!settings.providerProfileId) {
                         return;
                       }
-                      assistantMemoryService.acceptProfilePromptSuggestion(settings.providerProfileId, workflowInsights.profilePromptSuggestion!.key);
+                      assistantMemoryService.acceptProfilePromptSuggestion(
+                        settings.providerProfileId,
+                        workflowInsights.profilePromptSuggestion!.key,
+                        resolvedProviderIdentityId,
+                      );
                       refreshWorkflowInsights();
                     }}
                     className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
@@ -1476,7 +1685,11 @@ export function ProviderSettingsPanel() {
                       if (!settings.providerProfileId) {
                         return;
                       }
-                      assistantMemoryService.dismissProfilePromptSuggestion(settings.providerProfileId, workflowInsights.profilePromptSuggestion!.key);
+                      assistantMemoryService.dismissProfilePromptSuggestion(
+                        settings.providerProfileId,
+                        workflowInsights.profilePromptSuggestion!.key,
+                        resolvedProviderIdentityId,
+                      );
                       refreshWorkflowInsights();
                     }}
                     className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
@@ -1834,7 +2047,11 @@ export function ProviderSettingsPanel() {
                           <button
                             type="button"
                             onClick={() => openReviewForRewriteStyle(() => {
-                              assistantMemoryService.markRewriteUsed(insight.noteType, insight.rewriteSuggestion!.optionTone);
+                              assistantMemoryService.markRewriteUsed(
+                                insight.noteType,
+                                insight.rewriteSuggestion!.optionTone,
+                                resolvedProviderIdentityId,
+                              );
                               refreshWorkflowInsights();
                             })}
                             className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
@@ -1844,7 +2061,11 @@ export function ProviderSettingsPanel() {
                           <button
                             type="button"
                             onClick={() => {
-                              assistantMemoryService.acceptRewriteSuggestion(insight.noteType, insight.rewriteSuggestion!.optionTone);
+                              assistantMemoryService.acceptRewriteSuggestion(
+                                insight.noteType,
+                                insight.rewriteSuggestion!.optionTone,
+                                resolvedProviderIdentityId,
+                              );
                               refreshWorkflowInsights();
                             }}
                             className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
@@ -1854,7 +2075,11 @@ export function ProviderSettingsPanel() {
                           <button
                             type="button"
                             onClick={() => {
-                              assistantMemoryService.dismissRewriteSuggestion(insight.noteType, insight.rewriteSuggestion!.optionTone);
+                              assistantMemoryService.dismissRewriteSuggestion(
+                                insight.noteType,
+                                insight.rewriteSuggestion!.optionTone,
+                                resolvedProviderIdentityId,
+                              );
                               refreshWorkflowInsights();
                             }}
                             className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
@@ -1911,7 +2136,11 @@ export function ProviderSettingsPanel() {
                                 requestedSections: insight.laneSuggestion!.requestedSections as NoteSectionKey[],
                               }),
                               () => {
-                                assistantMemoryService.markLaneUsed(insight.noteType, insight.laneSuggestion!.key);
+                                assistantMemoryService.markLaneUsed(
+                                  insight.noteType,
+                                  insight.laneSuggestion!.key,
+                                  resolvedProviderIdentityId,
+                                );
                                 refreshWorkflowInsights();
                               },
                             )}
@@ -1922,7 +2151,11 @@ export function ProviderSettingsPanel() {
                           <button
                             type="button"
                             onClick={() => {
-                              assistantMemoryService.acceptLaneSuggestion(insight.noteType, insight.laneSuggestion!.key);
+                              assistantMemoryService.acceptLaneSuggestion(
+                                insight.noteType,
+                                insight.laneSuggestion!.key,
+                                resolvedProviderIdentityId,
+                              );
                               refreshWorkflowInsights();
                             }}
                             className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
@@ -1932,7 +2165,11 @@ export function ProviderSettingsPanel() {
                           <button
                             type="button"
                             onClick={() => {
-                              assistantMemoryService.dismissLaneSuggestion(insight.noteType, insight.laneSuggestion!.key);
+                              assistantMemoryService.dismissLaneSuggestion(
+                                insight.noteType,
+                                insight.laneSuggestion!.key,
+                                resolvedProviderIdentityId,
+                              );
                               refreshWorkflowInsights();
                             }}
                             className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
@@ -1979,7 +2216,11 @@ export function ProviderSettingsPanel() {
                             onClick={() => openWorkspaceWithPreference(
                               insight.promptSuggestion!.seedPrompt,
                               () => {
-                                assistantMemoryService.markPromptUsed(insight.noteType, insight.promptSuggestion!.key);
+                                assistantMemoryService.markPromptUsed(
+                                  insight.noteType,
+                                  insight.promptSuggestion!.key,
+                                  resolvedProviderIdentityId,
+                                );
                                 refreshWorkflowInsights();
                               },
                             )}
@@ -1990,7 +2231,11 @@ export function ProviderSettingsPanel() {
                           <button
                             type="button"
                             onClick={() => {
-                              assistantMemoryService.acceptPromptSuggestion(insight.noteType, insight.promptSuggestion!.key);
+                              assistantMemoryService.acceptPromptSuggestion(
+                                insight.noteType,
+                                insight.promptSuggestion!.key,
+                                resolvedProviderIdentityId,
+                              );
                               refreshWorkflowInsights();
                             }}
                             className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
@@ -2000,7 +2245,11 @@ export function ProviderSettingsPanel() {
                           <button
                             type="button"
                             onClick={() => {
-                              assistantMemoryService.dismissPromptSuggestion(insight.noteType, insight.promptSuggestion!.key);
+                              assistantMemoryService.dismissPromptSuggestion(
+                                insight.noteType,
+                                insight.promptSuggestion!.key,
+                                resolvedProviderIdentityId,
+                              );
                               refreshWorkflowInsights();
                             }}
                             className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"

@@ -5,7 +5,8 @@ export default function DraftsPage() {
   return (
     <AppShell
       title="Saved Drafts"
-      subtitle="Browse recent drafts and reopen one for review or further editing."
+      subtitle="Recover unfinished notes fast and reopen the right checkpoint in the main workspace."
+      fullWidth
     >
       <SavedDraftsList />
     </AppShell>

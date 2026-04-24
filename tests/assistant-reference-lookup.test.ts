@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { buildExternalAnswerMeta, hydrateTrustedReferenceSources } from '@/lib/veranote/assistant-reference-lookup';
+import { getAssistantReferencePolicy } from '@/lib/veranote/assistant-source-policy';
 
 describe('assistant reference lookup', () => {
   it('hydrates trusted reference labels from live page titles when available', async () => {
@@ -65,5 +66,13 @@ describe('assistant reference lookup', () => {
     );
 
     expect(meta.level).toBe('not-yet-taught');
+  });
+
+  it('matches emerging drug reference policy for tianeptine topics', () => {
+    const policy = getAssistantReferencePolicy("what is Neptune's Fix?");
+
+    expect(policy.categories).toContain('emerging-drug-reference');
+    expect(policy.directReferences.some((reference) => reference.url.includes('fda.gov'))).toBe(true);
+    expect(policy.allowedDomains).toContain('fda.gov');
   });
 });

@@ -34,6 +34,7 @@ export function BetaFeedbackInbox({ feedback }: BetaFeedbackInboxProps) {
   const [items, setItems] = useState(feedback);
   const [activeGapType, setActiveGapType] = useState<VeraGapType | 'all'>('all');
   const [activeGapStatus, setActiveGapStatus] = useState<BetaFeedbackStatus | 'all'>('all');
+  const [activeCategory, setActiveCategory] = useState<BetaFeedbackItem['category'] | 'all'>('all');
   const [copiedQuestion, setCopiedQuestion] = useState('');
 
   const veraGapSummaries = useMemo(() => summarizeVeraGaps(items), [items]);
@@ -57,6 +58,27 @@ export function BetaFeedbackInbox({ feedback }: BetaFeedbackInboxProps) {
     }
 
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  }), [items]);
+  const filteredFeedback = useMemo(() => orderedFeedback.filter((item) => {
+    if (activeCategory !== 'all' && item.category !== activeCategory) {
+      return false;
+    }
+
+    if (activeGapStatus !== 'all' && item.status !== activeGapStatus) {
+      return false;
+    }
+
+    if (activeGapType !== 'all' && item.metadata?.gapType !== activeGapType) {
+      return false;
+    }
+
+    return true;
+  }), [activeCategory, activeGapStatus, activeGapType, orderedFeedback]);
+  const feedbackSummary = useMemo(() => ({
+    total: items.length,
+    newCount: items.filter((item) => item.status === 'new').length,
+    plannedCount: items.filter((item) => item.status === 'planned').length,
+    taughtCount: items.filter((item) => item.status === 'taught').length,
   }), [items]);
 
   if (!items.length) {
@@ -97,6 +119,25 @@ export function BetaFeedbackInbox({ feedback }: BetaFeedbackInboxProps) {
 
   return (
     <div className="grid gap-5">
+      <section className="grid gap-4 md:grid-cols-4">
+        <div className="aurora-soft-panel rounded-[22px] p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Inbox items</div>
+          <div className="mt-2 text-2xl font-semibold text-ink">{feedbackSummary.total}</div>
+        </div>
+        <div className="aurora-soft-panel rounded-[22px] p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted">New</div>
+          <div className="mt-2 text-2xl font-semibold text-ink">{feedbackSummary.newCount}</div>
+        </div>
+        <div className="aurora-soft-panel rounded-[22px] p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Planned</div>
+          <div className="mt-2 text-2xl font-semibold text-ink">{feedbackSummary.plannedCount}</div>
+        </div>
+        <div className="aurora-soft-panel rounded-[22px] p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Taught</div>
+          <div className="mt-2 text-2xl font-semibold text-ink">{feedbackSummary.taughtCount}</div>
+        </div>
+      </section>
+
       {veraGapSummaries.length ? (
         <section className="aurora-panel rounded-[28px] p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -215,8 +256,41 @@ export function BetaFeedbackInbox({ feedback }: BetaFeedbackInboxProps) {
         </section>
       ) : null}
 
+      <section className="aurora-panel rounded-[28px] p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="text-sm font-semibold uppercase tracking-[0.16em] text-cyan-100">Inbox filters</div>
+            <div className="mt-1 text-sm text-cyan-50/80">Filter the whole inbox by category, status, or Vera gap family.</div>
+          </div>
+          <div className="text-xs text-cyan-50/70">
+            Showing {filteredFeedback.length} of {items.length}
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" onClick={() => setActiveCategory('all')} className={filterButtonClass(activeCategory === 'all')}>
+            All categories
+          </button>
+          {(Object.keys(categoryLabels) as BetaFeedbackItem['category'][]).map((category) => (
+            <button
+              key={category}
+              type="button"
+              onClick={() => setActiveCategory(category)}
+              className={filterButtonClass(activeCategory === category)}
+            >
+              {categoryLabels[category]}
+            </button>
+          ))}
+        </div>
+      </section>
+
       <div className="grid gap-4">
-        {orderedFeedback.map((item) => (
+        {!filteredFeedback.length ? (
+          <div className="aurora-panel rounded-[28px] p-5 text-sm text-cyan-50/78">
+            No feedback matches the current filters.
+          </div>
+        ) : null}
+        {filteredFeedback.map((item) => (
           <section key={item.id} className="aurora-panel rounded-[28px] p-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>

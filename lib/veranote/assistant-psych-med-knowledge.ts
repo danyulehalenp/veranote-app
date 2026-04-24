@@ -20,6 +20,15 @@ type PsychMedicationProfile = {
   references: AssistantReferenceSource[];
 };
 
+type MedicationClassProfile = {
+  aliases: string[];
+  name: string;
+  overview: string;
+  examples: string[];
+  cautions: string[];
+  references: AssistantReferenceSource[];
+};
+
 const PSYCH_MEDICATION_PROFILES: PsychMedicationProfile[] = [
   {
     name: 'sertraline',
@@ -82,6 +91,30 @@ const PSYCH_MEDICATION_PROFILES: PsychMedicationProfile[] = [
     references: [{ label: 'Duloxetine: MedlinePlus Drug Information', url: 'https://medlineplus.gov/druginfo/meds/a604030.html' }],
   },
   {
+    name: 'desvenlafaxine',
+    aliases: ['desvenlafaxine', 'pristiq', 'khedezla'],
+    className: 'SNRI antidepressant',
+    mechanism: 'It increases serotonin and norepinephrine signaling.',
+    overview: 'Desvenlafaxine is an SNRI antidepressant used for major depressive disorder.',
+    commonSideEffects: ['nausea', 'dizziness', 'sweating', 'dry mouth'],
+    seriousWarnings: ['suicidality warning in younger patients', 'withdrawal symptoms if stopped abruptly', 'blood pressure can increase in some patients'],
+    monitoring: ['track mood response, blood pressure, and discontinuation symptoms when clinically relevant', 'review adherence and activating side effects'],
+    counselingPoints: ['do not stop abruptly', 'review serotonergic combinations', 'watch for discontinuation symptoms if doses are missed'],
+    references: [{ label: 'Desvenlafaxine: MedlinePlus Drug Information', url: 'https://medlineplus.gov/druginfo/meds/a608022.html' }],
+  },
+  {
+    name: 'doxepin',
+    aliases: ['doxepin', 'silenor'],
+    className: 'tricyclic antidepressant',
+    mechanism: 'It affects serotonin and norepinephrine signaling and can be strongly antihistaminic and sedating.',
+    overview: 'Doxepin is a tricyclic antidepressant; low-dose formulations are also used for insomnia.',
+    commonSideEffects: ['sedation', 'dry mouth', 'dizziness', 'constipation'],
+    seriousWarnings: ['suicidality warning in younger patients', 'anticholinergic burden', 'overdose risk can be serious'],
+    monitoring: ['watch for sedation, anticholinergic effects, and overdose risk', 'review sleep-versus-antidepressant indication clearly'],
+    counselingPoints: ['dosing and formulation matter because low-dose insomnia use is different from antidepressant dosing', 'use caution with other sedating or anticholinergic medications'],
+    references: [{ label: 'Doxepin: MedlinePlus Drug Information', url: 'https://medlineplus.gov/druginfo/meds/a682390.html' }],
+  },
+  {
     name: 'trazodone',
     aliases: ['trazodone', 'desyrel'],
     className: 'serotonin modulator antidepressant',
@@ -92,6 +125,18 @@ const PSYCH_MEDICATION_PROFILES: PsychMedicationProfile[] = [
     monitoring: ['review daytime sedation, falls risk, and orthostasis', 'monitor mood response if being used for depression', 'watch for serotonin-related interactions'],
     counselingPoints: ['sedation can be substantial', 'use caution with other sedating medications', 'seek urgent care for priapism'],
     references: [{ label: 'Trazodone: MedlinePlus Drug Information', url: 'https://medlineplus.gov/druginfo/meds/a681038.html' }],
+  },
+  {
+    name: 'oxcarbazepine',
+    aliases: ['oxcarbazepine', 'trileptal', 'oxtellar'],
+    className: 'anticonvulsant / mood-stabilizing agent',
+    mechanism: 'It decreases abnormal electrical activity in the brain.',
+    overview: 'Oxcarbazepine, branded as Trileptal among others, is an anticonvulsant used for seizure disorders and sometimes used off-label in psychiatry.',
+    commonSideEffects: ['dizziness', 'sleepiness', 'double vision', 'nausea'],
+    seriousWarnings: ['hyponatremia risk', 'drug interaction concerns', 'dose adjustment and titration depend on indication and patient factors'],
+    monitoring: ['review sodium-related risk, interaction burden, renal function, and indication-specific titration needs', 'do not assume seizure dosing equals psychiatric off-label dosing'],
+    counselingPoints: ['starting dose depends on indication and patient factors', 'verify current prescribing guidance before answering patient-specific dosing questions'],
+    references: [{ label: 'Oxcarbazepine: MedlinePlus Drug Information', url: 'https://medlineplus.gov/druginfo/meds/a601245.html' }],
   },
   {
     name: 'lithium',
@@ -203,12 +248,45 @@ const PSYCH_MEDICATION_PROFILES: PsychMedicationProfile[] = [
   },
 ];
 
+const MEDICATION_CLASS_PROFILES: MedicationClassProfile[] = [
+  {
+    aliases: ['ssri', 'ssris', 'selective serotonin reuptake inhibitor', 'selective serotonin reuptake inhibitors'],
+    name: 'SSRIs',
+    overview: 'SSRIs are antidepressants commonly used for depression, anxiety disorders, OCD, PTSD, and related conditions.',
+    examples: ['sertraline', 'fluoxetine', 'escitalopram', 'citalopram', 'paroxetine', 'fluvoxamine'],
+    cautions: ['GI upset and sexual side effects are common', 'activation or worsening suicidality early in treatment needs review', 'do not stop abruptly without a taper plan when clinically appropriate'],
+    references: [{ label: 'SSRIs: MedlinePlus', url: 'https://medlineplus.gov/antidepressants.html' }],
+  },
+  {
+    aliases: ['snri', 'snris', 'serotonin norepinephrine reuptake inhibitor', 'serotonin norepinephrine reuptake inhibitors'],
+    name: 'SNRIs',
+    overview: 'SNRIs are antidepressants used for depression and several anxiety disorders, and some are also used for pain conditions.',
+    examples: ['venlafaxine', 'desvenlafaxine', 'duloxetine', 'levomilnacipran'],
+    cautions: ['nausea, sweating, and sexual side effects are common', 'blood pressure can matter for some agents', 'do not stop abruptly because discontinuation symptoms can be prominent'],
+    references: [{ label: 'Antidepressants: NIMH', url: 'https://www.nimh.nih.gov/health/topics/mental-health-medications' }],
+  },
+  {
+    aliases: ['antidepressant', 'antidepressants', 'depression medication', 'depression medications', 'drugs for depression', 'medications for depression'],
+    name: 'Antidepressants',
+    overview: 'Antidepressants for depression commonly include SSRIs, SNRIs, bupropion, mirtazapine, trazodone, TCAs, and MAOIs, with the exact choice depending on the clinical situation.',
+    examples: ['SSRIs such as sertraline or escitalopram', 'SNRIs such as venlafaxine or duloxetine', 'other options such as bupropion or mirtazapine'],
+    cautions: ['medication selection is patient-specific and not one-size-fits-all', 'side effects and warning profiles differ by class and agent', 'Vera can explain classes and references, but not choose a medication for a patient'],
+    references: [{ label: 'Mental Health Medications: NIMH', url: 'https://www.nimh.nih.gov/health/topics/mental-health-medications' }],
+  },
+];
+
 function hasKeyword(message: string, keywords: string[]) {
   return keywords.some((keyword) => message.includes(keyword));
 }
 
 function findPsychMedicationProfile(normalizedMessage: string) {
   return PSYCH_MEDICATION_PROFILES.find((profile) => (
+    profile.aliases.some((alias) => new RegExp(`\\b${escapeRegex(alias)}\\b`, 'i').test(normalizedMessage))
+  ));
+}
+
+function findMedicationClassProfile(normalizedMessage: string) {
+  return MEDICATION_CLASS_PROFILES.find((profile) => (
     profile.aliases.some((alias) => new RegExp(`\\b${escapeRegex(alias)}\\b`, 'i').test(normalizedMessage))
   ));
 }
@@ -233,15 +311,70 @@ function inferPsychMedicationIntent(normalizedMessage: string): PsychMedicationI
   return 'overview';
 }
 
+function isMedicationDoseQuestion(normalizedMessage: string) {
+  return /\b(starting dose|start dose|initial dose|dose of|daily dose|how much\b|mg\b)/i.test(normalizedMessage);
+}
+
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export function buildPsychMedicationReferenceHelp(normalizedMessage: string): AssistantResponsePayload | null {
   const profile = findPsychMedicationProfile(normalizedMessage);
+  const classProfile = findMedicationClassProfile(normalizedMessage);
+
+  if (/\bwhat antidepressant generic starts with a d\b/i.test(normalizedMessage)) {
+    return {
+      message: 'Examples of antidepressant generics that start with D include duloxetine, desvenlafaxine, and doxepin. Doxylamine is not an antidepressant.',
+      suggestions: [
+        'If you want, I can narrow that by class such as SNRI versus tricyclic.',
+      ],
+      answerMode: 'direct_reference_answer',
+      references: [{ label: 'Mental Health Medications: NIMH', url: 'https://www.nimh.nih.gov/health/topics/mental-health-medications' }],
+    };
+  }
+
+  if (!profile && classProfile) {
+    return {
+      message: `${classProfile.overview} Common examples include ${classProfile.examples.join(', ')}.`,
+      suggestions: [
+        ...classProfile.cautions.map((caution) => `Keep in mind: ${caution}`),
+        'If you want, I can also explain one medication or one class in more detail.',
+      ],
+      answerMode: 'medication_reference_answer',
+      references: classProfile.references,
+    };
+  }
+
+  if (!profile && /\b(what types? of drugs help with depression|what medications help with depression|what meds help with depression)\b/i.test(normalizedMessage)) {
+    const antidepressantClass = MEDICATION_CLASS_PROFILES.find((item) => item.name === 'Antidepressants');
+    if (antidepressantClass) {
+      return {
+        message: `${antidepressantClass.overview} Common examples include ${antidepressantClass.examples.join(', ')}.`,
+        suggestions: [
+          'If you want, I can break this down by class such as SSRIs versus SNRIs.',
+          'Vera can explain general reference information, but not recommend a specific medication for a patient.',
+        ],
+        answerMode: 'medication_reference_answer',
+        references: antidepressantClass.references,
+      };
+    }
+  }
 
   if (!profile) {
     return null;
+  }
+
+  if (profile.name === 'oxcarbazepine' && isMedicationDoseQuestion(normalizedMessage)) {
+    return {
+      message: 'For oxcarbazepine (Trileptal), a common adult seizure starting dose is 300 mg twice daily, but dosing depends on the indication, titration plan, renal or hepatic issues, interactions, and the exact prescribing reference. I should verify this against a prescribing reference before using it for patient-specific decisions.',
+      suggestions: [
+        'General reference only, not patient-specific prescribing advice.',
+        'If you want, I can also summarize major warnings or monitoring points for oxcarbazepine.',
+      ],
+      answerMode: 'medication_reference_answer',
+      references: profile.references,
+    };
   }
 
   const intent = inferPsychMedicationIntent(normalizedMessage);
@@ -251,8 +384,9 @@ export function buildPsychMedicationReferenceHelp(normalizedMessage: string): As
       message: `${profile.name[0]?.toUpperCase()}${profile.name.slice(1)} commonly causes ${profile.commonSideEffects.join(', ')}. Important higher-risk concerns include ${profile.seriousWarnings.join(', ')}.`,
       suggestions: [
         `If you want, I can also summarize monitoring points for ${profile.name}.`,
-        'Use medication reference answers as general reference support, not as patient-specific prescribing decisions.',
+        'General reference only, not patient-specific prescribing decisions.',
       ],
+      answerMode: 'medication_reference_answer',
       references: profile.references,
     };
   }
@@ -262,8 +396,9 @@ export function buildPsychMedicationReferenceHelp(normalizedMessage: string): As
       message: `For ${profile.name}, key monitoring themes include ${profile.monitoring.join(', ')}.`,
       suggestions: [
         `If you want, I can also summarize common side effects or major warnings for ${profile.name}.`,
-        'Use medication reference answers as general reference support, not as patient-specific prescribing decisions.',
+        'General reference only, not patient-specific prescribing decisions.',
       ],
+      answerMode: 'medication_reference_answer',
       references: profile.references,
     };
   }
@@ -273,8 +408,9 @@ export function buildPsychMedicationReferenceHelp(normalizedMessage: string): As
       message: `Major warning themes for ${profile.name} include ${profile.seriousWarnings.join(', ')}.`,
       suggestions: [
         `If you want, I can also summarize monitoring or counseling points for ${profile.name}.`,
-        'Use medication reference answers as general reference support, not as patient-specific prescribing decisions.',
+        'General reference only, not patient-specific prescribing decisions.',
       ],
+      answerMode: 'medication_reference_answer',
       references: profile.references,
     };
   }
@@ -284,8 +420,9 @@ export function buildPsychMedicationReferenceHelp(normalizedMessage: string): As
       message: `${profile.name[0]?.toUpperCase()}${profile.name.slice(1)} is a ${profile.className}. ${profile.mechanism}`,
       suggestions: [
         `If you want, I can also summarize side effects, warnings, or monitoring for ${profile.name}.`,
-        'Use medication reference answers as general reference support, not as patient-specific prescribing decisions.',
+        'General reference only, not patient-specific prescribing decisions.',
       ],
+      answerMode: 'medication_reference_answer',
       references: profile.references,
     };
   }
@@ -296,6 +433,7 @@ export function buildPsychMedicationReferenceHelp(normalizedMessage: string): As
       `If you want, I can narrow this to side effects, monitoring, warnings, or counseling points for ${profile.name}.`,
       `Counseling points often include: ${profile.counselingPoints.join('; ')}.`,
     ],
+    answerMode: 'medication_reference_answer',
     references: profile.references,
   };
 }

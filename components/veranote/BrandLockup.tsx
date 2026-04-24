@@ -1,4 +1,5 @@
 import { Logo } from "./Logo";
+import { LogoAnimated } from "./LogoAnimated";
 
 type BrandLockupProps = {
   variant: "nav" | "hero";
@@ -23,7 +24,12 @@ export function BrandLockup({ variant, subtitle }: BrandLockupProps) {
   if (variant === "hero") {
     return (
       <div className="space-y-4">
-        <Logo size="lg" />
+        <div className="relative inline-flex">
+          <div className="pointer-events-none absolute inset-[-14px] rounded-[28px] bg-[radial-gradient(circle_at_center,rgba(87,237,255,0.24),rgba(87,237,255,0.08)_44%,transparent_76%)] blur-xl" />
+          <div className="relative px-3 py-2">
+            <LogoAnimated />
+          </div>
+        </div>
       </div>
     );
   }

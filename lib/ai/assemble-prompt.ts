@@ -1,4 +1,13 @@
 import { buildFidelityDirectives, summarizeSourceConstraints } from '@/lib/ai/source-analysis';
+import { sanitizePHI } from '@/lib/security/phi-sanitizer';
+import { buildEmergingDrugPromptGuidance } from '@/lib/veranote/assistant-emerging-drug-intelligence';
+import type { ContradictionAnalysis } from '@/lib/veranote/assistant-contradiction-detector';
+import type { AuditRiskFlag, CptSupportAssessment, LevelOfCareAssessment, LosAssessment, MedicalNecessityAssessment } from '@/lib/veranote/defensibility/defensibility-types';
+import type { MseAnalysis } from '@/lib/veranote/assistant-mse-parser';
+import type { RiskAnalysis } from '@/lib/veranote/assistant-risk-detector';
+import type { ProviderMemoryItem } from '@/lib/veranote/memory/memory-types';
+import type { KnowledgeBundle } from '@/lib/veranote/knowledge/types';
+import type { DischargeStatus, LongitudinalContextSummary, NextAction, TriageSuggestion, WorkflowTask } from '@/lib/veranote/workflow/workflow-types';
 
 type AssemblePromptInput = {
   templatePrompt: string;
@@ -18,7 +27,8 @@ type AssemblePromptInput = {
 };
 
 export function assemblePrompt(input: AssemblePromptInput) {
-  const constraints = summarizeSourceConstraints(input.sourceInput);
+  const sanitizedSourceInput = sanitizePHI(input.sourceInput).sanitizedText;
+  const constraints = summarizeSourceConstraints(sanitizedSourceInput);
 
   const styleSettings = [
     `Specialty: ${input.specialty}`,
@@ -133,7 +143,10 @@ export function assemblePrompt(input: AssemblePromptInput) {
       : null,
   ].filter(Boolean) as string[];
 
-  const fidelityDirectives = [...sourceShapeDirectives, ...buildFidelityDirectives(input.sourceInput, input.keepCloserToSource)]
+  const fidelityDirectives = [...sourceShapeDirectives, ...buildFidelityDirectives(sanitizedSourceInput, input.keepCloserToSource)]
+    .map((item) => `- ${item}`)
+    .join('\n');
+  const emergingDrugDirectives = buildEmergingDrugPromptGuidance(sanitizedSourceInput)
     .map((item) => `- ${item}`)
     .join('\n');
 
@@ -186,7 +199,379 @@ export function assemblePrompt(input: AssemblePromptInput) {
     input.medicationProfileLines?.length ? '' : '',
     input.diagnosisProfileLines?.length ? ['Provider-structured psychiatric diagnosis / assessment profile:', ...input.diagnosisProfileLines].join('\n') : '',
     input.diagnosisProfileLines?.length ? '' : '',
+    emergingDrugDirectives ? 'Emerging drug / NPS guardrails:' : '',
+    emergingDrugDirectives || '',
+    emergingDrugDirectives ? '' : '',
     'Additional fidelity directives:',
     fidelityDirectives,
+  ].filter(Boolean).join('\n');
+}
+
+type AssistantKnowledgePromptInput = {
+  task: string;
+  sourceNote?: string;
+  knowledgeBundle: KnowledgeBundle;
+  providerMemory?: ProviderMemoryItem[];
+  medicalNecessity?: MedicalNecessityAssessment;
+  levelOfCare?: LevelOfCareAssessment;
+  cptSupport?: CptSupportAssessment;
+  losAssessment?: LosAssessment;
+  auditFlags?: AuditRiskFlag[];
+  nextActions?: NextAction[];
+  triageSuggestion?: TriageSuggestion;
+  dischargeStatus?: DischargeStatus;
+  workflowTasks?: WorkflowTask[];
+  longitudinalSummary?: LongitudinalContextSummary;
+  mseAnalysis?: MseAnalysis;
+  riskAnalysis?: RiskAnalysis;
+  contradictionAnalysis?: ContradictionAnalysis;
+};
+
+function compactLines(lines: string[], limit = 5) {
+  return lines.filter(Boolean).slice(0, limit);
+}
+
+function truncateBlock(value: string, maxLength = 2200) {
+  const normalized = value.replace(/\s+\n/g, '\n').trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength).trimEnd()}...`;
+}
+
+function formatInternalKnowledgeSection(bundle: KnowledgeBundle) {
+  const lines: string[] = [];
+
+  bundle.diagnosisConcepts.slice(0, 3).forEach((concept) => {
+    lines.push(`- Diagnosis concept: ${concept.displayName}`);
+    compactLines(concept.hallmarkFeatures, 2).forEach((item) => lines.push(`  - Hallmark feature: ${item}`));
+    compactLines(concept.ruleOutCautions, 2).forEach((item) => lines.push(`  - Rule-out caution: ${item}`));
+    compactLines(concept.documentationCautions, 2).forEach((item) => lines.push(`  - Documentation caution: ${item}`));
+  });
+
+  bundle.medicationConcepts.slice(0, 2).forEach((concept) => {
+    lines.push(`- Medication concept: ${concept.displayName}`);
+    compactLines(concept.documentationCautions, 2).forEach((item) => lines.push(`  - Documentation caution: ${item}`));
+    compactLines(concept.highRiskFlags, 2).forEach((item) => lines.push(`  - High-risk flag: ${item}`));
+  });
+
+  bundle.emergingDrugConcepts.slice(0, 2).forEach((concept) => {
+    lines.push(`- Emerging drug concept: ${concept.displayName}`);
+    compactLines(concept.intoxicationSignals, 2).forEach((item) => lines.push(`  - Intoxication signal: ${item}`));
+    compactLines(concept.withdrawalSignals, 2).forEach((item) => lines.push(`  - Withdrawal signal: ${item}`));
+    compactLines(concept.testingLimitations, 2).forEach((item) => lines.push(`  - Testing limitation: ${item}`));
+    compactLines(concept.documentationCautions, 2).forEach((item) => lines.push(`  - Documentation caution: ${item}`));
+  });
+
+  bundle.workflowGuidance.slice(0, 2).forEach((item) => {
+    lines.push(`- Workflow guidance: ${item.label}`);
+    compactLines(item.guidance, 2).forEach((entry) => lines.push(`  - Guidance: ${entry}`));
+    compactLines(item.cautions, 2).forEach((entry) => lines.push(`  - Caution: ${entry}`));
+  });
+
+  bundle.codingEntries.slice(0, 2).forEach((entry) => {
+    lines.push(`- Coding entry: ${entry.label}`);
+    lines.push(`  - ICD-10 family: ${entry.likelyIcd10Family}`);
+    lines.push(`  - Specificity issue: ${entry.specificityIssues}`);
+    lines.push(`  - Uncertainty issue: ${entry.uncertaintyIssues}`);
+  });
+
+  return lines;
+}
+
+function formatTrustedReferenceSection(bundle: KnowledgeBundle) {
+  return bundle.trustedReferences.slice(0, 4).map((reference) => {
+    const typeLabel = reference.categories.length ? reference.categories.join(', ') : 'reference';
+    return `- ${reference.label} (${typeLabel}) — ${reference.domain} — ${reference.url}`;
+  });
+}
+
+function formatMseAnalysisSection(analysis?: MseAnalysis) {
+  if (!analysis) {
+    return [];
+  }
+
+  const lines: string[] = [];
+  analysis.detectedDomains.slice(0, 6).forEach((domain) => {
+    lines.push(`- Detected ${domain.domain}: ${domain.matches.join(', ')}`);
+  });
+  if (analysis.missingDomains.length) {
+    lines.push(`- Missing domains: ${analysis.missingDomains.join(', ')}`);
+  }
+  analysis.unsupportedNormals.slice(0, 4).forEach((warning) => lines.push(`- Unsupported normal warning: ${warning}`));
+  analysis.ambiguousSections.slice(0, 4).forEach((warning) => lines.push(`- Ambiguity: ${warning}`));
+  return lines;
+}
+
+function formatRiskAnalysisSection(analysis?: RiskAnalysis) {
+  if (!analysis) {
+    return [];
+  }
+
+  const lines: string[] = [];
+  const appendSignals = (label: string, signals: RiskAnalysis['suicide']) => {
+    if (!signals.length) {
+      lines.push(`- ${label}: insufficient data`);
+      return;
+    }
+    signals.slice(0, 4).forEach((signal) => {
+      lines.push(`- ${label}: ${signal.subtype} (${signal.confidenceLevel}) via ${signal.matchedKeywords.join(', ')}`);
+      lines.push(`  - Caution: ${signal.documentationCaution}`);
+    });
+  };
+
+  appendSignals('Suicide', analysis.suicide);
+  appendSignals('Violence', analysis.violence);
+  appendSignals('Grave disability', analysis.graveDisability);
+  analysis.generalWarnings.forEach((warning) => lines.push(`- Warning: ${warning}`));
+  return lines;
+}
+
+function formatContradictionSection(analysis?: ContradictionAnalysis) {
+  if (!analysis || !analysis.contradictions.length) {
+    return [];
+  }
+
+  return analysis.contradictions.slice(0, 4).map((item) => `- ${item.label} (${item.severity}): ${item.detail}`);
+}
+
+function formatProviderMemorySection(memoryItems?: ProviderMemoryItem[]) {
+  if (!memoryItems?.length) {
+    return [];
+  }
+
+  return memoryItems.slice(0, 5).map((item) => {
+    const tags = item.tags.length ? ` [tags: ${item.tags.join(', ')}]` : '';
+    return `- ${item.category}: ${item.content}${tags}`;
+  });
+}
+
+function formatMedicalNecessitySection(assessment?: MedicalNecessityAssessment) {
+  if (!assessment) {
+    return [];
+  }
+
+  const lines: string[] = [];
+  assessment.signals.forEach((signal) => {
+    lines.push(`- ${signal.category}: ${signal.strength}`);
+    signal.evidence.slice(0, 2).forEach((item) => lines.push(`  - Evidence: ${item}`));
+  });
+  assessment.missingElements.slice(0, 4).forEach((item) => lines.push(`- Missing element: ${item}`));
+  return lines;
+}
+
+function formatLevelOfCareSection(assessment?: LevelOfCareAssessment) {
+  if (!assessment) {
+    return [];
+  }
+
+  return [
+    `- Suggested level: ${assessment.suggestedLevel}`,
+    ...assessment.justification.slice(0, 4).map((item) => `  - Justification: ${item}`),
+    ...assessment.missingJustification.slice(0, 4).map((item) => `  - Missing justification: ${item}`),
+  ];
+}
+
+function formatLosSection(assessment?: LosAssessment) {
+  if (!assessment) {
+    return [];
+  }
+
+  return [
+    ...assessment.reasonsForContinuedStay.slice(0, 4).map((item) => `- Continued stay: ${item}`),
+    ...assessment.barriersToDischarge.slice(0, 4).map((item) => `- Discharge barrier: ${item}`),
+    ...assessment.stabilityIndicators.slice(0, 4).map((item) => `- Stability indicator: ${item}`),
+    ...assessment.missingDischargeCriteria.slice(0, 4).map((item) => `- Missing discharge criterion: ${item}`),
+  ];
+}
+
+function formatAuditFlagsSection(flags?: AuditRiskFlag[]) {
+  if (!flags?.length) {
+    return [];
+  }
+
+  return flags.slice(0, 5).map((flag) => `- ${flag.type} (${flag.severity}): ${flag.message}`);
+}
+
+function formatCptSupportSection(assessment?: CptSupportAssessment) {
+  if (!assessment) {
+    return [];
+  }
+
+  return [
+    `- Summary: ${assessment.summary}`,
+    ...assessment.documentationElements.slice(0, 3).map((item) => `  - Documentation element: ${item}`),
+    ...assessment.timeHints.slice(0, 2).map((item) => `  - Time hint: ${item}`),
+    ...assessment.riskComplexityIndicators.slice(0, 2).map((item) => `  - Complexity indicator: ${item}`),
+    ...assessment.cautions.slice(0, 3).map((item) => `  - Caution: ${item}`),
+  ];
+}
+
+function formatNextActionsSection(actions?: NextAction[]) {
+  if (!actions?.length) {
+    return [];
+  }
+
+  return actions.slice(0, 5).flatMap((action) => ([
+    `- ${action.suggestion}`,
+    `  - Rationale: ${action.rationale}`,
+    `  - Confidence: ${action.confidence}`,
+  ]));
+}
+
+function formatTriageSection(suggestion?: TriageSuggestion) {
+  if (!suggestion) {
+    return [];
+  }
+
+  return [
+    `- Suggested level: ${suggestion.level}`,
+    ...compactLines(suggestion.reasoning, 3).map((item) => `  - Reasoning: ${item}`),
+    `  - Confidence: ${suggestion.confidence}`,
+  ];
+}
+
+function formatDischargeSection(status?: DischargeStatus) {
+  if (!status) {
+    return [];
+  }
+
+  return [
+    `- Readiness: ${status.readiness}`,
+    ...compactLines(status.supportingFactors, 3).map((item) => `  - Supporting factor: ${item}`),
+    ...compactLines(status.barriers, 3).map((item) => `  - Barrier: ${item}`),
+  ];
+}
+
+function formatWorkflowTasksSection(tasks?: WorkflowTask[]) {
+  if (!tasks?.length) {
+    return [];
+  }
+
+  return tasks.slice(0, 5).flatMap((task) => ([
+    `- ${task.task}`,
+    `  - Reason: ${task.reason}`,
+    `  - Priority: ${task.priority}`,
+  ]));
+}
+
+function formatLongitudinalSection(summary?: LongitudinalContextSummary) {
+  if (!summary) {
+    return [];
+  }
+
+  return [
+    ...compactLines(summary.symptomTrends, 2).map((item) => `- Symptom trend: ${item}`),
+    ...compactLines(summary.riskTrends, 2).map((item) => `- Risk trend: ${item}`),
+    ...compactLines(summary.responseToTreatment, 2).map((item) => `- Treatment trend: ${item}`),
+    ...compactLines(summary.recurringIssues, 2).map((item) => `- Recurring issue: ${item}`),
+  ];
+}
+
+export function assembleAssistantKnowledgePrompt(input: AssistantKnowledgePromptInput) {
+  const sanitizedTask = sanitizePHI(input.task).sanitizedText;
+  const sanitizedSourceNote = sanitizePHI(input.sourceNote || '').sanitizedText;
+  const internalKnowledge = formatInternalKnowledgeSection(input.knowledgeBundle);
+  const providerMemory = formatProviderMemorySection(input.providerMemory);
+  const medicalNecessity = formatMedicalNecessitySection(input.medicalNecessity);
+  const levelOfCare = formatLevelOfCareSection(input.levelOfCare);
+  const nextSteps = formatNextActionsSection(input.nextActions);
+  const triage = formatTriageSection(input.triageSuggestion);
+  const discharge = formatDischargeSection(input.dischargeStatus);
+  const workflowTasks = formatWorkflowTasksSection(input.workflowTasks);
+  const cptSupport = formatCptSupportSection(input.cptSupport);
+  const los = formatLosSection(input.losAssessment);
+  const longitudinal = formatLongitudinalSection(input.longitudinalSummary);
+  const auditFlags = formatAuditFlagsSection(input.auditFlags);
+  const trustedReferences = formatTrustedReferenceSection(input.knowledgeBundle);
+  const mseAnalysis = formatMseAnalysisSection(input.mseAnalysis);
+  const riskAnalysis = formatRiskAnalysisSection(input.riskAnalysis);
+  const contradictions = formatContradictionSection(input.contradictionAnalysis);
+
+  return [
+    '[SOURCE NOTE]',
+    sanitizedSourceNote.trim() ? truncateBlock(sanitizedSourceNote) : 'No source note provided.',
+    '',
+    '[TASK]',
+    sanitizedTask.trim() || 'No task provided.',
+    '',
+    '[VERA PERSONA]',
+    '- Be calm, concise, professional, and psych-first.',
+    '- Be warm but not chatty. Be direct but not harsh.',
+    '- Stay source-first. Do not overstate, smooth away contradictions, or fabricate missing normals.',
+    '- Use consistent pushback when needed: "I would not document it that way from this source.", "That wording is too certain for the available data.", or "Low-risk wording is not supported here."',
+    '- Do not sound like a generic chatbot, social companion, or autonomous clinician.',
+    '',
+    '[RESPONSE SHAPE]',
+    '- Direct reference questions: answer first, then only the minimal caveat needed.',
+    '- Chart-ready wording requests: give the chart-ready wording first, then a brief why-safer line, then a brief what-not-to-say line only if useful.',
+    '- Contradiction or risk prompts: warning first, then source-faithful interpretation, then chart-ready wording, then one suggested next step.',
+    '- Pressure prompts: refuse the unsafe shortcut first, then give a safer alternative, then a brief explanation.',
+    '- Vague follow-ups: carry forward the prior answer mode when safe; only ask a clarifying question when safety or source fidelity would otherwise be lost.',
+    '',
+    internalKnowledge.length ? '[INTERNAL PSYCHIATRY KNOWLEDGE]' : '',
+    internalKnowledge.join('\n'),
+    internalKnowledge.length ? '' : '',
+    providerMemory.length ? '[PROVIDER PREFERENCES]' : '',
+    providerMemory.length ? 'Provider style preferences (NOT clinical facts)' : '',
+    providerMemory.join('\n'),
+    providerMemory.length ? '' : '',
+    medicalNecessity.length ? '[MEDICAL NECESSITY]' : '',
+    medicalNecessity.join('\n'),
+    medicalNecessity.length ? '' : '',
+    levelOfCare.length ? '[LEVEL OF CARE]' : '',
+    levelOfCare.join('\n'),
+    levelOfCare.length ? '' : '',
+    nextSteps.length ? '[NEXT STEPS]' : '',
+    nextSteps.join('\n'),
+    nextSteps.length ? '' : '',
+    triage.length ? '[TRIAGE CONSIDERATION]' : '',
+    triage.join('\n'),
+    triage.length ? '' : '',
+    discharge.length ? '[DISCHARGE STATUS]' : '',
+    discharge.join('\n'),
+    discharge.length ? '' : '',
+    workflowTasks.length ? '[WORKFLOW TASKS]' : '',
+    workflowTasks.join('\n'),
+    workflowTasks.length ? '' : '',
+    cptSupport.length ? '[BILLING / CPT SUPPORT]' : '',
+    cptSupport.join('\n'),
+    cptSupport.length ? '' : '',
+    los.length ? '[LOS CONSIDERATIONS]' : '',
+    los.join('\n'),
+    los.length ? '' : '',
+    longitudinal.length ? '[LONGITUDINAL CONTEXT]' : '',
+    longitudinal.join('\n'),
+    longitudinal.length ? '' : '',
+    auditFlags.length ? '[AUDIT FLAGS]' : '',
+    auditFlags.join('\n'),
+    auditFlags.length ? '' : '',
+    mseAnalysis.length ? '[MSE ANALYSIS]' : '',
+    mseAnalysis.join('\n'),
+    mseAnalysis.length ? '' : '',
+    riskAnalysis.length ? '[RISK SIGNALS]' : '',
+    riskAnalysis.join('\n'),
+    riskAnalysis.length ? '' : '',
+    contradictions.length ? '[CONTRADICTIONS]' : '',
+    contradictions.join('\n'),
+    contradictions.length ? '' : '',
+    trustedReferences.length ? '[TRUSTED REFERENCES]' : '',
+    trustedReferences.join('\n'),
+    trustedReferences.length ? '' : '',
+    '[GUARDRAILS]',
+    '- Source note content is highest priority.',
+    '- Internal psychiatry knowledge is supportive, not authoritative.',
+    '- Diagnosis must be framed as proposed based on available information.',
+    '- Do not invent symptoms, timelines, medication effects, or normal MSE findings.',
+    '- Preserve uncertainty and separate observed facts from inference.',
+    '- Do not collapse references into unsupported factual statements.',
+    '- Avoid meta assistant commentary such as explaining that you should not answer a question. Give the safe, source-faithful response directly.',
+    '[FIDELITY RULES]',
+    '- Do not auto-complete missing MSE domains.',
+    '- Do not resolve contradictions silently.',
+    '- If risk is unclear, state insufficient data.',
+    '- Distinguish observed, reported, and inferred material.',
+    '- Treat workflow suggestions as supportive only and phrase them conservatively.',
   ].filter(Boolean).join('\n');
 }

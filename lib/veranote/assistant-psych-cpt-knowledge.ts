@@ -1,3 +1,4 @@
+import { evaluateCptSupport } from '@/lib/veranote/defensibility/cpt-support';
 import type { AssistantReferenceSource, AssistantResponsePayload } from '@/types/assistant';
 
 function hasKeyword(message: string, keywords: string[]) {
@@ -88,6 +89,7 @@ function looksLikePsychCptQuestion(normalized: string) {
 export function buildPsychCptHelp(normalizedMessage: string, currentDraftText?: string): AssistantResponsePayload | null {
   const normalized = normalizedMessage.toLowerCase().trim();
   const normalizedDraftContext = currentDraftText?.toLowerCase().trim() || '';
+  const draftCptSupport = normalizedDraftContext ? evaluateCptSupport(normalizedDraftContext) : null;
 
   if (!normalized || !looksLikePsychCptQuestion(normalized)) {
     return null;
@@ -101,6 +103,7 @@ export function buildPsychCptHelp(normalizedMessage: string, currentDraftText?: 
         'This draft has a billing-support concern if anyone is thinking about crisis psychotherapy. The wording suggests urgency or safety work, but it still sounds thin on crisis-intervention timing and explicit crisis-psychotherapy support.',
         [
           'What looks missing: documented crisis psychotherapy time and clearer crisis-intervention content.',
+          ...(draftCptSupport?.riskComplexityIndicators[0] ? [draftCptSupport.riskComplexityIndicators[0]] : []),
           'Why it matters: safety discussion or urgency alone does not automatically support 90839 or 90840.',
         ],
       );
@@ -112,6 +115,7 @@ export function buildPsychCptHelp(normalizedMessage: string, currentDraftText?: 
         'This draft has a billing-support concern if anyone is thinking about psychotherapy add-on billing. Right now it mostly reads like outpatient E/M or med-management follow-up, not clearly distinct psychotherapy work.',
         [
           'What looks missing: supportable psychotherapy content and psychotherapy timing that can stand apart from the medical-management portion.',
+          ...(draftCptSupport?.timeHints[0] ? [draftCptSupport.timeHints[0]] : []),
           'Why it matters: if the draft still reads like straightforward med management after removing a few counseling phrases, that is a warning against implying an add-on family.',
         ],
       );
@@ -123,6 +127,7 @@ export function buildPsychCptHelp(normalizedMessage: string, currentDraftText?: 
         'This draft has a billing-support concern if anyone is thinking about family psychotherapy. It currently reads more like collateral, coordination, or a family update than clearly documented family psychotherapy.',
         [
           'What looks missing: explicit therapeutic work with the family and a family-focused treatment purpose.',
+          ...(draftCptSupport?.documentationElements[0] ? [draftCptSupport.documentationElements[0]] : []),
           'Why it matters: family presence or collateral input does not automatically support 90846 or 90847.',
         ],
       );

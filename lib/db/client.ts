@@ -4,20 +4,20 @@ import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '@/lib/constant
 import { DEFAULT_PROVIDER_ACCOUNT_ID } from '@/lib/constants/provider-accounts';
 import { DEFAULT_PROVIDER_IDENTITY_ID, findProviderIdentity } from '@/lib/constants/provider-identities';
 import { mergePresetCatalog, type NotePreset } from '@/lib/note/presets';
+import { buildDraftRecoveryState, getDraftPriorityScore } from '@/lib/veranote/draft-recovery';
 import { createEmptyAssistantLearningStore, type AssistantLearningStore } from '@/lib/veranote/assistant-learning';
 import { buildVeraMemoryLedger } from '@/lib/veranote/vera-memory-ledger';
-import type { DraftSession } from '@/types/session';
+import type { DraftSession, PersistedDraftSession } from '@/types/session';
 import type { BetaFeedbackCategory, BetaFeedbackItem, BetaFeedbackMetadata } from '@/types/beta-feedback';
 import type { VeranoteBuildTask } from '@/types/task';
 import type { VeraMemoryLedger } from '@/types/vera-memory';
+import type { DictationAuditEvent } from '@/types/dictation';
 
-type DraftRecord = DraftSession & {
-  id: string;
-  updatedAt: string;
-};
+type DraftRecord = PersistedDraftSession;
 
 type PrototypeDb = {
   drafts: DraftRecord[];
+  dictationAuditEvents: DictationAuditEvent[];
   providerSettings: ProviderSettings;
   providerSettingsByProviderId: Record<string, ProviderSettings>;
   currentProviderAccountId: string;
@@ -35,6 +35,7 @@ const DB_PATH = path.join(DATA_DIR, 'prototype-db.json');
 
 const defaultDb: PrototypeDb = {
   drafts: [],
+  dictationAuditEvents: [],
   providerSettings: DEFAULT_PROVIDER_SETTINGS,
   providerSettingsByProviderId: {
     [DEFAULT_PROVIDER_IDENTITY_ID]: DEFAULT_PROVIDER_SETTINGS,
@@ -77,7 +78,15 @@ async function readDb(): Promise<PrototypeDb> {
     const parsed = JSON.parse(raw) as Partial<PrototypeDb>;
 
     return {
-      drafts: Array.isArray(parsed.drafts) ? parsed.drafts : [],
+      drafts: Array.isArray(parsed.drafts) ? parsed.drafts.map((draft) => normalizeDraftRecord(draft as Partial<DraftRecord>)) : [],
+      dictationAuditEvents: Array.isArray(parsed.dictationAuditEvents)
+        ? parsed.dictationAuditEvents.filter((event): event is DictationAuditEvent => (
+          Boolean(event)
+          && typeof event === 'object'
+          && typeof (event as DictationAuditEvent).id === 'string'
+          && typeof (event as DictationAuditEvent).eventName === 'string'
+        ))
+        : [],
       providerSettings: {
         ...DEFAULT_PROVIDER_SETTINGS,
         ...(parsed.providerSettings || {}),
@@ -166,28 +175,263 @@ function createFeedbackId() {
   return `feedback_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export async function saveDraft(draft: DraftSession) {
-  const db = await readDb();
-  const record: DraftRecord = {
-    ...draft,
-    id: createDraftId(),
-    updatedAt: new Date().toISOString(),
-  };
+function normalizeDraftRecord(rawDraft: Partial<DraftRecord>): DraftRecord {
+  const updatedAt = typeof rawDraft.updatedAt === 'string' ? rawDraft.updatedAt : new Date().toISOString();
+  const providerIdentityId = typeof rawDraft.providerIdentityId === 'string' && rawDraft.providerIdentityId
+    ? rawDraft.providerIdentityId
+    : DEFAULT_PROVIDER_IDENTITY_ID;
+  const draftId = typeof rawDraft.id === 'string' && rawDraft.id ? rawDraft.id : createDraftId();
 
-  db.drafts = [record, ...db.drafts].slice(0, 50);
+  return {
+    draftId,
+    draftVersion: typeof rawDraft.version === 'number' && rawDraft.version > 0 ? rawDraft.version : 1,
+    providerIdentityId,
+    lastSavedAt: typeof rawDraft.lastSavedAt === 'string' ? rawDraft.lastSavedAt : updatedAt,
+    specialty: typeof rawDraft.specialty === 'string' ? rawDraft.specialty : 'Psychiatry',
+    role: typeof rawDraft.role === 'string' ? rawDraft.role : 'Psychiatric NP',
+    noteType: typeof rawDraft.noteType === 'string' ? rawDraft.noteType : 'Inpatient Psych Progress Note',
+    template: typeof rawDraft.template === 'string' ? rawDraft.template : 'Default Inpatient Psych Progress Note',
+    outputStyle: typeof rawDraft.outputStyle === 'string' ? rawDraft.outputStyle : 'Standard',
+    format: typeof rawDraft.format === 'string' ? rawDraft.format : 'Labeled Sections',
+    keepCloserToSource: rawDraft.keepCloserToSource !== false,
+    flagMissingInfo: rawDraft.flagMissingInfo !== false,
+    outputScope: rawDraft.outputScope,
+    requestedSections: Array.isArray(rawDraft.requestedSections) ? rawDraft.requestedSections : undefined,
+    selectedPresetId: typeof rawDraft.selectedPresetId === 'string' ? rawDraft.selectedPresetId : undefined,
+    presetName: typeof rawDraft.presetName === 'string' ? rawDraft.presetName : undefined,
+    customInstructions: typeof rawDraft.customInstructions === 'string' ? rawDraft.customInstructions : undefined,
+    encounterSupport: rawDraft.encounterSupport,
+    medicationProfile: Array.isArray(rawDraft.medicationProfile) ? rawDraft.medicationProfile : undefined,
+    diagnosisProfile: Array.isArray(rawDraft.diagnosisProfile) ? rawDraft.diagnosisProfile : undefined,
+    sourceInput: typeof rawDraft.sourceInput === 'string' ? rawDraft.sourceInput : '',
+    sourceSections: rawDraft.sourceSections,
+    dictationInsertions: rawDraft.dictationInsertions && typeof rawDraft.dictationInsertions === 'object' ? rawDraft.dictationInsertions : undefined,
+    note: typeof rawDraft.note === 'string' ? rawDraft.note : '',
+    flags: Array.isArray(rawDraft.flags) ? rawDraft.flags.filter((item): item is string => typeof item === 'string') : [],
+    copilotSuggestions: Array.isArray(rawDraft.copilotSuggestions) ? rawDraft.copilotSuggestions : [],
+    sectionReviewState: rawDraft.sectionReviewState,
+    recoveryState: rawDraft.recoveryState || buildDraftRecoveryState({
+      sourceInput: typeof rawDraft.sourceInput === 'string' ? rawDraft.sourceInput : '',
+      note: typeof rawDraft.note === 'string' ? rawDraft.note : '',
+      sectionReviewState: rawDraft.sectionReviewState,
+    }, { updatedAt }),
+    mode: rawDraft.mode === 'fallback' ? 'fallback' : 'live',
+    warning: typeof rawDraft.warning === 'string' ? rawDraft.warning : undefined,
+    id: draftId,
+    createdAt: typeof rawDraft.createdAt === 'string' ? rawDraft.createdAt : updatedAt,
+    updatedAt,
+    version: typeof rawDraft.version === 'number' && rawDraft.version > 0 ? rawDraft.version : 1,
+    archivedAt: typeof rawDraft.archivedAt === 'string' ? rawDraft.archivedAt : undefined,
+    lastOpenedAt: typeof rawDraft.lastOpenedAt === 'string' ? rawDraft.lastOpenedAt : rawDraft.recoveryState?.lastOpenedAt,
+  };
+}
+
+function sortDrafts(drafts: DraftRecord[]) {
+  return [...drafts].sort((left, right) => getDraftPriorityScore(right) - getDraftPriorityScore(left));
+}
+
+function createDraftFingerprint(draft: Pick<DraftSession, 'noteType' | 'template' | 'sourceInput' | 'note'>) {
+  return JSON.stringify({
+    noteType: draft.noteType || '',
+    template: draft.template || '',
+    sourceInput: draft.sourceInput?.trim() || '',
+    note: draft.note?.trim() || '',
+  });
+}
+
+function hasMeaningfulDraftChanges(previous: DraftRecord, next: DraftSession) {
+  return createDraftFingerprint(previous) !== createDraftFingerprint(next)
+    || JSON.stringify(previous.sectionReviewState || {}) !== JSON.stringify(next.sectionReviewState || {})
+    || JSON.stringify(previous.copilotSuggestions || []) !== JSON.stringify(next.copilotSuggestions || [])
+    || JSON.stringify(previous.dictationInsertions || {}) !== JSON.stringify(next.dictationInsertions || {})
+    || JSON.stringify(previous.flags || []) !== JSON.stringify(next.flags || []);
+}
+
+export async function saveDraft(draft: DraftSession, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const db = await readDb();
+  const now = new Date().toISOString();
+  const requestedDraftId = typeof draft.draftId === 'string' && draft.draftId ? draft.draftId : undefined;
+  const existingIndex = db.drafts.findIndex((item) => (
+    item.providerIdentityId === providerId
+    && !item.archivedAt
+    && (
+      (requestedDraftId && item.id === requestedDraftId)
+      || (
+        !requestedDraftId
+        && createDraftFingerprint(item) === createDraftFingerprint(draft)
+      )
+    )
+  ));
+  const existingRecord = existingIndex >= 0 ? db.drafts[existingIndex] : null;
+  const contentChanged = existingRecord ? hasMeaningfulDraftChanges(existingRecord, draft) : true;
+  const version = existingRecord
+    ? (contentChanged ? existingRecord.version + 1 : existingRecord.version)
+    : 1;
+  const record = normalizeDraftRecord({
+    ...(existingRecord || {}),
+    ...draft,
+    id: existingRecord?.id || requestedDraftId || createDraftId(),
+    draftId: existingRecord?.id || requestedDraftId,
+    providerIdentityId: providerId,
+    updatedAt: now,
+    lastSavedAt: now,
+    createdAt: existingRecord?.createdAt || now,
+    version,
+    draftVersion: version,
+    archivedAt: undefined,
+    recoveryState: buildDraftRecoveryState(draft, {
+      workflowStage: draft.recoveryState?.workflowStage,
+      composeLane: draft.recoveryState?.composeLane,
+      lastOpenedAt: existingRecord?.lastOpenedAt || draft.recoveryState?.lastOpenedAt,
+      updatedAt: now,
+    }),
+    lastOpenedAt: existingRecord?.lastOpenedAt || draft.recoveryState?.lastOpenedAt,
+  });
+
+  db.drafts = [record, ...db.drafts.filter((item) => item.id !== record.id)].slice(0, 100);
   await writeDb(db);
 
   return record;
 }
 
-export async function getLatestDraft() {
+export async function saveDictationAuditEvent(
+  event: DictationAuditEvent,
+  providerId = DEFAULT_PROVIDER_IDENTITY_ID,
+) {
   const db = await readDb();
-  return db.drafts[0] ?? null;
+  const normalizedEvent: DictationAuditEvent = {
+    ...event,
+    actorUserId: providerId,
+  };
+  db.dictationAuditEvents = [
+    normalizedEvent,
+    ...db.dictationAuditEvents.filter((item) => item.id !== normalizedEvent.id),
+  ].slice(0, 2000);
+  await writeDb(db);
+  return normalizedEvent;
 }
 
-export async function listDrafts() {
+export async function listDictationAuditEvents(input?: {
+  providerId?: string;
+  sessionId?: string;
+  limit?: number;
+}) {
+  const providerId = input?.providerId || DEFAULT_PROVIDER_IDENTITY_ID;
   const db = await readDb();
-  return db.drafts;
+  const events = db.dictationAuditEvents
+    .filter((event) => (
+      event.actorUserId === providerId
+      && (!input?.sessionId || event.dictationSessionId === input.sessionId)
+    ))
+    .sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime());
+
+  return events.slice(0, input?.limit || 25);
+}
+
+export async function getLatestDraft(providerId = DEFAULT_PROVIDER_IDENTITY_ID, options?: { includeArchived?: boolean }) {
+  const db = await readDb();
+  const drafts = sortDrafts(db.drafts.filter((draft) => (
+    draft.providerIdentityId === providerId && (options?.includeArchived ? true : !draft.archivedAt)
+  )));
+  return drafts[0] ?? null;
+}
+
+export async function listDrafts(providerId = DEFAULT_PROVIDER_IDENTITY_ID, options?: { includeArchived?: boolean }) {
+  const db = await readDb();
+  return sortDrafts(db.drafts.filter((draft) => (
+    draft.providerIdentityId === providerId && (options?.includeArchived ? true : !draft.archivedAt)
+  )));
+}
+
+export async function getDraftById(draftId: string, providerId = DEFAULT_PROVIDER_IDENTITY_ID, options?: { includeArchived?: boolean }) {
+  const db = await readDb();
+  return db.drafts.find((draft) => (
+    draft.id === draftId
+    && draft.providerIdentityId === providerId
+    && (options?.includeArchived ? true : !draft.archivedAt)
+  )) || null;
+}
+
+export async function markDraftOpened(
+  draftId: string,
+  providerId = DEFAULT_PROVIDER_IDENTITY_ID,
+  recoveryState?: DraftSession['recoveryState'],
+) {
+  const db = await readDb();
+  const index = db.drafts.findIndex((draft) => draft.id === draftId && draft.providerIdentityId === providerId);
+  if (index < 0) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const current = db.drafts[index];
+  const next = normalizeDraftRecord({
+    ...current,
+    lastOpenedAt: now,
+    updatedAt: current.updatedAt,
+    recoveryState: buildDraftRecoveryState(current, {
+      workflowStage: recoveryState?.workflowStage || current.recoveryState?.workflowStage,
+      composeLane: recoveryState?.composeLane || current.recoveryState?.composeLane,
+      lastOpenedAt: now,
+      updatedAt: current.updatedAt,
+    }),
+  });
+
+  db.drafts = [next, ...db.drafts.filter((draft) => draft.id !== draftId)];
+  await writeDb(db);
+  return next;
+}
+
+export async function archiveDraft(draftId: string, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const db = await readDb();
+  const index = db.drafts.findIndex((draft) => draft.id === draftId && draft.providerIdentityId === providerId);
+  if (index < 0) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const current = db.drafts[index];
+  const next = normalizeDraftRecord({
+    ...current,
+    archivedAt: now,
+    updatedAt: now,
+  });
+
+  db.drafts[index] = next;
+  await writeDb(db);
+  return next;
+}
+
+export async function restoreDraft(draftId: string, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const db = await readDb();
+  const index = db.drafts.findIndex((draft) => draft.id === draftId && draft.providerIdentityId === providerId);
+  if (index < 0) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const current = db.drafts[index];
+  const next = normalizeDraftRecord({
+    ...current,
+    archivedAt: undefined,
+    updatedAt: now,
+  });
+
+  db.drafts = [next, ...db.drafts.filter((draft) => draft.id !== draftId)];
+  await writeDb(db);
+  return next;
+}
+
+export async function deleteDraft(draftId: string, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const db = await readDb();
+  const beforeCount = db.drafts.length;
+  db.drafts = db.drafts.filter((draft) => !(draft.id === draftId && draft.providerIdentityId === providerId));
+  if (db.drafts.length === beforeCount) {
+    return false;
+  }
+
+  await writeDb(db);
+  return true;
 }
 
 export async function saveProviderSettings(settings: ProviderSettings, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {

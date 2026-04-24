@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { AppShell } from '@/components/layout/app-shell';
+import { InternalSurfaceNotice } from '@/components/layout/internal-surface-notice';
 import { AmbientCapabilityPanel } from '@/components/settings/ambient-capability-panel';
 import { DictationCapabilityPanel } from '@/components/settings/dictation-capability-panel';
 import { ProviderBetaOperationsPanel } from '@/components/settings/provider-beta-operations-panel';
@@ -7,9 +8,6 @@ import { ProviderSettingsPanel } from '@/components/settings/provider-settings-p
 import { providerProfiles } from '@/lib/constants/provider-profiles';
 import { getCareSettingForNoteType, getDefaultPresetCatalog, type CareSetting } from '@/lib/note/presets';
 import { INTERNAL_MODE_ENABLED } from '@/lib/veranote/access-mode';
-
-const psychRequiredSections = ['Date / Interval Update', 'Symptom Review', 'Medications / Changes / Side Effects', 'Mental Status / Observations', 'Safety / Risk', 'Assessment', 'Plan'];
-const psychGuardrails = ['Do not invent symptoms, MSE findings, medication response, or plan items.', 'Prefer omission or flags over unsupported detail.', 'Preserve explicit dates, inpatient risk language, and direct provider wording when clinically useful.'];
 
 const careSettingDescriptions: Record<CareSetting, string> = {
   Inpatient: 'Hospital-course, unit-context, discharge, and admission-oriented starter lanes.',
@@ -31,41 +29,29 @@ export default function TemplatesPage() {
   return (
     <AppShell
       title="Templates and Profiles"
-      subtitle="Control note structure, defaults, wording preferences, and output profile behavior. Week 3 is focused on tightening the psych-first wedge before pretending every specialty on earth is equally mature."
+      subtitle="Set the provider-facing defaults that actually shape daily note work: profile behavior, starter lanes, and psych-first template guidance. Internal planning surfaces stay visible here only as secondary references."
+      fullWidth
     >
-      <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
-        <aside className="aurora-panel rounded-[24px] p-4">
-          <div className="space-y-2 text-sm">
-            {['Psychiatry Wedge Profiles', 'Therapy Progress Note', 'General Medical Note Types', 'Output / EHR Profile', 'Personal Preferences'].map((item) => (
-              <div key={item} className="aurora-soft-panel rounded-[18px] px-3 py-2">{item}</div>
-            ))}
+      <div className="grid gap-6">
+        <InternalSurfaceNotice body="Use this page to tune product defaults and profile behavior, but remember it is still an internal configuration surface rather than a daily provider workflow page." />
+        <section className="aurora-panel rounded-[28px] p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-sm font-semibold uppercase tracking-[0.16em] text-cyan-100">Provider-facing controls</div>
+              <h2 className="mt-1 text-2xl font-semibold text-white">Keep this page focused on the defaults that shape real note work</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-7 text-cyan-50/84">
+                The main product job here is simple: make profile defaults, template lanes, and output preferences easier to understand without mixing them up with roadmap planning or internal beta operations.
+              </p>
+            </div>
+            <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium text-muted">
+              Product settings first
+            </div>
           </div>
-        </aside>
-        <div className="grid gap-6">
-          <ProviderSettingsPanel />
+        </section>
 
-          <ProviderBetaOperationsPanel />
+        <ProviderSettingsPanel />
 
-          <section className="aurora-panel rounded-[28px] p-6">
-            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">Voice capability planning</h2>
-                <p className="mt-1 text-sm text-muted">
-                  These are internal roadmap surfaces for Veranote&apos;s future voice lanes. They describe scaffold posture and safety boundaries without pretending the features are live.
-                </p>
-              </div>
-              <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium text-muted">
-                Internal only
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-6 xl:grid-cols-2">
-              <DictationCapabilityPanel />
-              <AmbientCapabilityPanel />
-            </div>
-          </section>
-
-          <section className="aurora-panel rounded-[28px] p-6">
+        <section className="aurora-panel rounded-[28px] p-6">
             <h2 className="text-lg font-semibold">Psychiatry wedge profiles</h2>
             <p className="mt-1 text-sm text-muted">These founder-seeded profiles now map to real provider-profile defaults in the prototype. They should steer settings and workflow emphasis, not override trust guardrails.</p>
 
@@ -98,24 +84,26 @@ export default function TemplatesPage() {
                 </div>
               ))}
             </div>
-          </section>
+        </section>
 
-          <section className="aurora-panel rounded-[28px] p-6">
+        <section className="aurora-panel rounded-[28px] p-6">
             <h2 className="text-lg font-semibold">Starter templates by care setting</h2>
             <p className="mt-1 text-sm text-muted">These are the preset lanes providers should be able to recognize quickly: inpatient, outpatient, telehealth, or more general cross-setting templates.</p>
 
             <div className="mt-5 grid gap-5">
               {starterPresetGroups.map(({ setting, presets }) => (
-                <div key={setting} className="aurora-soft-panel rounded-[22px] p-4">
-                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <div className="text-sm font-semibold text-ink">{setting} starter lane</div>
-                      <p className="mt-1 text-sm text-muted">{careSettingDescriptions[setting]}</p>
+                <details key={setting} className="aurora-soft-panel rounded-[22px] p-4" open={setting === 'Outpatient'}>
+                  <summary className="cursor-pointer list-none">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <div className="text-sm font-semibold text-ink">{setting} starter lane</div>
+                        <p className="mt-1 text-sm text-muted">{careSettingDescriptions[setting]}</p>
+                      </div>
+                      <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium text-muted">
+                        {presets.length} preset{presets.length === 1 ? '' : 's'}
+                      </div>
                     </div>
-                    <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium text-muted">
-                      {presets.length} preset{presets.length === 1 ? '' : 's'}
-                    </div>
-                  </div>
+                  </summary>
                   <div className="mt-4 grid gap-4 lg:grid-cols-2">
                     {presets.map((preset) => (
                       <div key={preset.id} className="aurora-soft-panel rounded-[20px] p-4">
@@ -147,46 +135,49 @@ export default function TemplatesPage() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </details>
               ))}
             </div>
-          </section>
+        </section>
 
-          <section className="aurora-panel rounded-[28px] p-6">
-            <h2 className="text-lg font-semibold">Inpatient psych progress note defaults</h2>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <label className="grid gap-2 text-sm font-medium"><span>Template Name</span><input defaultValue="Psych Conservative Inpatient Note" className="rounded-lg border border-border p-3" /></label>
-              <label className="grid gap-2 text-sm font-medium"><span>Default Output Style</span><select className="rounded-lg border border-border p-3"><option>Standard</option><option>Concise</option><option>Polished</option></select></label>
-              <label className="grid gap-2 text-sm font-medium"><span>Default Format</span><select className="rounded-lg border border-border p-3"><option>Labeled Sections</option><option>Paragraph Style</option><option>Minimal Headings</option></select></label>
-              <label className="grid gap-2 text-sm font-medium"><span>Priority Behavior</span><select className="rounded-lg border border-border p-3"><option>Closer to source</option><option>Balanced cleanup</option><option>Risk-emphasis when supported</option></select></label>
-            </div>
-
-            <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <details className="aurora-panel rounded-[28px] p-6">
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
               <div>
-                <h3 className="font-medium">Required sections</h3>
-                <div className="mt-3 space-y-3 text-sm">
-                  {psychRequiredSections.map((item) => (
-                    <label key={item} className="flex items-start gap-3"><input type="checkbox" defaultChecked /> {item}</label>
-                  ))}
-                </div>
+                <h2 className="text-lg font-semibold">Internal planning surfaces</h2>
+                <p className="mt-1 text-sm text-muted">
+                  These are still useful for product and operations planning, but they are not part of the core provider-facing settings story.
+                </p>
               </div>
-              <div>
-                <h3 className="font-medium">Psych-first guardrails</h3>
-                <div className="mt-3 space-y-3 text-sm">
-                  {psychGuardrails.map((item) => (
-                    <div key={item} className="aurora-soft-panel rounded-[16px] p-3">{item}</div>
-                  ))}
-                </div>
+              <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium text-muted">
+                Internal only
               </div>
             </div>
+          </summary>
 
-            <label className="mt-6 grid gap-2 text-sm font-medium"><span>Footer / Disclaimer Text</span><textarea className="min-h-[120px] rounded-lg border border-border p-3" defaultValue="Draft note for clinician review. Preserve source-backed facts and verify flagged gaps before final use." /></label>
-            <div className="mt-6 flex gap-3">
-              <button className="aurora-primary-button rounded-xl px-5 py-3 font-medium">Save Template</button>
-              <button className="aurora-secondary-button rounded-xl px-5 py-3 font-medium">Reset Changes</button>
-            </div>
-          </section>
-        </div>
+          <div className="mt-5 grid gap-6">
+            <ProviderBetaOperationsPanel />
+
+            <section className="aurora-panel rounded-[24px] p-5">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Voice capability planning</h3>
+                  <p className="mt-1 text-sm text-muted">
+                    These roadmap panels describe future dictation and ambient-listening posture without implying live provider functionality.
+                  </p>
+                </div>
+                <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium text-muted">
+                  Internal only
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-6 xl:grid-cols-2">
+                <DictationCapabilityPanel />
+                <AmbientCapabilityPanel />
+              </div>
+            </section>
+          </div>
+        </details>
       </div>
     </AppShell>
   );

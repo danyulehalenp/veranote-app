@@ -3,7 +3,9 @@ export function LogoAnimated() {
     <img
       src="/veranote-logo-animated.svg"
       alt="Veranote"
-      className="h-16 w-auto"
+      width={320}
+      height={96}
+      className="block h-auto w-full max-w-[320px]"
     />
   );
 }

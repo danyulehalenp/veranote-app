@@ -60,6 +60,7 @@ export const DICTATION_HIGH_RISK_FLAG_TYPES: DictationReviewFlagType[] = [
 
 export const DICTATION_AUDIT_EVENT_NAMES: DictationEventName[] = [
   'dictation_session_started',
+  'dictation_draft_resumed',
   'dictation_permission_denied',
   'dictation_audio_stream_started',
   'dictation_interim_segment',

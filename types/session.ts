@@ -1,4 +1,5 @@
 import type { NoteSectionKey, OutputScope } from '@/lib/note/section-profiles';
+import type { DictationTargetSection, TranscriptReviewFlag } from '@/types/dictation';
 
 export interface NoteClaim {
     claim_id: string;
@@ -61,6 +62,10 @@ export function validateClaim(claim: NoteClaim): string[] {
     return errors;
 }
 export interface DraftSession {
+  draftId?: string;
+  draftVersion?: number;
+  providerIdentityId?: string;
+  lastSavedAt?: string;
   specialty: string;
   role: string;
   noteType: string;
@@ -79,12 +84,36 @@ export interface DraftSession {
   diagnosisProfile?: StructuredPsychDiagnosisProfileEntry[];
   sourceInput: string;
   sourceSections?: unknown;
+  dictationInsertions?: Partial<Record<DictationTargetSection, DictationInsertionRecord[]>>;
   note: string;
   flags: string[];
   copilotSuggestions: CopilotSuggestion[];
   sectionReviewState?: SectionReviewState;
+  recoveryState?: DraftRecoveryState;
   mode: "live" | "fallback";
   warning?: string;
+}
+
+export type DraftWorkflowStage = 'compose' | 'review';
+
+export type DraftComposeLane = 'setup' | 'source' | 'support' | 'finish';
+
+export interface DraftRecoveryState {
+  workflowStage: DraftWorkflowStage;
+  composeLane: DraftComposeLane;
+  recommendedStage: DraftWorkflowStage;
+  updatedAt: string;
+  lastOpenedAt?: string;
+}
+
+export interface PersistedDraftSession extends DraftSession {
+  id: string;
+  providerIdentityId: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+  archivedAt?: string;
+  lastOpenedAt?: string;
 }
 
 export interface SourceSection {
@@ -141,6 +170,19 @@ export type StructuredPsychDiagnosisProfileEntry = {
 };
 
 export type SourceSections = Record<string, string>;
+
+export interface DictationInsertionRecord {
+  segmentId: string;
+  dictationSessionId: string;
+  targetSection: DictationTargetSection;
+  text: string;
+  insertedAt: string;
+  transactionId: string;
+  provider: string;
+  sourceMode: string;
+  confidence?: number;
+  reviewFlags: TranscriptReviewFlag[];
+}
 
 export interface SectionReviewEntry {
   heading: string;

@@ -5,14 +5,29 @@ import { normalizeEncounterSupport } from '@/lib/note/encounter-support';
 import { normalizeMedicationProfile } from '@/lib/note/medication-profile';
 import type { NoteSectionKey, OutputScope } from '@/lib/note/section-profiles';
 import type { DraftSession } from '@/types/session';
+import { getAuthorizedProviderContext, resolveScopedProviderIdentityId } from '@/lib/veranote/provider-session';
 
-export async function GET() {
-  const drafts = await listDrafts();
+export async function GET(request: Request) {
+  const authorizedProvider = await getAuthorizedProviderContext();
+  if (!authorizedProvider) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const providerId = resolveScopedProviderIdentityId(searchParams.get('providerId') || undefined, authorizedProvider.providerIdentityId);
+  const includeArchived = searchParams.get('includeArchived') === 'true';
+  const drafts = await listDrafts(providerId, { includeArchived });
   return NextResponse.json({ drafts });
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as Partial<DraftSession>;
+  const authorizedProvider = await getAuthorizedProviderContext();
+  if (!authorizedProvider) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const body = (await request.json()) as Partial<DraftSession> & { providerId?: string };
+  const providerId = resolveScopedProviderIdentityId(body.providerId, authorizedProvider.providerIdentityId);
 
   if (typeof body?.sourceInput !== 'string' || !body.sourceInput.trim()) {
     return NextResponse.json({ error: 'Source input is required.' }, { status: 400 });
@@ -23,6 +38,10 @@ export async function POST(request: Request) {
   }
 
   const draft: DraftSession = {
+    draftId: typeof body.draftId === 'string' ? body.draftId : undefined,
+    draftVersion: typeof body.draftVersion === 'number' ? body.draftVersion : undefined,
+    providerIdentityId: providerId,
+    lastSavedAt: typeof body.lastSavedAt === 'string' ? body.lastSavedAt : undefined,
     specialty: typeof body.specialty === 'string' ? body.specialty : 'Psychiatry',
     role: typeof body.role === 'string' ? body.role : 'Psychiatric NP',
     noteType: typeof body.noteType === 'string' ? body.noteType : 'Inpatient Psych Progress Note',
@@ -43,14 +62,16 @@ export async function POST(request: Request) {
     diagnosisProfile: normalizeDiagnosisProfile(body.diagnosisProfile),
     sourceInput: body.sourceInput,
     sourceSections: body.sourceSections,
+    dictationInsertions: body.dictationInsertions,
     note: body.note,
     flags: Array.isArray(body.flags) ? body.flags.filter((item): item is string => typeof item === 'string') : [],
     copilotSuggestions: Array.isArray(body.copilotSuggestions) ? body.copilotSuggestions : [],
     sectionReviewState: body.sectionReviewState,
+    recoveryState: body.recoveryState,
     mode: body.mode === 'fallback' ? 'fallback' : 'live',
     warning: typeof body.warning === 'string' ? body.warning : undefined,
   };
 
-  const saved = await saveDraft(draft);
+  const saved = await saveDraft(draft, providerId);
   return NextResponse.json({ draft: saved });
 }

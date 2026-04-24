@@ -1,19 +1,69 @@
-<svg width="320" height="96" viewBox="0 0 320 96" xmlns="http://www.w3.org/2000/svg">
+<svg width="320" height="96" viewBox="0 0 320 96" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="auroraGradient" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#081528"/>
-      <stop offset="45%" stop-color="#12B5D0"/>
-      <stop offset="100%" stop-color="#3BE0B9"/>
+    <linearGradient id="veraFrame" x1="16" y1="8" x2="86" y2="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#9EF7FF"/>
+      <stop offset="42%" stop-color="#2DD4F2"/>
+      <stop offset="100%" stop-color="#48F0C2"/>
     </linearGradient>
+    <linearGradient id="veraFold" x1="58" y1="10" x2="78" y2="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#D9FFFF"/>
+      <stop offset="100%" stop-color="#49EBC6"/>
+    </linearGradient>
+    <linearGradient id="veraCheck" x1="26" y1="52" x2="72" y2="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#84F7FF"/>
+      <stop offset="54%" stop-color="#2DD4F2"/>
+      <stop offset="100%" stop-color="#64FFC7"/>
+    </linearGradient>
+    <linearGradient id="veraWordmark" x1="98" y1="30" x2="250" y2="72" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F7FDFF"/>
+      <stop offset="38%" stop-color="#D5F8FF"/>
+      <stop offset="100%" stop-color="#99F0FF"/>
+    </linearGradient>
+    <radialGradient id="veraGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(48 42) rotate(90) scale(42 38)">
+      <stop offset="0%" stop-color="#30D7F5" stop-opacity="0.46"/>
+      <stop offset="70%" stop-color="#30D7F5" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#30D7F5" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="veraSoftGlow" x="0" y="0" width="100" height="92" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+      <feGaussianBlur stdDeviation="7" result="effect1_foregroundBlur"/>
+    </filter>
   </defs>
-  <path d="M16 8 H72 C76 8 80 12 80 16 V64 C80 68 76 72 72 72 H24 C20 72 16 68 16 64 V16 C16 12 20 8 24 8 Z"
-    stroke="url(#auroraGradient)" stroke-width="2.5" fill="none"/>
-  <path d="M64 8 L80 24 L64 24 Z" fill="url(#auroraGradient)"/>
-  <path d="M28 44 L44 60 L70 30"
-    stroke="url(#auroraGradient)" stroke-width="4"
-    stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="100" y="58" fill="#EEF8FF"
-    font-family="Inter, system-ui" font-size="36" font-weight="500">
+
+  <g opacity="0.9">
+    <ellipse cx="48" cy="42" rx="34" ry="30" fill="url(#veraGlow)"/>
+    <g filter="url(#veraSoftGlow)">
+      <ellipse cx="48" cy="42" rx="18" ry="15" fill="#1ED7F3" fill-opacity="0.3"/>
+    </g>
+  </g>
+
+  <path
+    d="M16 16C16 11.5817 19.5817 8 24 8H63.0294C65.1511 8 67.1853 8.84285 68.6856 10.3431L77.6569 19.3144C79.1571 20.8147 80 22.8489 80 24.9706V64C80 68.4183 76.4183 72 72 72H24C19.5817 72 16 68.4183 16 64V16Z"
+    stroke="url(#veraFrame)"
+    stroke-width="2.75"
+    fill="rgba(6,22,37,0.16)"
+  />
+  <path d="M63 8L80 25H67C64.7909 25 63 23.2091 63 21V8Z" fill="url(#veraFold)"/>
+  <path
+    d="M28 44L42.4 58L69 30"
+    stroke="url(#veraCheck)"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path d="M31 25H55" stroke="#B8FBFF" stroke-opacity="0.7" stroke-width="2" stroke-linecap="round"/>
+  <path d="M31 31H49" stroke="#75F2FF" stroke-opacity="0.55" stroke-width="2" stroke-linecap="round"/>
+
+  <text
+    x="100"
+    y="58"
+    fill="url(#veraWordmark)"
+    font-family="Avenir Next, Sora, Inter, system-ui, sans-serif"
+    font-size="36"
+    font-weight="600"
+    letter-spacing="-0.04em"
+  >
     Veranote
   </text>
 </svg>

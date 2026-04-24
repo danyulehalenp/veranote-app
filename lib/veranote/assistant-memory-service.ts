@@ -13,6 +13,8 @@ import {
   dismissPromptPreferenceSuggestion,
   dismissRewritePreferenceSuggestion,
   getProfilePromptPreferenceSuggestion,
+  getConversationalMemoryFacts,
+  getRelationshipStats,
   getProviderWorkflowInsights,
   getRewritePreferenceSuggestion,
   hydrateAssistantLearningFromServer,
@@ -21,10 +23,14 @@ import {
   markProfilePromptPreferenceUsed,
   markPromptPreferenceUsed,
   markRewritePreferenceUsed,
+  recordRelationshipSignal,
   recordLanePreferenceSelection,
   recordPromptPreferenceSelection,
   recordRewritePreferenceSelection,
+  rememberConversationalFact,
+  removeConversationalMemoryFact,
   resetAssistantLearningForProfile,
+  updateConversationalMemoryFact,
   type AssistantLearningStore,
 } from '@/lib/veranote/assistant-learning';
 import { resolveAcceptedLedgerReopenTarget } from '@/lib/veranote/vera-memory-ledger-service';
@@ -37,30 +43,36 @@ export type AssistantMemoryService = {
     learningStore: AssistantLearningStore;
     veraMemoryLedger: VeraMemoryLedger | null;
   }>;
-  getRewriteSuggestion: (noteType?: string | null) => ReturnType<typeof getRewritePreferenceSuggestion>;
-  recordRewriteSelection: (noteType: string, optionTone: Parameters<typeof recordRewritePreferenceSelection>[1]) => void;
-  dismissRewriteSuggestion: (noteType: string, optionTone: Parameters<typeof dismissRewritePreferenceSuggestion>[1]) => void;
-  acceptRewriteSuggestion: (noteType: string, optionTone: Parameters<typeof acceptRewritePreferenceSuggestion>[1]) => void;
-  clearAcceptedRewriteSuggestion: (noteType: string, optionTone: Parameters<typeof clearAcceptedRewritePreferenceSuggestion>[1]) => void;
-  markRewriteUsed: (noteType: string, optionTone: Parameters<typeof markRewritePreferenceUsed>[1]) => void;
-  dismissLaneSuggestion: (noteType: string, key: string) => void;
-  acceptLaneSuggestion: (noteType: string, key: string) => void;
-  clearAcceptedLaneSuggestion: (noteType: string, key: string) => void;
-  markLaneUsed: (noteType: string, key: string) => void;
-  recordLaneSelection: (input: Parameters<typeof recordLanePreferenceSelection>[0]) => void;
-  dismissPromptSuggestion: (noteType: string, key: string) => void;
-  acceptPromptSuggestion: (noteType: string, key: string) => void;
-  clearAcceptedPromptSuggestion: (noteType: string, key: string) => void;
-  markPromptUsed: (noteType: string, key: string) => void;
-  recordPromptSelection: (input: Parameters<typeof recordPromptPreferenceSelection>[0]) => void;
-  getProfilePromptSuggestion: (profileId?: string | null) => ReturnType<typeof getProfilePromptPreferenceSuggestion>;
-  dismissProfilePromptSuggestion: (profileId: string, key: string) => void;
-  acceptProfilePromptSuggestion: (profileId: string, key: string) => void;
-  clearAcceptedProfilePromptSuggestion: (profileId: string, key: string) => void;
-  markProfilePromptUsed: (profileId: string, key: string) => void;
-  getWorkflowInsights: (input: Parameters<typeof getProviderWorkflowInsights>[0]) => ReturnType<typeof getProviderWorkflowInsights>;
-  reopenAcceptedLedgerSuggestion: (itemId: string) => boolean;
-  resetLearningForProfile: (input: Parameters<typeof resetAssistantLearningForProfile>[0]) => void;
+  getRewriteSuggestion: (noteType?: string | null, providerId?: string) => ReturnType<typeof getRewritePreferenceSuggestion>;
+  recordRewriteSelection: (noteType: string, optionTone: Parameters<typeof recordRewritePreferenceSelection>[1], providerId?: string) => void;
+  dismissRewriteSuggestion: (noteType: string, optionTone: Parameters<typeof dismissRewritePreferenceSuggestion>[1], providerId?: string) => void;
+  acceptRewriteSuggestion: (noteType: string, optionTone: Parameters<typeof acceptRewritePreferenceSuggestion>[1], providerId?: string) => void;
+  clearAcceptedRewriteSuggestion: (noteType: string, optionTone: Parameters<typeof clearAcceptedRewritePreferenceSuggestion>[1], providerId?: string) => void;
+  markRewriteUsed: (noteType: string, optionTone: Parameters<typeof markRewritePreferenceUsed>[1], providerId?: string) => void;
+  dismissLaneSuggestion: (noteType: string, key: string, providerId?: string) => void;
+  acceptLaneSuggestion: (noteType: string, key: string, providerId?: string) => void;
+  clearAcceptedLaneSuggestion: (noteType: string, key: string, providerId?: string) => void;
+  markLaneUsed: (noteType: string, key: string, providerId?: string) => void;
+  recordLaneSelection: (input: Parameters<typeof recordLanePreferenceSelection>[0], providerId?: string) => void;
+  dismissPromptSuggestion: (noteType: string, key: string, providerId?: string) => void;
+  acceptPromptSuggestion: (noteType: string, key: string, providerId?: string) => void;
+  clearAcceptedPromptSuggestion: (noteType: string, key: string, providerId?: string) => void;
+  markPromptUsed: (noteType: string, key: string, providerId?: string) => void;
+  recordPromptSelection: (input: Parameters<typeof recordPromptPreferenceSelection>[0], providerId?: string) => void;
+  getProfilePromptSuggestion: (profileId?: string | null, providerId?: string) => ReturnType<typeof getProfilePromptPreferenceSuggestion>;
+  dismissProfilePromptSuggestion: (profileId: string, key: string, providerId?: string) => void;
+  acceptProfilePromptSuggestion: (profileId: string, key: string, providerId?: string) => void;
+  clearAcceptedProfilePromptSuggestion: (profileId: string, key: string, providerId?: string) => void;
+  markProfilePromptUsed: (profileId: string, key: string, providerId?: string) => void;
+  getWorkflowInsights: (input: Parameters<typeof getProviderWorkflowInsights>[0], providerId?: string) => ReturnType<typeof getProviderWorkflowInsights>;
+  rememberFact: (fact: string, providerId?: string) => ReturnType<typeof rememberConversationalFact>;
+  getRememberedFacts: (providerId?: string) => ReturnType<typeof getConversationalMemoryFacts>;
+  updateRememberedFact: (key: string, fact: string, providerId?: string) => ReturnType<typeof updateConversationalMemoryFact>;
+  removeRememberedFact: (key: string, providerId?: string) => ReturnType<typeof removeConversationalMemoryFact>;
+  recordRelationshipSignal: (signal: Parameters<typeof recordRelationshipSignal>[0], providerId?: string) => void;
+  getRelationshipStats: (providerId?: string) => ReturnType<typeof getRelationshipStats>;
+  reopenAcceptedLedgerSuggestion: (itemId: string, providerId?: string) => boolean;
+  resetLearningForProfile: (input: Parameters<typeof resetAssistantLearningForProfile>[0], providerId?: string) => void;
 };
 
 export const assistantMemoryService: AssistantMemoryService = {
@@ -73,73 +85,91 @@ export const assistantMemoryService: AssistantMemoryService = {
   hydrateMemoryBundle(providerId) {
     return hydrateAssistantMemoryBundleFromServer(providerId);
   },
-  getRewriteSuggestion(noteType) {
-    return getRewritePreferenceSuggestion(noteType);
+  getRewriteSuggestion(noteType, providerId) {
+    return getRewritePreferenceSuggestion(noteType, providerId);
   },
-  recordRewriteSelection(noteType, optionTone) {
-    recordRewritePreferenceSelection(noteType, optionTone);
+  recordRewriteSelection(noteType, optionTone, providerId) {
+    recordRewritePreferenceSelection(noteType, optionTone, providerId);
   },
-  dismissRewriteSuggestion(noteType, optionTone) {
-    dismissRewritePreferenceSuggestion(noteType, optionTone);
+  dismissRewriteSuggestion(noteType, optionTone, providerId) {
+    dismissRewritePreferenceSuggestion(noteType, optionTone, providerId);
   },
-  acceptRewriteSuggestion(noteType, optionTone) {
-    acceptRewritePreferenceSuggestion(noteType, optionTone);
+  acceptRewriteSuggestion(noteType, optionTone, providerId) {
+    acceptRewritePreferenceSuggestion(noteType, optionTone, providerId);
   },
-  clearAcceptedRewriteSuggestion(noteType, optionTone) {
-    clearAcceptedRewritePreferenceSuggestion(noteType, optionTone);
+  clearAcceptedRewriteSuggestion(noteType, optionTone, providerId) {
+    clearAcceptedRewritePreferenceSuggestion(noteType, optionTone, providerId);
   },
-  markRewriteUsed(noteType, optionTone) {
-    markRewritePreferenceUsed(noteType, optionTone);
+  markRewriteUsed(noteType, optionTone, providerId) {
+    markRewritePreferenceUsed(noteType, optionTone, providerId);
   },
-  dismissLaneSuggestion(noteType, key) {
-    dismissLanePreferenceSuggestion(noteType, key);
+  dismissLaneSuggestion(noteType, key, providerId) {
+    dismissLanePreferenceSuggestion(noteType, key, providerId);
   },
-  acceptLaneSuggestion(noteType, key) {
-    acceptLanePreferenceSuggestion(noteType, key);
+  acceptLaneSuggestion(noteType, key, providerId) {
+    acceptLanePreferenceSuggestion(noteType, key, providerId);
   },
-  clearAcceptedLaneSuggestion(noteType, key) {
-    clearAcceptedLanePreferenceSuggestion(noteType, key);
+  clearAcceptedLaneSuggestion(noteType, key, providerId) {
+    clearAcceptedLanePreferenceSuggestion(noteType, key, providerId);
   },
-  markLaneUsed(noteType, key) {
-    markLanePreferenceUsed(noteType, key);
+  markLaneUsed(noteType, key, providerId) {
+    markLanePreferenceUsed(noteType, key, providerId);
   },
-  recordLaneSelection(input) {
-    recordLanePreferenceSelection(input);
+  recordLaneSelection(input, providerId) {
+    recordLanePreferenceSelection(input, providerId);
   },
-  dismissPromptSuggestion(noteType, key) {
-    dismissPromptPreferenceSuggestion(noteType, key);
+  dismissPromptSuggestion(noteType, key, providerId) {
+    dismissPromptPreferenceSuggestion(noteType, key, providerId);
   },
-  acceptPromptSuggestion(noteType, key) {
-    acceptPromptPreferenceSuggestion(noteType, key);
+  acceptPromptSuggestion(noteType, key, providerId) {
+    acceptPromptPreferenceSuggestion(noteType, key, providerId);
   },
-  clearAcceptedPromptSuggestion(noteType, key) {
-    clearAcceptedPromptPreferenceSuggestion(noteType, key);
+  clearAcceptedPromptSuggestion(noteType, key, providerId) {
+    clearAcceptedPromptPreferenceSuggestion(noteType, key, providerId);
   },
-  markPromptUsed(noteType, key) {
-    markPromptPreferenceUsed(noteType, key);
+  markPromptUsed(noteType, key, providerId) {
+    markPromptPreferenceUsed(noteType, key, providerId);
   },
-  recordPromptSelection(input) {
-    recordPromptPreferenceSelection(input);
+  recordPromptSelection(input, providerId) {
+    recordPromptPreferenceSelection(input, providerId);
   },
-  getProfilePromptSuggestion(profileId) {
-    return getProfilePromptPreferenceSuggestion(profileId);
+  getProfilePromptSuggestion(profileId, providerId) {
+    return getProfilePromptPreferenceSuggestion(profileId, providerId);
   },
-  dismissProfilePromptSuggestion(profileId, key) {
-    dismissProfilePromptPreferenceSuggestion(profileId, key);
+  dismissProfilePromptSuggestion(profileId, key, providerId) {
+    dismissProfilePromptPreferenceSuggestion(profileId, key, providerId);
   },
-  acceptProfilePromptSuggestion(profileId, key) {
-    acceptProfilePromptPreferenceSuggestion(profileId, key);
+  acceptProfilePromptSuggestion(profileId, key, providerId) {
+    acceptProfilePromptPreferenceSuggestion(profileId, key, providerId);
   },
-  clearAcceptedProfilePromptSuggestion(profileId, key) {
-    clearAcceptedProfilePromptPreferenceSuggestion(profileId, key);
+  clearAcceptedProfilePromptSuggestion(profileId, key, providerId) {
+    clearAcceptedProfilePromptPreferenceSuggestion(profileId, key, providerId);
   },
-  markProfilePromptUsed(profileId, key) {
-    markProfilePromptPreferenceUsed(profileId, key);
+  markProfilePromptUsed(profileId, key, providerId) {
+    markProfilePromptPreferenceUsed(profileId, key, providerId);
   },
-  getWorkflowInsights(input) {
-    return getProviderWorkflowInsights(input);
+  getWorkflowInsights(input, providerId) {
+    return getProviderWorkflowInsights(input, providerId);
   },
-  reopenAcceptedLedgerSuggestion(itemId) {
+  rememberFact(fact, providerId) {
+    return rememberConversationalFact(fact, providerId);
+  },
+  getRememberedFacts(providerId) {
+    return getConversationalMemoryFacts(providerId);
+  },
+  updateRememberedFact(key, fact, providerId) {
+    return updateConversationalMemoryFact(key, fact, providerId);
+  },
+  removeRememberedFact(key, providerId) {
+    return removeConversationalMemoryFact(key, providerId);
+  },
+  recordRelationshipSignal(signal, providerId) {
+    recordRelationshipSignal(signal, providerId);
+  },
+  getRelationshipStats(providerId) {
+    return getRelationshipStats(providerId);
+  },
+  reopenAcceptedLedgerSuggestion(itemId, providerId) {
     const target = resolveAcceptedLedgerReopenTarget({ id: itemId });
 
     if (!target) {
@@ -147,24 +177,24 @@ export const assistantMemoryService: AssistantMemoryService = {
     }
 
     if (target.kind === 'rewrite') {
-      clearAcceptedRewritePreferenceSuggestion(target.noteType, target.tone);
+      clearAcceptedRewritePreferenceSuggestion(target.noteType, target.tone, providerId);
       return true;
     }
 
     if (target.kind === 'lane') {
-      clearAcceptedLanePreferenceSuggestion(target.noteType, target.key);
+      clearAcceptedLanePreferenceSuggestion(target.noteType, target.key, providerId);
       return true;
     }
 
     if (target.kind === 'prompt') {
-      clearAcceptedPromptPreferenceSuggestion(target.noteType, target.key);
+      clearAcceptedPromptPreferenceSuggestion(target.noteType, target.key, providerId);
       return true;
     }
 
-    clearAcceptedProfilePromptPreferenceSuggestion(target.profileId, target.key);
+    clearAcceptedProfilePromptPreferenceSuggestion(target.profileId, target.key, providerId);
     return true;
   },
-  resetLearningForProfile(input) {
-    resetAssistantLearningForProfile(input);
+  resetLearningForProfile(input, providerId) {
+    resetAssistantLearningForProfile(input, providerId);
   },
 };

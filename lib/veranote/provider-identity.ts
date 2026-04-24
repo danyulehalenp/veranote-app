@@ -32,6 +32,18 @@ export function getAssistantLearningStorageKey(providerId: string) {
   return `veranote:assistant-learning:${providerId}`;
 }
 
+export function getDraftSessionStorageKey(providerId: string) {
+  return `clinical-documentation-transformer:draft-session:${providerId}`;
+}
+
+export function getDraftRecoveryStorageKey(providerId: string) {
+  return `clinical-documentation-transformer:draft-recovery:${providerId}`;
+}
+
+export function getAssistantPendingActionStorageKey(providerId: string) {
+  return `veranote:assistant-pending-action:${providerId}`;
+}
+
 export function getVeraCueUsageStorageKey(providerId: string) {
   return `veranote:vera-cue-usage:${providerId}`;
 }

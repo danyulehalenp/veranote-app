@@ -1,32 +1,67 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { AuthControls } from '@/components/auth/auth-controls';
 import { ProviderIdentitySwitcher } from '@/components/layout/provider-identity-switcher';
 import { BrandLockup } from '@/components/veranote/BrandLockup';
 import { INTERNAL_MODE_ENABLED } from '@/lib/veranote/access-mode';
+import { summarizeBetaFeedbackQueue } from '@/lib/beta/vera-gaps';
+import type { BetaFeedbackItem } from '@/types/beta-feedback';
 
 const primaryLinks = [
   { href: '/', label: 'Workspace' },
-  { href: '/dashboard/review', label: 'Full Review' },
   { href: '/dashboard/drafts', label: 'Saved Drafts' },
 ];
 
 const secondaryLinks = [
-  { href: '/dashboard/feedback', label: 'Feedback Inbox', status: 'Internal' },
-  { label: 'Templates', status: 'Internal' },
-  { label: 'Examples', status: 'Internal' },
-  { label: 'Eval', status: 'Not live' },
-  { label: 'Eval Results', status: 'Not live' },
+  { href: '/dashboard/internal', label: 'Internal Workbench', status: 'Internal' },
+  { href: '/monitoring', label: 'Monitoring', status: 'Internal' },
+  { href: '/dashboard/agent-factory', label: 'Agent Factory', status: 'Internal' },
 ];
 
 export function TopNav() {
   const pathname = usePathname();
   const feedbackHref = `${pathname === '/' ? '' : pathname}#beta-feedback`;
+  const [feedbackSummary, setFeedbackSummary] = useState<ReturnType<typeof summarizeBetaFeedbackQueue> | null>(null);
+
+  useEffect(() => {
+    if (!INTERNAL_MODE_ENABLED) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    async function loadFeedbackSummary() {
+      try {
+        const response = await fetch('/api/beta-feedback', {
+          cache: 'no-store',
+        });
+        const data = await response.json() as { feedback?: BetaFeedbackItem[] };
+
+        if (!response.ok || isCancelled) {
+          return;
+        }
+
+        setFeedbackSummary(summarizeBetaFeedbackQueue(data.feedback || []));
+      } catch {
+        if (!isCancelled) {
+          setFeedbackSummary(null);
+        }
+      }
+    }
+
+    void loadFeedbackSummary();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   return (
     <header className="sticky top-0 z-40 border-b border-cyan-200/10 bg-[rgba(4,12,24,0.82)] backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex w-full flex-col gap-3 px-3 py-3 md:px-4 lg:flex-row lg:items-center lg:justify-between lg:px-5">
         <div className="shrink-0">
           <Link href="/" className="inline-flex rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-300/40 focus:ring-offset-2 focus:ring-offset-[rgba(4,12,24,0.82)]">
             <BrandLockup variant="nav" subtitle="Clinical Note Intelligence Workspace" />
@@ -34,12 +69,20 @@ export function TopNav() {
         </div>
         <div className="flex flex-1 flex-col gap-3 lg:items-end">
           <div className="flex flex-wrap items-center gap-2">
-            <ProviderIdentitySwitcher />
+            {INTERNAL_MODE_ENABLED ? <ProviderIdentitySwitcher /> : null}
+            <AuthControls />
             <Link
               href={feedbackHref}
-              className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.68)] px-4 py-2 text-sm font-medium text-ink transition hover:border-cyan-200/20 hover:bg-[rgba(18,181,208,0.12)] hover:text-cyan-50"
+              className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.68)] px-3.5 py-2 text-sm font-medium text-ink transition hover:border-cyan-200/20 hover:bg-[rgba(18,181,208,0.12)] hover:text-cyan-50"
             >
-              Beta Feedback
+              <span className="inline-flex items-center gap-2">
+                <span>Feedback</span>
+                {feedbackSummary?.newCount ? (
+                  <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-cyan-400 px-1.5 py-0.5 text-[10px] font-semibold text-slate-950">
+                    {feedbackSummary.newCount}
+                  </span>
+                ) : null}
+              </span>
             </Link>
             <nav className="flex flex-wrap gap-2">
             {primaryLinks.map((link) => (
@@ -56,8 +99,8 @@ export function TopNav() {
             </nav>
           </div>
           {INTERNAL_MODE_ENABLED ? (
-            <div className="flex flex-wrap items-center gap-3 rounded-full border border-cyan-200/10 bg-[rgba(11,29,49,0.72)] px-4 py-2 text-xs text-muted shadow-[0_10px_30px_rgba(4,12,24,0.28)]">
-              <span className="font-semibold uppercase tracking-[0.18em] text-slate-500">Support tools</span>
+            <div className="flex flex-wrap items-center gap-3 rounded-[18px] border border-cyan-200/10 bg-[rgba(11,29,49,0.72)] px-4 py-2.5 text-xs text-muted shadow-[0_10px_30px_rgba(4,12,24,0.28)]">
+              <span className="font-semibold uppercase tracking-[0.18em] text-slate-500">Internal tools</span>
               {secondaryLinks.map((link) => (
                 link.href ? (
                   <Link
@@ -67,6 +110,11 @@ export function TopNav() {
                   >
                     <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-cyan-500 text-[10px] font-bold text-slate-950">i</span>
                     <span>{link.label}</span>
+                    {link.href === '/dashboard/internal' && feedbackSummary?.newCount ? (
+                      <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-cyan-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-950">
+                        {feedbackSummary.newCount}
+                      </span>
+                    ) : null}
                     <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100/80">{link.status}</span>
                   </Link>
                 ) : (

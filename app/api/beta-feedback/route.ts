@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isFeedbackEmailConfigured, sendFeedbackNotification } from '@/lib/beta/feedback-email';
 import { listBetaFeedback, saveBetaFeedback, updateBetaFeedbackStatus } from '@/lib/db/client';
 import { inferVeraGapType } from '@/lib/beta/vera-gaps';
 import type { BetaFeedbackCategory, BetaFeedbackItem, BetaFeedbackMetadata, BetaFeedbackStatus } from '@/types/beta-feedback';
@@ -41,7 +42,13 @@ export async function POST(request: Request) {
       : metadata,
   });
 
-  return NextResponse.json({ feedback });
+  const notification = await sendFeedbackNotification(feedback);
+
+  return NextResponse.json({
+    feedback,
+    notification,
+    emailConfigured: isFeedbackEmailConfigured(),
+  });
 }
 
 export async function PATCH(request: Request) {

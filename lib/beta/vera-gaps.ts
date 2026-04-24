@@ -76,3 +76,16 @@ export function summarizeVeraGaps(feedback: BetaFeedbackItem[]) {
     return new Date(b.latestAt).getTime() - new Date(a.latestAt).getTime();
   });
 }
+
+export function summarizeBetaFeedbackQueue(feedback: BetaFeedbackItem[]) {
+  const newItems = feedback.filter((item) => item.status === 'new');
+  const veraGapItems = feedback.filter((item) => item.metadata?.source === 'vera-gap');
+  const newVeraGapItems = veraGapItems.filter((item) => item.status === 'new');
+
+  return {
+    totalCount: feedback.length,
+    newCount: newItems.length,
+    veraGapCount: veraGapItems.length,
+    newVeraGapCount: newVeraGapItems.length,
+  };
+}

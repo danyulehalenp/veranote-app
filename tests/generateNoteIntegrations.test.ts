@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest';
 import { generateNote } from '../lib/ai/generate-note';
 import { NoteClaim } from '../types/session';
 

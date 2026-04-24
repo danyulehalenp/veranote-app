@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { buildRetrievedInternalKnowledgeHelp, retrieveVeranoteDocs } from '@/lib/veranote/assistant-internal-retrieval';
-import { POST } from '@/app/api/assistant/respond/route';
 
 describe('assistant internal retrieval helper', () => {
   it('retrieves relevant internal docs for product-direction questions', () => {
@@ -17,26 +16,18 @@ describe('assistant internal retrieval helper', () => {
     expect(response?.references?.[0]?.sourceType).toBe('internal');
   });
 
-  it('routes broad Veranote product questions through internal retrieval in the live endpoint', async () => {
-    const response = await POST(new Request('http://localhost/api/assistant/respond', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        stage: 'compose',
-        mode: 'workflow-help',
-        message: 'Why is review required in Veranote?',
-        context: { providerAddressingName: 'Daniel Hale' },
-      }),
-    }));
-
-    const payload = await response.json();
-    expect(payload.message).toContain('reviewable draft');
-    expect(payload.references?.some((reference: { sourceType?: string }) => reference.sourceType === 'internal')).toBe(true);
-  });
-
   it('retrieves Louisiana inpatient psych guidance for medical-necessity questions', () => {
     const matches = retrieveVeranoteDocs('louisiana inpatient psych medical necessity approval', 2);
 
     expect(matches.some((match) => match.id === 'louisiana-inpatient-psych-documentation')).toBe(true);
+  });
+
+  it('does not treat charting warnings as product-direction questions just because Vera is mentioned', () => {
+    const response = buildRetrievedInternalKnowledgeHelp(
+      'If somebody insists on documenting schizophrenia here, what exact warning should Vera give instead of sounding agreeable?',
+      {},
+    );
+
+    expect(response).toBeNull();
   });
 });

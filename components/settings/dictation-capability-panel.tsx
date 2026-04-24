@@ -31,6 +31,8 @@ export function DictationCapabilityPanel() {
             {summaryLines.map((line) => (
               <li key={line}>{line}</li>
             ))}
+            <li>Provider-facing source-entry dictation shell now exists in the new-note workflow.</li>
+            <li>Browser mic capture, backend session routes, audio chunk upload, queued transcript events, mock STT, review flags, and provenance insertion are wired for internal testing.</li>
           </ul>
         </div>
 
@@ -47,9 +49,9 @@ export function DictationCapabilityPanel() {
       </div>
 
       <div className="mt-4 rounded-lg border border-cyan-200 bg-white p-4 text-sm text-cyan-900">
-        <div className="font-semibold text-cyan-950">Planned future shape</div>
+        <div className="font-semibold text-cyan-950">Current MVP shape</div>
         <div className="mt-2 flex flex-wrap gap-2">
-          {['Mic capture', 'STT adapter', 'Interim/final segments', 'Review flags', 'Provenance', 'Audit events'].map((item) => (
+          {['Browser mic', 'Audio chunk upload', 'Backend session bridge', 'Queued transcript events', 'Mock STT', 'Manual accept', 'Review flags', 'Provenance', 'Source insertion'].map((item) => (
             <span key={item} className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-950">
               {item}
             </span>

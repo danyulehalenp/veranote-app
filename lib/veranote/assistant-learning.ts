@@ -39,6 +39,20 @@ type ProfilePromptPreferenceRecord = {
   lastUsedAt?: string;
 };
 
+export type ConversationalMemoryFact = {
+  key: string;
+  fact: string;
+  count: number;
+  lastSeenAt?: string;
+};
+
+type RelationshipStats = {
+  greetingCount: number;
+  gratitudeCount: number;
+  encouragementCount: number;
+  lastSeenAt?: string;
+};
+
 export type AssistantLearningStore = {
   rewritePreferencesByNoteType: Record<string, RewritePreferenceCounts>;
   rewriteLastSeenByNoteType: Record<string, RewritePreferenceTimestamps>;
@@ -58,6 +72,8 @@ export type AssistantLearningStore = {
   dismissedPromptPreferenceKeysByProfileId: Record<string, string | null>;
   acceptedPromptPreferenceKeysByProfileId: Record<string, string | null>;
   actedOnPromptPreferenceKeysByProfileId: Record<string, string | null>;
+  conversationalMemoryFacts: ConversationalMemoryFact[];
+  relationshipStats: RelationshipStats;
 };
 
 export const ASSISTANT_LEARNING_KEY = 'veranote:assistant-learning';
@@ -88,6 +104,12 @@ export function createEmptyAssistantLearningStore(): AssistantLearningStore {
     dismissedPromptPreferenceKeysByProfileId: {},
     acceptedPromptPreferenceKeysByProfileId: {},
     actedOnPromptPreferenceKeysByProfileId: {},
+    conversationalMemoryFacts: [],
+    relationshipStats: {
+      greetingCount: 0,
+      gratitudeCount: 0,
+      encouragementCount: 0,
+    },
   };
 }
 
@@ -111,6 +133,13 @@ function mergeAssistantLearningStore(parsed?: Partial<AssistantLearningStore> | 
     dismissedPromptPreferenceKeysByProfileId: parsed?.dismissedPromptPreferenceKeysByProfileId || {},
     acceptedPromptPreferenceKeysByProfileId: parsed?.acceptedPromptPreferenceKeysByProfileId || {},
     actedOnPromptPreferenceKeysByProfileId: parsed?.actedOnPromptPreferenceKeysByProfileId || {},
+    conversationalMemoryFacts: Array.isArray(parsed?.conversationalMemoryFacts) ? parsed?.conversationalMemoryFacts : [],
+    relationshipStats: {
+      greetingCount: parsed?.relationshipStats?.greetingCount || 0,
+      gratitudeCount: parsed?.relationshipStats?.gratitudeCount || 0,
+      encouragementCount: parsed?.relationshipStats?.encouragementCount || 0,
+      lastSeenAt: parsed?.relationshipStats?.lastSeenAt,
+    },
   };
 }
 
@@ -121,13 +150,14 @@ function isAssistantLearningStoreEmpty(store: AssistantLearningStore) {
     && Object.keys(store.promptPreferencesByProfileId).length === 0;
 }
 
-function readStore(): AssistantLearningStore {
+function readStore(providerId?: string): AssistantLearningStore {
   if (typeof window === 'undefined') {
     return createEmptyAssistantLearningStore();
   }
 
   try {
-    const raw = window.localStorage.getItem(getAssistantLearningStorageKey(getCurrentProviderId()));
+    const scopedProviderId = providerId || getCurrentProviderId();
+    const raw = window.localStorage.getItem(getAssistantLearningStorageKey(scopedProviderId));
 
     if (!raw) {
       return createEmptyAssistantLearningStore();
@@ -140,17 +170,17 @@ function readStore(): AssistantLearningStore {
   }
 }
 
-function writeStore(store: AssistantLearningStore) {
+function writeStore(store: AssistantLearningStore, providerId?: string) {
   if (typeof window === 'undefined') {
     return;
   }
 
-  const providerId = getCurrentProviderId();
-  window.localStorage.setItem(getAssistantLearningStorageKey(providerId), JSON.stringify(store));
+  const scopedProviderId = providerId || getCurrentProviderId();
+  window.localStorage.setItem(getAssistantLearningStorageKey(scopedProviderId), JSON.stringify(store));
   void fetch('/api/assistant/memory', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ providerId, learningStore: store }),
+    body: JSON.stringify({ providerId: scopedProviderId, learningStore: store }),
   }).catch(() => {
     // Keep local provider-scoped memory available even if backend persistence is unavailable.
   });
@@ -207,12 +237,12 @@ function freshnessScore(input: {
   return (timestampValue(input.lastUsedAt) * 10) + (timestampValue(input.lastSeenAt) * 3) + (input.count || 0);
 }
 
-export function recordRewritePreferenceSelection(noteType: string, optionTone: RewriteOptionTone) {
+export function recordRewritePreferenceSelection(noteType: string, optionTone: RewriteOptionTone, providerId?: string) {
   if (!noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   const current = store.rewritePreferencesByNoteType[noteType] || defaultCounts();
   store.rewritePreferencesByNoteType[noteType] = {
     ...current,
@@ -222,63 +252,63 @@ export function recordRewritePreferenceSelection(noteType: string, optionTone: R
     ...(store.rewriteLastSeenByNoteType[noteType] || {}),
     [optionTone]: nowIso(),
   };
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function dismissRewritePreferenceSuggestion(noteType: string, optionTone: RewriteOptionTone) {
+export function dismissRewritePreferenceSuggestion(noteType: string, optionTone: RewriteOptionTone, providerId?: string) {
   if (!noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   store.dismissedRewriteSuggestionsByNoteType[noteType] = optionTone;
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function acceptRewritePreferenceSuggestion(noteType: string, optionTone: RewriteOptionTone) {
+export function acceptRewritePreferenceSuggestion(noteType: string, optionTone: RewriteOptionTone, providerId?: string) {
   if (!noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   store.acceptedRewriteSuggestionsByNoteType[noteType] = optionTone;
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function clearAcceptedRewritePreferenceSuggestion(noteType: string, optionTone: RewriteOptionTone) {
+export function clearAcceptedRewritePreferenceSuggestion(noteType: string, optionTone: RewriteOptionTone, providerId?: string) {
   if (!noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
 
   if (store.acceptedRewriteSuggestionsByNoteType[noteType] === optionTone) {
     delete store.acceptedRewriteSuggestionsByNoteType[noteType];
   }
 
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function markRewritePreferenceUsed(noteType: string, optionTone: RewriteOptionTone) {
+export function markRewritePreferenceUsed(noteType: string, optionTone: RewriteOptionTone, providerId?: string) {
   if (!noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   store.actedOnRewriteSuggestionsByNoteType[noteType] = optionTone;
   store.rewriteLastUsedByNoteType[noteType] = {
     ...(store.rewriteLastUsedByNoteType[noteType] || {}),
     [optionTone]: nowIso(),
   };
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function getRewritePreferenceSuggestion(noteType?: string | null) {
+export function getRewritePreferenceSuggestion(noteType?: string | null, providerId?: string) {
   if (!noteType?.trim()) {
     return null;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   const counts = store.rewritePreferencesByNoteType[noteType];
 
   if (!counts) {
@@ -305,6 +335,118 @@ export function getRewritePreferenceSuggestion(noteType?: string | null) {
   };
 }
 
+function normalizeConversationalFactKey(fact: string) {
+  return fact
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
+export function rememberConversationalFact(fact: string, providerId?: string) {
+  const normalizedFact = fact.trim().replace(/\s+/g, ' ');
+
+  if (!normalizedFact) {
+    return null;
+  }
+
+  const store = readStore(providerId);
+  const key = normalizeConversationalFactKey(normalizedFact);
+  const existing = store.conversationalMemoryFacts.find((item) => item.key === key);
+
+  if (existing) {
+    existing.fact = normalizedFact;
+    existing.count += 1;
+    existing.lastSeenAt = nowIso();
+  } else {
+    store.conversationalMemoryFacts.unshift({
+      key,
+      fact: normalizedFact,
+      count: 1,
+      lastSeenAt: nowIso(),
+    });
+  }
+
+  store.conversationalMemoryFacts = store.conversationalMemoryFacts
+    .sort((left, right) => freshnessScore(right) - freshnessScore(left))
+    .slice(0, 12);
+
+  writeStore(store, providerId);
+  return store.conversationalMemoryFacts[0] || null;
+}
+
+export function getConversationalMemoryFacts(providerId?: string) {
+  const store = readStore(providerId);
+  return [...store.conversationalMemoryFacts]
+    .sort((left, right) => freshnessScore(right) - freshnessScore(left));
+}
+
+export function updateConversationalMemoryFact(key: string, fact: string, providerId?: string) {
+  const normalizedKey = key.trim();
+  const normalizedFact = fact.trim().replace(/\s+/g, ' ');
+
+  if (!normalizedKey || !normalizedFact) {
+    return null;
+  }
+
+  const store = readStore(providerId);
+  const existing = store.conversationalMemoryFacts.find((item) => item.key === normalizedKey);
+
+  if (!existing) {
+    return null;
+  }
+
+  existing.fact = normalizedFact;
+  existing.lastSeenAt = nowIso();
+  writeStore(store, providerId);
+  return existing;
+}
+
+export function removeConversationalMemoryFact(key: string, providerId?: string) {
+  const normalizedKey = key.trim();
+
+  if (!normalizedKey) {
+    return false;
+  }
+
+  const store = readStore(providerId);
+  const nextFacts = store.conversationalMemoryFacts.filter((item) => item.key !== normalizedKey);
+
+  if (nextFacts.length === store.conversationalMemoryFacts.length) {
+    return false;
+  }
+
+  store.conversationalMemoryFacts = nextFacts;
+  writeStore(store, providerId);
+  return true;
+}
+
+export function recordRelationshipSignal(
+  signal: 'greeting' | 'gratitude' | 'encouragement',
+  providerId?: string,
+) {
+  const store = readStore(providerId);
+  const nextStats = {
+    ...store.relationshipStats,
+    lastSeenAt: nowIso(),
+  };
+
+  if (signal === 'greeting') {
+    nextStats.greetingCount += 1;
+  } else if (signal === 'gratitude') {
+    nextStats.gratitudeCount += 1;
+  } else {
+    nextStats.encouragementCount += 1;
+  }
+
+  store.relationshipStats = nextStats;
+  writeStore(store, providerId);
+}
+
+export function getRelationshipStats(providerId?: string) {
+  return readStore(providerId).relationshipStats;
+}
+
 function lanePreferenceKey(input: {
   outputScope: string;
   outputStyle: string;
@@ -325,12 +467,12 @@ export function recordLanePreferenceSelection(input: {
   outputStyle: string;
   format: string;
   requestedSections: string[];
-}) {
+}, providerId?: string) {
   if (!input.noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   const current = store.lanePreferencesByNoteType[input.noteType] || [];
   const key = lanePreferenceKey(input);
   const existing = current.find((item) => lanePreferenceKey(item) === key);
@@ -351,63 +493,63 @@ export function recordLanePreferenceSelection(input: {
   }
 
   store.lanePreferencesByNoteType[input.noteType] = current;
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function dismissLanePreferenceSuggestion(noteType: string, key: string) {
+export function dismissLanePreferenceSuggestion(noteType: string, key: string, providerId?: string) {
   if (!noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   store.dismissedLanePreferenceKeysByNoteType[noteType] = key;
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function acceptLanePreferenceSuggestion(noteType: string, key: string) {
+export function acceptLanePreferenceSuggestion(noteType: string, key: string, providerId?: string) {
   if (!noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   store.acceptedLanePreferenceKeysByNoteType[noteType] = key;
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function clearAcceptedLanePreferenceSuggestion(noteType: string, key: string) {
+export function clearAcceptedLanePreferenceSuggestion(noteType: string, key: string, providerId?: string) {
   if (!noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
 
   if (store.acceptedLanePreferenceKeysByNoteType[noteType] === key) {
     delete store.acceptedLanePreferenceKeysByNoteType[noteType];
   }
 
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function markLanePreferenceUsed(noteType: string, key: string) {
+export function markLanePreferenceUsed(noteType: string, key: string, providerId?: string) {
   if (!noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   store.actedOnLanePreferenceKeysByNoteType[noteType] = key;
   const existing = (store.lanePreferencesByNoteType[noteType] || []).find((item) => lanePreferenceKey(item) === key);
   if (existing) {
     existing.lastUsedAt = nowIso();
   }
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function getLanePreferenceSuggestion(noteType?: string | null) {
+export function getLanePreferenceSuggestion(noteType?: string | null, providerId?: string) {
   if (!noteType?.trim()) {
     return null;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   const current = store.lanePreferencesByNoteType[noteType] || [];
 
   if (!current.length) {
@@ -499,7 +641,7 @@ export function recordPromptPreferenceSelection(input: {
   request: string;
   draft: string;
   profileId?: string | null;
-}) {
+}, providerId?: string) {
   if (!input.noteType.trim()) {
     return;
   }
@@ -510,7 +652,7 @@ export function recordPromptPreferenceSelection(input: {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   const current = store.promptPreferencesByNoteType[input.noteType] || [];
   const existing = current.find((item) => item.patternKey === classified.key);
 
@@ -555,63 +697,63 @@ export function recordPromptPreferenceSelection(input: {
     store.promptPreferencesByProfileId[input.profileId] = profileCurrent;
   }
 
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function dismissPromptPreferenceSuggestion(noteType: string, key: string) {
+export function dismissPromptPreferenceSuggestion(noteType: string, key: string, providerId?: string) {
   if (!noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   store.dismissedPromptPreferenceKeysByNoteType[noteType] = key;
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function acceptPromptPreferenceSuggestion(noteType: string, key: string) {
+export function acceptPromptPreferenceSuggestion(noteType: string, key: string, providerId?: string) {
   if (!noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   store.acceptedPromptPreferenceKeysByNoteType[noteType] = key;
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function clearAcceptedPromptPreferenceSuggestion(noteType: string, key: string) {
+export function clearAcceptedPromptPreferenceSuggestion(noteType: string, key: string, providerId?: string) {
   if (!noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
 
   if (store.acceptedPromptPreferenceKeysByNoteType[noteType] === key) {
     delete store.acceptedPromptPreferenceKeysByNoteType[noteType];
   }
 
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function markPromptPreferenceUsed(noteType: string, key: string) {
+export function markPromptPreferenceUsed(noteType: string, key: string, providerId?: string) {
   if (!noteType.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   store.actedOnPromptPreferenceKeysByNoteType[noteType] = key;
   const existing = (store.promptPreferencesByNoteType[noteType] || []).find((item) => item.patternKey === key);
   if (existing) {
     existing.lastUsedAt = nowIso();
   }
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function getPromptPreferenceSuggestion(noteType?: string | null) {
+export function getPromptPreferenceSuggestion(noteType?: string | null, providerId?: string) {
   if (!noteType?.trim()) {
     return null;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   const current = store.promptPreferencesByNoteType[noteType] || [];
 
   if (!current.length) {
@@ -638,60 +780,60 @@ export function getPromptPreferenceSuggestion(noteType?: string | null) {
   };
 }
 
-export function dismissProfilePromptPreferenceSuggestion(profileId: string, key: string) {
+export function dismissProfilePromptPreferenceSuggestion(profileId: string, key: string, providerId?: string) {
   if (!profileId.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   store.dismissedPromptPreferenceKeysByProfileId[profileId] = key;
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function acceptProfilePromptPreferenceSuggestion(profileId: string, key: string) {
+export function acceptProfilePromptPreferenceSuggestion(profileId: string, key: string, providerId?: string) {
   if (!profileId.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   store.acceptedPromptPreferenceKeysByProfileId[profileId] = key;
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function clearAcceptedProfilePromptPreferenceSuggestion(profileId: string, key: string) {
+export function clearAcceptedProfilePromptPreferenceSuggestion(profileId: string, key: string, providerId?: string) {
   if (!profileId.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
 
   if (store.acceptedPromptPreferenceKeysByProfileId[profileId] === key) {
     delete store.acceptedPromptPreferenceKeysByProfileId[profileId];
   }
 
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function markProfilePromptPreferenceUsed(profileId: string, key: string) {
+export function markProfilePromptPreferenceUsed(profileId: string, key: string, providerId?: string) {
   if (!profileId.trim()) {
     return;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   store.actedOnPromptPreferenceKeysByProfileId[profileId] = key;
   const existing = (store.promptPreferencesByProfileId[profileId] || []).find((item) => item.patternKey === key);
   if (existing) {
     existing.lastUsedAt = nowIso();
   }
-  writeStore(store);
+  writeStore(store, providerId);
 }
 
-export function getProfilePromptPreferenceSuggestion(profileId?: string | null) {
+export function getProfilePromptPreferenceSuggestion(profileId?: string | null, providerId?: string) {
   if (!profileId?.trim()) {
     return null;
   }
 
-  const store = readStore();
+  const store = readStore(providerId);
   const current = store.promptPreferencesByProfileId[profileId] || [];
 
   if (!current.length) {
@@ -895,8 +1037,8 @@ function topPromptSuggestion(noteType: string, store: AssistantLearningStore) {
 export function getProviderWorkflowInsights(input: {
   profileId?: string | null;
   noteTypes?: string[];
-}) {
-  const store = readStore();
+}, providerId?: string) {
+  const store = readStore(providerId);
   const noteTypes = (input.noteTypes || []).filter((noteType) => noteType.trim());
   const uniqueNoteTypes = Array.from(new Set(noteTypes));
   const profileRecords = input.profileId?.trim() ? (store.promptPreferencesByProfileId[input.profileId] || []) : [];
@@ -949,8 +1091,8 @@ export function getProviderWorkflowInsights(input: {
 export function resetAssistantLearningForProfile(input: {
   profileId?: string | null;
   noteTypes?: string[];
-}) {
-  const store = readStore();
+}, providerId?: string) {
+  const store = readStore(providerId);
   const noteTypes = (input.noteTypes || []).filter((noteType) => noteType.trim());
 
   noteTypes.forEach((noteType) => {
@@ -977,5 +1119,5 @@ export function resetAssistantLearningForProfile(input: {
     delete store.actedOnPromptPreferenceKeysByProfileId[input.profileId];
   }
 
-  writeStore(store);
+  writeStore(store, providerId);
 }

@@ -1,5 +1,6 @@
 import type { AssistantApiContext, AssistantReferenceSource, AssistantResponsePayload } from '@/types/assistant';
 import { buildMedicalNecessityHelp } from '@/lib/veranote/assistant-medical-necessity-help';
+import { buildKnowledgeRegistry, queryKnowledgeRegistry, type KnowledgeBundle, type KnowledgeQuery } from '@/lib/veranote/knowledge';
 import { buildPsychCptHelp } from '@/lib/veranote/assistant-psych-cpt-knowledge';
 import { buildPsychDiagnosisCodingHelp } from '@/lib/veranote/assistant-psych-diagnosis-coding';
 import { buildPsychDiagnosisConceptHelp } from '@/lib/veranote/assistant-psych-diagnosis-concepts';
@@ -27,6 +28,27 @@ function shortProviderName(address?: string) {
   return cleaned.split(/\s+/)[0] || cleaned;
 }
 
+export function resolveAssistantKnowledge(query: KnowledgeQuery): KnowledgeBundle {
+  return queryKnowledgeRegistry(buildKnowledgeRegistry(), {
+    ...query,
+    limit: query.limit ?? query.limitPerDomain ?? 4,
+    includeReferences: query.includeReferences ?? query.intent === 'reference_help',
+    includeMemory: query.includeMemory ?? false,
+  });
+}
+
+export function buildStructuredKnowledgeReminder(bundle: KnowledgeBundle) {
+  if (bundle.diagnosisConcepts.length) {
+    return 'Keep diagnosis framing proposed based on available information rather than settled.';
+  }
+
+  if (bundle.emergingDrugConcepts.length || bundle.medicationConcepts.length) {
+    return 'Use the psychiatry knowledge layer as support, but do not add source facts that are not documented.';
+  }
+
+  return 'If structured psychiatry knowledge is thin, stay source-only and keep uncertainty visible.';
+}
+
 export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: AssistantApiContext): AssistantResponsePayload | null {
   const normalized = normalizedMessage.toLowerCase();
   const providerName = shortProviderName(context?.providerAddressingName);
@@ -49,16 +71,28 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
     return psychCptHelp;
   }
 
-  const diagnosisConceptHelp = buildPsychDiagnosisConceptHelp(normalized);
-
-  if (diagnosisConceptHelp) {
-    return diagnosisConceptHelp;
-  }
-
   const psychMedicationHelp = buildPsychMedicationReferenceHelp(normalized);
 
   if (psychMedicationHelp) {
     return psychMedicationHelp;
+  }
+
+  if (
+    /\b(how many hours of sleep is recommended for an adult|recommended hours of sleep for an adult|how much sleep does an adult need|adult sleep recommendation)\b/i.test(normalized)
+  ) {
+    return {
+      message: 'For most adults, the general recommendation is at least 7 hours of sleep per night, and many references phrase it as about 7 to 9 hours depending on the person.',
+      suggestions: [
+        'General reference only, not patient-specific guidance.',
+      ],
+      answerMode: 'general_health_reference',
+    };
+  }
+
+  const diagnosisConceptHelp = buildPsychDiagnosisConceptHelp(normalized);
+
+  if (diagnosisConceptHelp) {
+    return diagnosisConceptHelp;
   }
 
   const referenceLinks = buildTrustedReferenceLinks(normalized);
@@ -86,6 +120,7 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
       return {
         message: 'H&P means History and Physical. It is the core admission or encounter note that documents the history, relevant review, exam findings when appropriate, assessment, and plan for the patient.',
         suggestions: ['If you want, I can help structure the same raw details as an H&P or as a consult note.'],
+        answerMode: 'direct_reference_answer',
         references: referenceLinks,
       };
     }
@@ -94,6 +129,7 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
       return {
         message: 'HPI means History of Present Illness. In practice, it is the section that captures the current story of why the patient is being seen and what has changed since the last contact.',
         suggestions: ['If you want, I can help draft the HPI from your patient details.'],
+        answerMode: 'direct_reference_answer',
         references: referenceLinks,
       };
     }
@@ -102,6 +138,7 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
       return {
         message: 'MSE means Mental Status Exam. It documents observed presentation such as appearance, behavior, speech, mood, affect, thought process, thought content, cognition, insight, and judgment.',
         suggestions: ['If you want, I can help keep MSE wording brief and source-faithful.'],
+        answerMode: 'direct_reference_answer',
         references: referenceLinks,
       };
     }
@@ -110,6 +147,7 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
       return {
         message: 'UDS means urine drug screen.',
         suggestions: ['If you send the actual results, I can help place them into the note cleanly.'],
+        answerMode: 'direct_reference_answer',
         references: referenceLinks,
       };
     }
@@ -118,6 +156,7 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
       return {
         message: 'UPT means urine pregnancy test.',
         suggestions: ['If you send the actual result, I can help place it into the note cleanly.'],
+        answerMode: 'direct_reference_answer',
         references: referenceLinks,
       };
     }
@@ -126,6 +165,7 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
       return {
         message: 'A1c, or hemoglobin A1c, reflects average blood glucose over roughly the last 2 to 3 months.',
         suggestions: ['If you want, I can help place A1c results into the note in a cleaner objective section.'],
+        answerMode: 'direct_reference_answer',
         references: referenceLinks,
       };
     }
@@ -134,6 +174,7 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
       return {
         message: 'CBC means complete blood count. It measures components such as white blood cells, hemoglobin, hematocrit, and platelets.',
         suggestions: ['If you want, I can help place CBC findings into the objective section without overinterpreting them.'],
+        answerMode: 'direct_reference_answer',
         references: referenceLinks,
       };
     }
@@ -142,6 +183,7 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
       return {
         message: 'CMP means comprehensive metabolic panel. It includes electrolytes, kidney function, liver-related markers, glucose, and related chemistry values.',
         suggestions: ['If you want, I can help summarize CMP results in a clean, source-faithful way.'],
+        answerMode: 'direct_reference_answer',
         references: referenceLinks,
       };
     }
@@ -150,6 +192,7 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
       return {
         message: 'PHQ-9 is a nine-item depression screening questionnaire commonly used to screen for and track depressive symptom burden.',
         suggestions: ['If you want, I can help document PHQ-9 results without overstating what they mean clinically.'],
+        answerMode: 'direct_reference_answer',
         references: referenceLinks,
       };
     }
@@ -158,6 +201,7 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
       return {
         message: 'C-SSRS stands for the Columbia-Suicide Severity Rating Scale. It is a structured suicide risk screening and assessment tool.',
         suggestions: ['If you want, I can help keep C-SSRS results literal and time-aware in the note.'],
+        answerMode: 'direct_reference_answer',
         references: referenceLinks,
       };
     }
@@ -167,6 +211,7 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
     return {
       message: 'The assessment is where you summarize the current clinical picture, explain what you think is going on, preserve uncertainty or differential thinking when needed, and connect the documented facts to the plan.',
       suggestions: ['If you want, I can help make an assessment more concise, more conservative, or more source-faithful.'],
+      answerMode: 'direct_reference_answer',
       references: referenceLinks,
     };
   }
@@ -175,6 +220,7 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
     return {
       message: 'The plan should document the actual next steps: medications, monitoring, follow-up, safety actions, coordination, testing, and any disposition or treatment steps that are clearly supported.',
       suggestions: ['If you want, I can help tighten a plan so it stays brief without dropping important next steps.'],
+      answerMode: 'direct_reference_answer',
       references: referenceLinks,
     };
   }
@@ -189,16 +235,26 @@ export function buildReferenceLookupHelp(normalizedMessage: string, context?: As
       ...knowledge,
       suggestions: [
         ...(knowledge.suggestions || []),
-        'This answer is using Vera reference lookup rather than note-grounded source review.',
       ],
     };
   }
 
   const references = buildTrustedReferenceLinks(normalizedMessage.toLowerCase());
+  if (references.length) {
+    return {
+      message: 'I do not have a trusted direct answer for that yet. Use the approved references below to verify it directly.',
+      suggestions: [
+        'Open one of the approved references below to verify the answer directly.',
+        'If this is a recurring need, use Teach Vera this so it can become a first-class answer later.',
+      ],
+      references,
+    };
+  }
+
   return {
-    message: "I don't have a trusted reference answer for that yet. Use Teach Vera this if you want me to learn this lookup next.",
+    message: "I don't have a trusted reference answer for that yet.",
     suggestions: [
-      'Reference lookup is currently limited to trusted source topics Vera already knows how to answer.',
+      'Reference lookup is limited to approved source topics Vera can verify safely.',
     ],
     references,
   };

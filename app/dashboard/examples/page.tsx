@@ -4,6 +4,7 @@
 
 import { redirect } from 'next/navigation';
 import { AppShell } from '@/components/layout/app-shell';
+import { InternalSurfaceNotice } from '@/components/layout/internal-surface-notice';
 import { ExampleCard } from '@/components/examples/example-card';
 import { exampleCards } from '@/lib/constants/mock-data';
 import { isBetaSupportedNoteType } from '@/lib/constants/provider-beta';
@@ -48,6 +49,7 @@ export default function ExamplesPage() {
       title="Example Gallery"
       subtitle="Load fake or de-identified examples to test the structured intake workflow, source-faithful generation, and review behavior."
     >
+      <InternalSurfaceNotice body="This gallery is for internal testing, demos, and controlled rehearsal with fake or de-identified content. It is not part of the real provider note workflow." />
       <div className="aurora-soft-panel mb-6 rounded-[24px] border border-blue-200 px-4 py-3 text-sm text-blue-900">
         These examples are for demo/testing only. Use fake or de-identified content unless you are running in an approved compliant environment.
       </div>

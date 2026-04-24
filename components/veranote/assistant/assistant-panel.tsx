@@ -10,15 +10,22 @@ import { describeAssistantReferencePolicy } from '@/lib/veranote/assistant-sourc
 import { publishAssistantAction } from '@/lib/veranote/assistant-context';
 import type { NoteSectionKey, OutputScope } from '@/lib/note/section-profiles';
 import { buildLanePreferencePrompt } from '@/lib/veranote/preference-draft';
-import { getCurrentProviderId, getVeraCueUsageStorageKey } from '@/lib/veranote/provider-identity';
+import { DEFAULT_PROVIDER_IDENTITY_ID } from '@/lib/constants/provider-identities';
+import { getVeraCueUsageStorageKey } from '@/lib/veranote/provider-identity';
 import { veraInteractionStyleLabel, veraProactivityLabel } from '@/lib/veranote/vera-relationship';
 import { assistantMemoryService } from '@/lib/veranote/assistant-memory-service';
+import type { FeedbackNotificationResult } from '@/lib/beta/feedback-email';
 import type { AssistantAction, AssistantApiContext, AssistantMessage, AssistantMode, AssistantResponsePayload, AssistantStage, AssistantThreadTurn } from '@/types/assistant';
 
 type AssistantPanelProps = {
   stage: AssistantStage;
   context: AssistantApiContext;
+  isMinimized?: boolean;
+  onToggleMinimized?: () => void;
+  onClose?: () => void;
 };
+
+const MODE_STORAGE_KEY_PREFIX = 'veranote-assistant-mode';
 
 type VeraCueCard = {
   id: string;
@@ -30,6 +37,15 @@ type VeraCueCard = {
   usageCount: number;
   recencyTimestamp?: string;
   kind: 'profile' | 'rewrite' | 'lane' | 'prompt';
+};
+
+type ContextActionCard = {
+  id: string;
+  label: string;
+  detail: string;
+  actionLabel: string;
+  prompt: string;
+  nextMode: AssistantMode;
 };
 
 function buildInitialSuggestions(stage: AssistantStage): string[] {
@@ -57,6 +73,8 @@ function createMessage(
   references?: AssistantMessage['references'],
   externalAnswerMeta?: AssistantMessage['externalAnswerMeta'],
   modeMeta?: AssistantMessage['modeMeta'],
+  answerMode?: AssistantMessage['answerMode'],
+  builderFamily?: AssistantMessage['builderFamily'],
 ): AssistantMessage {
   return {
     id: `${role}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -66,6 +84,8 @@ function createMessage(
     references,
     externalAnswerMeta,
     modeMeta,
+    answerMode,
+    builderFamily,
   };
 }
 
@@ -94,13 +114,14 @@ function isRecentCue(value?: string, days = 7) {
   return Date.now() - parsed <= days * 24 * 60 * 60 * 1000;
 }
 
-function readCueUsageCounts() {
+function readCueUsageCounts(providerId?: string) {
   if (typeof window === 'undefined') {
     return {} as Record<string, number>;
   }
 
   try {
-    const raw = window.localStorage.getItem(getVeraCueUsageStorageKey(getCurrentProviderId()));
+    const scopedProviderId = providerId || DEFAULT_PROVIDER_IDENTITY_ID;
+    const raw = window.localStorage.getItem(getVeraCueUsageStorageKey(scopedProviderId));
     if (!raw) {
       return {} as Record<string, number>;
     }
@@ -112,12 +133,13 @@ function readCueUsageCounts() {
   }
 }
 
-function writeCueUsageCounts(counts: Record<string, number>) {
+function writeCueUsageCounts(providerId: string | undefined, counts: Record<string, number>) {
   if (typeof window === 'undefined') {
     return;
   }
 
-  window.localStorage.setItem(getVeraCueUsageStorageKey(getCurrentProviderId()), JSON.stringify(counts));
+  const scopedProviderId = providerId || DEFAULT_PROVIDER_IDENTITY_ID;
+  window.localStorage.setItem(getVeraCueUsageStorageKey(scopedProviderId), JSON.stringify(counts));
 }
 
 function cueTimestampValue(value?: string) {
@@ -157,30 +179,138 @@ function formatCueRecency(value?: string) {
   return 'recently';
 }
 
-function shortVeraGreetingName(address?: string) {
-  if (!address?.trim()) {
-    return null;
+function buildEmptyStateTitle(stage: AssistantStage, mode: AssistantMode) {
+  if (mode === 'prompt-builder') {
+    return stage === 'review' ? 'Turn review habits into reusable preferences' : 'Shape reusable lane preferences before you generate';
   }
 
-  const cleaned = address.replace(/,.*$/, '').trim();
-
-  if (!cleaned) {
-    return null;
+  if (mode === 'reference-lookup') {
+    return 'Look up documentation terms and coding references';
   }
 
-  if (cleaned.startsWith('Dr. ')) {
-    return cleaned;
-  }
-
-  return cleaned.split(/\s+/)[0] || cleaned;
+  return stage === 'review' ? 'Use Vera to tighten this draft without drifting from source' : 'Use Vera to set up the lane and organize source material';
 }
 
-function buildGreetingLine(address?: string) {
-  const shortName = shortVeraGreetingName(address);
-  return shortName ? `Hi, ${shortName}. How can I help you today?` : 'Hi. How can I help you today?';
+function buildEmptyStateDescription(stage: AssistantStage, mode: AssistantMode) {
+  if (mode === 'prompt-builder') {
+    return stage === 'review'
+      ? 'Ask Vera to capture recurring review edits so future drafts lean closer to the way you actually revise.'
+      : 'Ask Vera to translate your workflow into note-lane preferences, presets, or reusable setup patterns.';
+  }
+
+  if (mode === 'reference-lookup') {
+    return 'Vera can explain note sections, documentation language, and approved reference lookups without leaving your current workflow.';
+  }
+
+  return stage === 'review'
+    ? 'Start with a warning, a risky sentence, or a missing detail and Vera will help you correct it conservatively.'
+    : 'Start with a note type, a source-organizing question, or a workflow problem and Vera will help you set up the next step.';
 }
 
-export function AssistantPanel({ stage, context }: AssistantPanelProps) {
+function buildComposerPlaceholder(stage: AssistantStage, context: AssistantApiContext) {
+  if (stage === 'review' && context.topHighRiskWarningTitle) {
+    return `Review "${context.topHighRiskWarningTitle}", this section, conservative rewrites, or what to verify before export...`;
+  }
+
+  if (context.focusedSectionHeading) {
+    return `${context.focusedSectionHeading}, source support, note preferences, or workflow help...`;
+  }
+
+  if (stage === 'compose') {
+    return 'Source organization, note setup, presets, or how to shape this lane before generating...';
+  }
+
+  return 'This warning, this section, note preferences, privacy, or workflow help...';
+}
+
+function buildWorkflowStageItems(stage: AssistantStage, context: AssistantApiContext, hasConversation: boolean, hasActions: boolean) {
+  const inReview = stage === 'review';
+
+  return [
+    {
+      id: 'source-intake',
+      label: 'Source intake',
+      detail: context.noteType ? `${context.noteType} is open.` : 'Provider workspace is open.',
+      status: inReview || hasConversation ? 'complete' : 'active',
+    },
+    {
+      id: 'draft-shaping',
+      label: 'Draft shaping',
+      detail: context.focusedSectionHeading ? `Focused on ${context.focusedSectionHeading}.` : 'Lane and source guidance stay close.',
+      status: inReview ? 'complete' : hasConversation ? 'active' : 'upcoming',
+    },
+    {
+      id: 'review',
+      label: 'Review',
+      detail: inReview
+        ? (context.topHighRiskWarningTitle ? `Watching ${context.topHighRiskWarningTitle}.` : 'Reviewing wording and source fit.')
+        : 'Review opens after the draft takes shape.',
+      status: inReview ? 'active' : 'upcoming',
+    },
+    {
+      id: 'finish',
+      label: 'Finish',
+      detail: hasActions ? 'Quick options are ready below.' : 'Copy and export happen after review confidence is higher.',
+      status: inReview && hasConversation ? 'active' : 'upcoming',
+    },
+  ] as const;
+}
+
+function getStageStatusClassName(status: 'complete' | 'active' | 'upcoming') {
+  if (status === 'complete') {
+    return 'border-emerald-200/24 bg-[rgba(22,101,52,0.22)] text-emerald-100';
+  }
+
+  if (status === 'active') {
+    return 'border-cyan-200/24 bg-[rgba(18,181,208,0.14)] text-cyan-50';
+  }
+
+  return 'border-cyan-200/10 bg-[rgba(13,30,50,0.62)] text-cyan-50/68';
+}
+
+function buildActionPresentation(action: AssistantAction, stage: AssistantStage, context: AssistantApiContext) {
+  if (action.type === 'apply-conservative-rewrite' || action.type === 'run-review-rewrite') {
+    return {
+      lane: 'Fix now',
+      rationale: context.topHighRiskWarningTitle
+        ? 'Current wording likely needs a more conservative pass before finishing.'
+        : 'This wording likely reads stronger or cleaner than the source currently supports.',
+    };
+  }
+
+  if (action.type === 'apply-note-revision') {
+    return {
+      lane: 'Fix now',
+      rationale: context.focusedSectionHeading
+        ? `This is a direct wording change for ${context.focusedSectionHeading}.`
+        : 'This is a direct wording fix you can review immediately.',
+    };
+  }
+
+  if (action.type === 'jump-to-source-evidence') {
+    return {
+      lane: 'Check source',
+      rationale: 'Use this when you want to verify support before trusting the current wording.',
+    };
+  }
+
+  if (action.type === 'create-preset-draft' || action.type === 'append-preferences' || action.type === 'replace-preferences') {
+    return {
+      lane: 'Save as preference',
+      rationale: stage === 'review'
+        ? 'This pattern is repeating enough in review that it should become reusable.'
+        : 'This workflow choice is repeating enough to preserve as a reusable default.',
+    };
+  }
+
+  return {
+    lane: 'Teach Vera',
+    rationale: 'Use this when Vera needs to learn a missing capability instead of leaving the gap hidden.',
+  };
+}
+
+export function AssistantPanel({ stage, context, isMinimized = false, onToggleMinimized, onClose }: AssistantPanelProps) {
+  const resolvedProviderIdentityId = context.providerIdentityId || DEFAULT_PROVIDER_IDENTITY_ID;
   const [learningHydratedAt, setLearningHydratedAt] = useState(0);
   const [mode, setMode] = useState<AssistantMode>('workflow-help');
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
@@ -188,10 +318,17 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
   const [actionMessage, setActionMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showSecondaryControls, setShowSecondaryControls] = useState(false);
+  const [compactReviewMode, setCompactReviewMode] = useState(stage === 'review');
   const [showTools, setShowTools] = useState(false);
+  const [showContextDetails, setShowContextDetails] = useState(false);
+  const [showReferencePolicyPanel, setShowReferencePolicyPanel] = useState(false);
+  const [showMemoryCenter, setShowMemoryCenter] = useState(false);
   const [showQuickPrompts, setShowQuickPrompts] = useState(false);
   const [showScenarioQuestions, setShowScenarioQuestions] = useState(false);
   const [showCurrentCues, setShowCurrentCues] = useState(false);
+  const [editingMemoryKey, setEditingMemoryKey] = useState<string | null>(null);
+  const [editingMemoryValue, setEditingMemoryValue] = useState('');
   const [rewritePreferenceSuggestion, setRewritePreferenceSuggestion] = useState<{
     noteType: string;
     optionTone: 'most-conservative' | 'balanced' | 'closest-to-source';
@@ -202,7 +339,7 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
   const providerWorkflowInsights = useMemo(() => assistantMemoryService.getWorkflowInsights({
     profileId: context.providerProfileId,
     noteTypes: context.noteType ? [context.noteType] : [],
-  }), [context.noteType, context.providerProfileId, learningHydratedAt]);
+  }, resolvedProviderIdentityId), [context.noteType, context.providerProfileId, learningHydratedAt, resolvedProviderIdentityId]);
   const activeNoteTypeInsight = providerWorkflowInsights.noteTypeInsights[0] || null;
   const weeklyTheme = useMemo(() => {
     const themes: string[] = [];
@@ -231,16 +368,49 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
   }, [activeNoteTypeInsight, profilePromptPreferenceSuggestion, rewritePreferenceSuggestion]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      setMode('workflow-help');
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(`${MODE_STORAGE_KEY_PREFIX}:${resolvedProviderIdentityId}:${stage}`);
+      if (raw === 'workflow-help' || raw === 'prompt-builder' || raw === 'reference-lookup') {
+        setMode(raw);
+        return;
+      }
+    } catch {
+      // Ignore storage access issues and fall back to workflow help.
+    }
+
     setMode('workflow-help');
+  }, [resolvedProviderIdentityId, stage]);
+
+  useEffect(() => {
     setMessages([]);
     setActions([]);
     setActionMessage('');
     setShowSuggestions(false);
+    setShowSecondaryControls(false);
+    setCompactReviewMode(stage === 'review');
     setShowTools(false);
+    setShowContextDetails(false);
+    setShowReferencePolicyPanel(false);
+    setShowMemoryCenter(false);
     setShowQuickPrompts(false);
     setShowScenarioQuestions(false);
     setShowCurrentCues(false);
+    setEditingMemoryKey(null);
+    setEditingMemoryValue('');
   }, [context.providerAddressingName, context.veraInteractionStyle, context.veraProactivityLevel, stage]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(`${MODE_STORAGE_KEY_PREFIX}:${resolvedProviderIdentityId}:${stage}`, mode);
+  }, [mode, resolvedProviderIdentityId, stage]);
 
   useEffect(() => {
     if (stage !== 'review') {
@@ -248,19 +418,21 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
       return;
     }
 
-    setRewritePreferenceSuggestion(assistantMemoryService.getRewriteSuggestion(context.noteType));
-  }, [context.noteType, learningHydratedAt, stage]);
+    setRewritePreferenceSuggestion(assistantMemoryService.getRewriteSuggestion(context.noteType, resolvedProviderIdentityId));
+  }, [context.noteType, learningHydratedAt, resolvedProviderIdentityId, stage]);
 
   useEffect(() => {
-    setProfilePromptPreferenceSuggestion(assistantMemoryService.getProfilePromptSuggestion(context.providerProfileId));
-  }, [context.providerProfileId, context.noteType, learningHydratedAt]);
+    setProfilePromptPreferenceSuggestion(
+      assistantMemoryService.getProfilePromptSuggestion(context.providerProfileId, resolvedProviderIdentityId),
+    );
+  }, [context.providerProfileId, context.noteType, learningHydratedAt, resolvedProviderIdentityId]);
 
   useEffect(() => {
     let isMounted = true;
 
     async function hydrateLearning() {
       try {
-        await assistantMemoryService.hydrateLearning();
+        await assistantMemoryService.hydrateLearning(resolvedProviderIdentityId);
         if (isMounted) {
           setLearningHydratedAt(Date.now());
         }
@@ -274,11 +446,11 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
     return () => {
       isMounted = false;
     };
-  }, [context.providerProfileId, context.noteType]);
+  }, [context.providerProfileId, context.noteType, resolvedProviderIdentityId]);
 
   useEffect(() => {
-    setCueUsageCounts(readCueUsageCounts());
-  }, []);
+    setCueUsageCounts(readCueUsageCounts(resolvedProviderIdentityId));
+  }, [resolvedProviderIdentityId]);
 
   const quickPrompts = useMemo(() => {
     if (mode === 'prompt-builder') {
@@ -396,6 +568,8 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
       ...messages.slice(-6).map((item) => ({
         role: item.role,
         content: item.content,
+        answerMode: item.answerMode,
+        builderFamily: item.builderFamily,
       })),
       {
         role: 'provider',
@@ -424,12 +598,19 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
 
       setMessages((current) => [
         ...current,
-        createMessage('assistant', data.message, data.suggestions, data.references, data.externalAnswerMeta, data.modeMeta),
+        createMessage(
+          'assistant',
+          data.message,
+          data.suggestions,
+          data.references,
+          data.externalAnswerMeta,
+          data.modeMeta,
+          data.answerMode,
+          data.builderFamily,
+        ),
       ]);
       setActions(data.actions || []);
-      if (data.actions?.some((action) => action.type === 'send-beta-feedback')) {
-        setShowSuggestions(true);
-      }
+      setShowSuggestions(Boolean(data.actions?.length));
     } catch (error) {
       setMessages((current) => [
         ...current,
@@ -456,7 +637,7 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
             message: action.feedbackMessage,
             metadata: {
               source: 'vera-gap',
-              providerId: getCurrentProviderId(),
+              providerId: resolvedProviderIdentityId,
               providerProfileId: context.providerProfileId,
               providerProfileName: context.providerProfileName,
               providerAddressingName: context.providerAddressingName,
@@ -468,13 +649,20 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
           }),
         });
 
-        const data = await response.json() as { error?: string };
+        const data = await response.json() as {
+          error?: string;
+          notification?: FeedbackNotificationResult;
+        };
 
         if (!response.ok) {
           throw new Error(data.error || 'Unable to save Vera gap feedback right now.');
         }
 
-        setActionMessage('Vera gap saved to Beta Feedback so this missing skill can be reviewed and added.');
+        if (data.notification?.delivered && data.notification.recipient) {
+          setActionMessage(`Vera gap saved and emailed to ${data.notification.recipient} so this missing skill can be reviewed and added.`);
+        } else {
+          setActionMessage('Vera gap saved to Beta Feedback so this missing skill can be reviewed and added.');
+        }
         setActions((current) => current.filter((item) => item !== action));
       } catch (error) {
         setActionMessage(error instanceof Error ? error.message : 'Unable to save Vera gap feedback right now.');
@@ -483,8 +671,8 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
     }
 
     if (action.type === 'apply-conservative-rewrite' && context.noteType) {
-      assistantMemoryService.recordRewriteSelection(context.noteType, action.optionTone);
-      setRewritePreferenceSuggestion(assistantMemoryService.getRewriteSuggestion(context.noteType));
+      assistantMemoryService.recordRewriteSelection(context.noteType, action.optionTone, resolvedProviderIdentityId);
+      setRewritePreferenceSuggestion(assistantMemoryService.getRewriteSuggestion(context.noteType, resolvedProviderIdentityId));
     }
 
     publishAssistantAction({
@@ -528,7 +716,11 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
       return;
     }
 
-    assistantMemoryService.dismissRewriteSuggestion(rewritePreferenceSuggestion.noteType, rewritePreferenceSuggestion.optionTone);
+    assistantMemoryService.dismissRewriteSuggestion(
+      rewritePreferenceSuggestion.noteType,
+      rewritePreferenceSuggestion.optionTone,
+      resolvedProviderIdentityId,
+    );
     setRewritePreferenceSuggestion(null);
   }
 
@@ -546,7 +738,11 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
       return;
     }
 
-    assistantMemoryService.dismissProfilePromptSuggestion(context.providerProfileId, profilePromptPreferenceSuggestion.key);
+    assistantMemoryService.dismissProfilePromptSuggestion(
+      context.providerProfileId,
+      profilePromptPreferenceSuggestion.key,
+      resolvedProviderIdentityId,
+    );
     setProfilePromptPreferenceSuggestion(null);
   }
 
@@ -580,7 +776,41 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
       [cueId]: (cueUsageCounts[cueId] || 0) + 1,
     };
     setCueUsageCounts(nextCounts);
-    writeCueUsageCounts(nextCounts);
+    writeCueUsageCounts(resolvedProviderIdentityId, nextCounts);
+  }
+
+  function startEditingMemory(key: string, value: string) {
+    setEditingMemoryKey(key);
+    setEditingMemoryValue(value);
+  }
+
+  function cancelEditingMemory() {
+    setEditingMemoryKey(null);
+    setEditingMemoryValue('');
+  }
+
+  function saveEditedMemory() {
+    if (!editingMemoryKey || !editingMemoryValue.trim()) {
+      return;
+    }
+
+    assistantMemoryService.updateRememberedFact(editingMemoryKey, editingMemoryValue.trim(), resolvedProviderIdentityId);
+    setLearningHydratedAt(Date.now());
+    setActionMessage('Updated what Vera remembers for this provider workspace.');
+    cancelEditingMemory();
+  }
+
+  function removeMemoryFact(key: string) {
+    const removed = assistantMemoryService.removeRememberedFact(key, resolvedProviderIdentityId);
+    if (!removed) {
+      return;
+    }
+
+    setLearningHydratedAt(Date.now());
+    setActionMessage('Removed that remembered workflow note from Vera.');
+    if (editingMemoryKey === key) {
+      cancelEditingMemory();
+    }
   }
 
   const currentCueCards = useMemo(() => {
@@ -676,7 +906,6 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
       label: card.title,
       detail: `${card.kind === 'rewrite' ? 'Review' : 'Workspace'} cue ${card.usageCount > 0 ? `used ${card.usageCount} time${card.usageCount === 1 ? '' : 's'}` : 'seen'} ${formatCueRecency(card.recencyTimestamp)}.`,
     })), [currentCueCards]);
-  const greetingName = shortVeraGreetingName(context.providerAddressingName);
   const activeReferenceQuery = useMemo(() => mode === 'reference-lookup'
     ? [...messages].reverse().find((item) => item.role === 'provider')?.content
     : undefined, [messages, mode]);
@@ -684,11 +913,15 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
     () => mode === 'reference-lookup' ? describeAssistantReferencePolicy(activeReferenceQuery) : null,
     [activeReferenceQuery, mode],
   );
+  const isReviewMode = stage === 'review';
   const compactContextLine = [
     context.noteType ? `Note: ${context.noteType}` : null,
     stage === 'review' && context.topHighRiskWarningTitle ? `Warning: ${context.topHighRiskWarningTitle}` : null,
     context.outputDestination ? context.outputDestination : null,
   ].filter(Boolean).join(' • ');
+  const stageFocusLine = stage === 'review'
+    ? 'Review mode is prioritizing contradictions, risk cues, and the next safest action.'
+    : 'Compose mode is prioritizing note setup, source organization, and reusable workflow support.';
   const hasToolsContent = Boolean(
     quickPrompts.length
     || scenarioQuestions.length
@@ -698,129 +931,520 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
   );
   const modeDefinitions = listAssistantModeDefinitions();
   const activeModeDefinition = getAssistantModeDefinition(mode);
+  const emptyStateTitle = buildEmptyStateTitle(stage, mode);
+  const emptyStateDescription = buildEmptyStateDescription(stage, mode);
+  const stageActionStrip = stage === 'review'
+    ? [
+        { label: 'Explain warning', prompt: 'Explain the main warning on this note and tell me what to fix first.', nextMode: 'workflow-help' as AssistantMode },
+        { label: 'More conservative', prompt: 'Help me make the current note wording more conservative and closer to source.', nextMode: 'workflow-help' as AssistantMode },
+        { label: 'Find source support', prompt: 'Show me what source support I should verify before I finalize this note.', nextMode: 'workflow-help' as AssistantMode },
+        { label: 'Check documentation term', prompt: 'Look up a documentation term or coding reference for this review context.', nextMode: 'reference-lookup' as AssistantMode },
+      ]
+    : [
+        { label: 'Organize source', prompt: 'Help me organize messy source material before I generate the note.', nextMode: 'workflow-help' as AssistantMode },
+        { label: 'Shape lane', prompt: 'Help me shape this note lane around my workflow and output destination.', nextMode: 'workflow-help' as AssistantMode },
+        { label: 'Draft reusable preference', prompt: 'Help me turn this workflow pattern into a reusable preference or preset.', nextMode: 'prompt-builder' as AssistantMode },
+        { label: 'Reference lookup', prompt: 'Look up a documentation term or note-structure reference for this compose stage.', nextMode: 'reference-lookup' as AssistantMode },
+      ];
+  const contextActionCards = useMemo(() => {
+    const cards: ContextActionCard[] = [];
 
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 space-y-3 border-b border-cyan-200/10 pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100">Vera</div>
-            <div className="mt-1 text-lg font-semibold text-white">Your Vera assistant</div>
-            <div className="mt-1 truncate text-xs text-cyan-50/72">
-              {[context.providerAddressingName ? `Working with ${context.providerAddressingName}` : null, compactContextLine].filter(Boolean).join(' • ')}
-            </div>
-            {(context.veraInteractionStyle || context.veraProactivityLevel) ? (
-              <div className="mt-1 truncate text-[11px] text-cyan-50/60">
-                {[context.veraInteractionStyle ? veraInteractionStyleLabel(context.veraInteractionStyle) : null, context.veraProactivityLevel ? veraProactivityLabel(context.veraProactivityLevel) : null].filter(Boolean).join(' • ')}
-              </div>
-            ) : null}
-            <div className="mt-1 truncate text-[11px] text-cyan-50/58">
-              {activeModeDefinition.detail}
+    if (stage === 'review' && context.topHighRiskWarningTitle) {
+      cards.push({
+        id: 'warning',
+        label: 'Top warning in focus',
+        detail: context.topHighRiskWarningDetail || context.topHighRiskWarningTitle,
+        actionLabel: 'Work this warning',
+        prompt: `The top warning is "${context.topHighRiskWarningTitle}". Explain what it means, what source support I should verify, and what I should fix first.`,
+        nextMode: 'workflow-help',
+      });
+    }
+
+    if (context.focusedSectionHeading) {
+      cards.push({
+        id: 'section',
+        label: `Focused section: ${context.focusedSectionHeading}`,
+        detail: context.focusedSectionSentence || 'Vera can help tighten this section without drifting from source.',
+        actionLabel: stage === 'review' ? 'Review this section' : 'Shape this section',
+        prompt: stage === 'review'
+          ? `I am focused on the ${context.focusedSectionHeading} section. Help me review and revise it conservatively without drifting from source.`
+          : `I am focused on the ${context.focusedSectionHeading} section. Help me shape what belongs here before I generate the note.`,
+        nextMode: 'workflow-help',
+      });
+    }
+
+    if (context.outputDestination && context.outputDestination !== 'Generic') {
+      cards.push({
+        id: 'destination',
+        label: `${context.outputDestination} output is active`,
+        detail: 'Keep wording and structure clean for the current destination without changing clinical meaning or certainty.',
+        actionLabel: `Fit ${context.outputDestination}`,
+        prompt: `Help me keep this note clean for ${context.outputDestination} without changing the clinical meaning or certainty.`,
+        nextMode: 'workflow-help',
+      });
+    }
+
+    if (stage === 'review' && ((context.needsReviewCount || 0) > 0 || (context.unreviewedCount || 0) > 0 || (context.phaseTwoCueCount || 0) > 0)) {
+      cards.push({
+        id: 'review-queue',
+        label: 'Review queue is active',
+        detail: [
+          (context.needsReviewCount || 0) > 0 ? `${context.needsReviewCount} need review` : null,
+          (context.unreviewedCount || 0) > 0 ? `${context.unreviewedCount} unreviewed` : null,
+          (context.phaseTwoCueCount || 0) > 0 ? `${context.phaseTwoCueCount} follow-up cues` : null,
+        ].filter(Boolean).join(' • '),
+        actionLabel: 'Plan review pass',
+        prompt: `I have ${context.needsReviewCount || 0} items needing review, ${context.unreviewedCount || 0} unreviewed items, and ${context.phaseTwoCueCount || 0} follow-up cues. Give me a fast review plan for this note.`,
+        nextMode: 'workflow-help',
+      });
+    }
+
+    return cards;
+  }, [
+    context.focusedSectionHeading,
+    context.focusedSectionSentence,
+    context.needsReviewCount,
+    context.outputDestination,
+    context.phaseTwoCueCount,
+    context.topHighRiskWarningDetail,
+    context.topHighRiskWarningTitle,
+    context.unreviewedCount,
+    stage,
+  ]);
+  const contextSummaryChips = [
+    stage === 'review' && (context.needsReviewCount || 0) > 0 ? `${context.needsReviewCount} need review` : null,
+    stage === 'review' && (context.unreviewedCount || 0) > 0 ? `${context.unreviewedCount} unreviewed` : null,
+    stage === 'review' && (context.phaseTwoCueCount || 0) > 0 ? `${context.phaseTwoCueCount} follow-up cues` : null,
+    context.focusedSectionHeading ? context.focusedSectionHeading : null,
+    context.outputDestination && context.outputDestination !== 'Generic' ? context.outputDestination : null,
+  ].filter(Boolean);
+  const composerPlaceholder = buildComposerPlaceholder(stage, context);
+  const minimalContextChips = [
+    context.noteType ? context.noteType : null,
+    context.focusedSectionHeading ? context.focusedSectionHeading : null,
+    isReviewMode && context.topHighRiskWarningTitle ? context.topHighRiskWarningTitle : null,
+    context.outputDestination && context.outputDestination !== 'Generic' ? context.outputDestination : null,
+  ].filter(Boolean);
+  const primaryStripText = isReviewMode
+    ? context.topHighRiskWarningTitle
+      ? `Review focus: ${context.topHighRiskWarningTitle}`
+      : 'Review mode is focused on the current clinical analysis.'
+    : compactContextLine || stageFocusLine;
+  const workflowStageItems = useMemo(
+    () => buildWorkflowStageItems(stage, context, messages.length > 0, actions.length > 0),
+    [actions.length, context, messages.length, stage],
+  );
+  const visibleMemoryHighlights = useMemo(() => {
+    const highlights: Array<{ id: string; label: string; detail: string }> = [];
+
+    if (activeNoteTypeInsight?.laneSuggestion) {
+      highlights.push({
+        id: 'lane',
+        label: 'Usual lane setup',
+        detail: `${activeNoteTypeInsight.noteType}: ${activeNoteTypeInsight.laneSuggestion.outputScope.replace(/-/g, ' ')} scope with ${activeNoteTypeInsight.laneSuggestion.outputStyle}.`,
+      });
+    }
+
+    if (rewritePreferenceSuggestion) {
+      highlights.push({
+        id: 'rewrite',
+        label: 'Rewrite tendency',
+        detail: `${conservativeOptionLabel(rewritePreferenceSuggestion.optionTone)} is your repeated review style for ${rewritePreferenceSuggestion.noteType}.`,
+      });
+    }
+
+    if (profilePromptPreferenceSuggestion) {
+      highlights.push({
+        id: 'profile-pattern',
+        label: 'Provider pattern',
+        detail: profilePromptPreferenceSuggestion.label,
+      });
+    }
+
+    if (activeNoteTypeInsight?.promptSuggestion) {
+      highlights.push({
+        id: 'prompt',
+        label: 'Prompt habit',
+        detail: activeNoteTypeInsight.promptSuggestion.label,
+      });
+    }
+
+    return highlights.slice(0, 4);
+  }, [activeNoteTypeInsight, profilePromptPreferenceSuggestion, rewritePreferenceSuggestion]);
+  const rememberedFacts = useMemo(
+    () => assistantMemoryService.getRememberedFacts(resolvedProviderIdentityId).slice(0, 6),
+    [learningHydratedAt, resolvedProviderIdentityId],
+  );
+  const returnStateSummary = useMemo(() => {
+    if (messages.length) {
+      return {
+        title: 'Continuing this thread',
+        detail: `Vera is holding ${messages.length} recent turn${messages.length === 1 ? '' : 's'} in view for this ${stage} session.`,
+      };
+    }
+
+    if (visibleMemoryHighlights.length) {
+      return {
+        title: 'Continuing your usual workflow',
+        detail: 'Vera is resuming from learned provider patterns instead of starting from zero.',
+      };
+    }
+
+    return {
+      title: 'Fresh session, same workspace',
+      detail: 'The thread is empty, but stage context and provider preferences are still available.',
+    };
+  }, [messages.length, stage, visibleMemoryHighlights.length]);
+
+  function clearConversation() {
+    setMessages([]);
+    setActions([]);
+    setActionMessage('');
+    setShowSuggestions(false);
+  }
+
+  function sendStageAction(nextMode: AssistantMode, prompt: string) {
+    setMode(nextMode);
+    void sendMessage(prompt);
+  }
+
+  if (isMinimized) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cyan-200/10 pb-3">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">Vera</div>
+            <div className="mt-1 text-sm text-cyan-50/76">
+              Compact mode stays ready for a quick question without taking over the workspace.
             </div>
           </div>
-          <ContextPill stage={stage} />
+          <div className="flex flex-wrap gap-2">
+            {onClose ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+              >
+                Close
+              </button>
+            ) : null}
+            {onToggleMinimized ? (
+              <button
+                type="button"
+                onClick={onToggleMinimized}
+                className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+              >
+                Expand
+              </button>
+            ) : null}
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {modeDefinitions.map((definition) => (
-            <button
-              key={definition.mode}
-              type="button"
-              onClick={() => setMode(definition.mode)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                mode === definition.mode
-                  ? 'border-cyan-200/30 bg-[rgba(18,181,208,0.18)] text-cyan-50'
-                  : 'border-cyan-200/10 bg-[rgba(13,30,50,0.68)] text-ink hover:border-cyan-200/20 hover:bg-[rgba(18,181,208,0.12)] hover:text-cyan-50'
-              }`}
-              title={definition.detail}
-            >
-              {definition.label}
-            </button>
-          ))}
-          {hasToolsContent ? (
-            <button
-              type="button"
-              onClick={() => setShowTools((current) => !current)}
-              className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-            >
-              {showTools ? 'Hide recommendations' : 'Recommendations'}
-            </button>
-          ) : null}
-          {actions.length ? (
-            <button
-              type="button"
-              onClick={() => setShowSuggestions((current) => !current)}
-              className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-            >
-              {showSuggestions ? `Hide suggestions (${actions.length})` : `Suggestions (${actions.length})`}
-            </button>
-          ) : null}
+        <div className="mt-3 rounded-[16px] border border-cyan-200/10 bg-[rgba(8,20,34,0.56)] px-3 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">Current context</div>
+          <div className="mt-1 text-xs leading-5 text-cyan-50/74">
+            {primaryStripText}
+          </div>
         </div>
+
+        <div className="mt-3 rounded-[16px] border border-cyan-200/10 bg-[rgba(8,20,34,0.56)] px-3 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">Quick ask</div>
+          <div className="mt-2">
+            <Composer disabled={isLoading} placeholder={composerPlaceholder} onSend={sendMessage} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="shrink-0 space-y-2 border-b border-cyan-200/10 pb-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.1)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50">
+                {isReviewMode ? 'Review mode' : activeModeDefinition.label}
+              </span>
+              {!isReviewMode ? <ContextPill stage={stage} /> : null}
+              {minimalContextChips.slice(0, isReviewMode ? 2 : 3).map((chip) => (
+                <span
+                  key={chip}
+                  className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.72)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/82"
+                >
+                  {chip}
+                </span>
+              ))}
+            </div>
+            <div className={`mt-1 text-xs leading-5 ${isReviewMode ? 'text-rose-100/82' : 'text-cyan-50/72'}`}>
+              {primaryStripText}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            {onClose ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+              >
+                Close
+              </button>
+            ) : null}
+            {onToggleMinimized ? (
+              <button
+                type="button"
+                onClick={onToggleMinimized}
+                className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+              >
+                {isMinimized ? 'Expand' : 'Minimize'}
+              </button>
+            ) : null}
+            {(hasToolsContent || contextActionCards.length || referencePolicyPreview || !isReviewMode) ? (
+              <button
+                type="button"
+                onClick={() => setShowSecondaryControls((current) => !current)}
+                className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+              >
+                {showSecondaryControls ? 'Hide controls' : 'Controls'}
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {!isReviewMode && showSecondaryControls ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {modeDefinitions.map((definition) => (
+              <button
+                key={definition.mode}
+                type="button"
+                onClick={() => setMode(definition.mode)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  mode === definition.mode
+                    ? 'border-cyan-200/30 bg-[rgba(18,181,208,0.18)] text-cyan-50'
+                    : 'border-cyan-200/10 bg-[rgba(13,30,50,0.68)] text-ink hover:border-cyan-200/20 hover:bg-[rgba(18,181,208,0.12)] hover:text-cyan-50'
+                }`}
+                title={definition.detail}
+              >
+                {definition.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         {actionMessage ? (
           <div className="rounded-xl border border-emerald-200/24 bg-[rgba(5,46,22,0.18)] px-3 py-2 text-xs text-emerald-100/88">
             {actionMessage}
           </div>
         ) : null}
-        {referencePolicyPreview ? (
-          <div className="rounded-[18px] border border-cyan-200/12 bg-[rgba(13,30,50,0.52)] px-4 py-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100">Reference policy</div>
-            <div className="mt-1 text-sm font-semibold text-white">{referencePolicyPreview.title}</div>
-            <div className="mt-1 text-xs leading-6 text-cyan-50/76">{referencePolicyPreview.detail}</div>
-            {referencePolicyPreview.categoryLabels.length ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {referencePolicyPreview.categoryLabels.map((label) => (
-                  <span
-                    key={label}
-                    className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.12)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50"
-                  >
-                    {label}
-                  </span>
-                ))}
+
+        <div className="grid gap-2">
+          <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(10,24,40,0.56)] px-3 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">Workflow state</div>
+              <div className="text-[11px] text-cyan-50/58">{returnStateSummary.title}</div>
+            </div>
+            <div className="mt-1 text-xs leading-5 text-cyan-50/72">{returnStateSummary.detail}</div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {workflowStageItems.map((item, index) => (
+                <div
+                  key={item.id}
+                  className={`rounded-[14px] border px-3 py-2 ${getStageStatusClassName(item.status)}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                      Step {index + 1}
+                    </div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                      {item.status}
+                    </div>
+                  </div>
+                  <div className="mt-1 text-sm font-semibold">{item.label}</div>
+                  <div className="mt-1 text-[11px] leading-5 opacity-80">{item.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(8,20,34,0.56)] px-3 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">What Vera remembers</div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowMemoryCenter((current) => !current)}
+                  className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                >
+                  {showMemoryCenter ? 'Hide editor' : 'Memory center'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('prompt-builder');
+                    void sendMessage('What do you remember about my workflow, and what should I update or save as a reusable preference?');
+                  }}
+                  className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                >
+                  Review memory
+                </button>
               </div>
-            ) : null}
-            {referencePolicyPreview.domainLabels.length ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {referencePolicyPreview.domainLabels.map((label) => (
-                  <span
-                    key={label}
-                    className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.7)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/86"
-                  >
-                    {label}
-                  </span>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100/68">Workflow patterns</div>
+                <div className="mt-1 text-sm font-semibold text-cyan-50">{visibleMemoryHighlights.length}</div>
+                <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">Reusable habits Vera is actively using right now.</div>
+              </div>
+              <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100/68">Direct memory notes</div>
+                <div className="mt-1 text-sm font-semibold text-cyan-50">{rememberedFacts.length}</div>
+                <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">Explicit things you taught Vera about your workflow.</div>
+              </div>
+              <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100/68">Current continuity</div>
+                <div className="mt-1 text-sm font-semibold text-cyan-50">{context.noteType || (isReviewMode ? 'Review session' : 'Compose session')}</div>
+                <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">The note lane and current context Vera is carrying forward.</div>
+              </div>
+            </div>
+            {visibleMemoryHighlights.length ? (
+              <div className="mt-3 grid gap-2">
+                {visibleMemoryHighlights.map((item) => (
+                  <div key={item.id} className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-100/72">{item.label}</div>
+                    <div className="mt-1 text-xs leading-5 text-cyan-50/78">{item.detail}</div>
+                  </div>
                 ))}
+                <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(7,17,30,0.28)] px-3 py-2.5 text-xs leading-5 text-cyan-50/66">
+                  {visibleMemoryHighlights.length === 1
+                    ? 'That is the strongest learned pattern Vera has for this workflow right now. As more repeat habits show up, additional memory items will appear here.'
+                    : 'These are the main learned patterns Vera is using right now. Open Memory center if you want to edit direct remembered notes.'}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-2 text-xs leading-5 text-cyan-50/68">
+                Vera has not learned a strong provider pattern here yet. As you work, repeated note habits and review tendencies will show up in this panel.
+              </div>
+            )}
+            {showMemoryCenter ? (
+              <div className="mt-3 rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-100/72">Editable memory notes</div>
+                  <div className="text-[11px] text-cyan-50/56">Update or remove what Vera keeps about your workflow.</div>
+                </div>
+                {rememberedFacts.length ? (
+                  <div className="mt-3 space-y-2">
+                    {rememberedFacts.map((fact) => (
+                      <div key={fact.key} className="rounded-[12px] border border-cyan-200/10 bg-[rgba(7,17,30,0.28)] px-3 py-3">
+                        {editingMemoryKey === fact.key ? (
+                          <div className="space-y-2">
+                            <textarea
+                              value={editingMemoryValue}
+                              onChange={(event) => setEditingMemoryValue(event.target.value)}
+                              className="workspace-control min-h-[88px] w-full rounded-[14px] px-3 py-2 text-sm leading-6"
+                            />
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={saveEditedMemory}
+                                className="rounded-full border border-cyan-200/14 bg-[rgba(18,181,208,0.16)] px-3 py-1.5 text-xs font-medium text-cyan-50"
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingMemory}
+                                className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.68)] px-3 py-1.5 text-xs font-medium text-cyan-50/78"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="text-sm leading-6 text-cyan-50/84">{fact.fact}</div>
+                              <div className="mt-1 text-[11px] text-cyan-50/54">
+                                Seen {fact.count} time{fact.count === 1 ? '' : 's'}{fact.lastSeenAt ? ` • last updated ${formatCueRecency(fact.lastSeenAt)}` : ''}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => startEditingMemory(fact.key, fact.fact)}
+                                className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.68)] px-3 py-1 text-[11px] font-medium text-cyan-50/80"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeMemoryFact(fact.key)}
+                                className="rounded-full border border-rose-200/16 bg-[rgba(127,29,29,0.22)] px-3 py-1 text-[11px] font-medium text-rose-100"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 text-xs leading-5 text-cyan-50/66">
+                    No direct conversational memory notes are saved yet. Use “remember that...” in Vera to teach her something explicit about your workflow.
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
-        ) : null}
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 py-3">
-        <ThreadView
-          messages={messages}
-          isLoading={isLoading}
-          emptyTitle={buildGreetingLine(context.providerAddressingName)}
-        />
-      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto py-2 pr-1">
+        <div className="flex min-h-full flex-col gap-3">
+          <div className="min-h-[240px] shrink-0">
+            <ThreadView
+              stage={stage}
+              messages={messages}
+              isLoading={isLoading}
+              emptyStateTitle={emptyStateTitle}
+              emptyStateDescription={emptyStateDescription}
+              starterPrompts={quickPrompts.slice(0, 4)}
+              onSelectStarter={(prompt) => void sendMessage(prompt)}
+              activityTimeline={assistantActivityTimeline}
+              compactReviewMode={compactReviewMode}
+              onToggleCompactReviewMode={stage === 'review' ? () => setCompactReviewMode((current) => !current) : undefined}
+              focusedSectionHeading={context.focusedSectionHeading}
+            />
+          </div>
 
-      {showSuggestions && actions.length ? (
-        <div className="aurora-soft-panel mb-3 shrink-0 rounded-[18px] p-4">
-          <div className="flex items-center justify-between gap-3">
+      {!isMinimized && showSuggestions && actions.length ? (
+        <div className="aurora-soft-panel shrink-0 rounded-[18px] p-3 sm:p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Suggestions</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Quick options</div>
               <div className="mt-1 text-[11px] text-cyan-50/68">
-                Vera generated {actions.length} suggested action{actions.length === 1 ? '' : 's'} for this conversation.
+                These stay below the conversation so Vera's reply can stay clean and easy to read.
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowSuggestions(false)}
+              className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+            >
+              Hide
+            </button>
           </div>
           <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto pr-1">
             {actions.map((action) => (
               <div key={`${action.type}-${action.label}`} className="rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-3">
                 {(() => {
                   const tool = getAssistantToolDefinition(action);
+                  const presentation = buildActionPresentation(action, stage, context);
                   return (
                     <>
                       <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border border-cyan-200/14 bg-[rgba(18,181,208,0.12)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50">
+                          {presentation.lane}
+                        </span>
                         <div className="text-sm font-semibold text-cyan-50">{action.label}</div>
                         <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/80">
                           {getAssistantToolRiskLabel(tool.riskLevel)}
@@ -832,6 +1456,9 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
                         ) : null}
                       </div>
                       <div className="mt-1 text-[11px] text-cyan-50/58">{tool.summary}</div>
+                      <div className="mt-2 rounded-[12px] border border-cyan-200/10 bg-[rgba(7,17,30,0.28)] px-2.5 py-2 text-[11px] leading-5 text-cyan-50/72">
+                        Why this matters: {presentation.rationale}
+                      </div>
                     </>
                   );
                 })()}
@@ -857,8 +1484,138 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
         </div>
       ) : null}
 
-      {showTools ? (
-        <div className="aurora-soft-panel mb-3 shrink-0 rounded-[18px] p-4">
+      {!isMinimized && showSecondaryControls ? (
+        <div className="aurora-soft-panel shrink-0 rounded-[18px] p-3 sm:p-4">
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Workspace controls</div>
+          <div className="mt-1 text-[11px] leading-5 text-cyan-50/66">{stageFocusLine}</div>
+          {contextSummaryChips.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {contextSummaryChips.map((chip) => (
+                <span
+                  key={chip}
+                  className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.74)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/84"
+                >
+                  {chip}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {stageActionStrip.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                onClick={() => sendStageAction(action.nextMode, action.prompt)}
+                className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+          {hasToolsContent ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowTools((current) => !current)}
+                className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+              >
+                {showTools ? 'Hide recommendations' : 'Recommendations'}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!isMinimized && showSecondaryControls && contextActionCards.length ? (
+          <div className="rounded-[18px] border border-cyan-200/12 bg-[rgba(13,30,50,0.52)] px-3 py-3 sm:px-4">
+            <button
+              type="button"
+              onClick={() => setShowContextDetails((current) => !current)}
+              className="flex w-full items-center justify-between gap-3 text-left"
+            >
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100">Live note context</div>
+                <div className="mt-1 text-xs leading-6 text-cyan-50/74">
+                  Current note context Vera can use right now.
+                </div>
+              </div>
+              <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/80">
+                {showContextDetails ? 'Hide' : 'Expand'}
+              </span>
+            </button>
+            {showContextDetails ? (
+              <div className="mt-3 space-y-2">
+                {contextActionCards.map((card) => (
+                  <div key={card.id} className="rounded-[14px] border border-cyan-200/10 bg-[rgba(7,17,30,0.34)] px-3 py-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/76">{card.label}</div>
+                    <div className="mt-1 text-xs leading-6 text-cyan-50/78">{card.detail}</div>
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={() => sendStageAction(card.nextMode, card.prompt)}
+                        className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.12)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.18)]"
+                      >
+                        {card.actionLabel}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      {!isMinimized && showSecondaryControls && referencePolicyPreview ? (
+          <div className="rounded-[18px] border border-cyan-200/12 bg-[rgba(13,30,50,0.52)] px-3 py-3 sm:px-4">
+            <button
+              type="button"
+              onClick={() => setShowReferencePolicyPanel((current) => !current)}
+              className="flex w-full items-center justify-between gap-3 text-left"
+            >
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100">Reference policy</div>
+                <div className="mt-1 text-xs leading-6 text-cyan-50/74">
+                  How Vera is using references in this reply.
+                </div>
+              </div>
+              <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/80">
+                {showReferencePolicyPanel ? 'Hide' : 'Expand'}
+              </span>
+            </button>
+            {showReferencePolicyPanel ? (
+              <div className="mt-3">
+                <div className="text-sm font-semibold text-white">{referencePolicyPreview.title}</div>
+                <div className="mt-1 text-xs leading-6 text-cyan-50/76">{referencePolicyPreview.detail}</div>
+                {referencePolicyPreview.categoryLabels.length ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {referencePolicyPreview.categoryLabels.map((label) => (
+                      <span
+                        key={label}
+                        className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.12)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {referencePolicyPreview.domainLabels.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {referencePolicyPreview.domainLabels.map((label) => (
+                      <span
+                        key={label}
+                        className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.7)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/86"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+      {!isMinimized && showTools ? (
+        <div className="aurora-soft-panel shrink-0 rounded-[18px] p-3 sm:p-4">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -1046,21 +1803,36 @@ export function AssistantPanel({ stage, context }: AssistantPanelProps) {
             </div>
           ) : (
             <div className="mt-3 text-xs text-cyan-50/62">
-              Open recommendations if you want ideas for what Vera can help with.
+              Open recommendations only when you want a faster starting point.
             </div>
           )}
         </div>
       ) : null}
-
-      <div className="shrink-0 border-t border-cyan-200/10 pt-3">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ask Vera directly</div>
-        <div className="mb-3 text-[11px] text-cyan-50/72">
-          Ask your question or comment here. Vera replies directly above so the conversation stays in one visible flow.
-        </div>
-        <div className="aurora-soft-panel rounded-[18px] p-4">
-          <Composer disabled={isLoading} onSend={sendMessage} />
         </div>
       </div>
+
+      {!isMinimized ? (
+        <div className="shrink-0 border-t border-cyan-200/10 pt-2">
+          <div className="aurora-soft-panel rounded-[18px] p-3">
+            <Composer disabled={isLoading} placeholder={composerPlaceholder} onSend={sendMessage} />
+          </div>
+        </div>
+      ) : (
+        <div className="aurora-soft-panel rounded-[18px] p-4">
+          <div className="flex items-center justify-between gap-3 text-sm text-cyan-50/74">
+            <div>Vera is minimized. Expand to continue note review and guidance.</div>
+            {onToggleMinimized ? (
+              <button
+                type="button"
+                onClick={onToggleMinimized}
+                className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
+              >
+                Expand Vera
+              </button>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

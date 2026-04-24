@@ -40,6 +40,7 @@ describe('dictation module scaffold', () => {
     expect(DICTATION_HIGH_RISK_FLAG_TYPES).toContain('negation');
     expect(DICTATION_HIGH_RISK_FLAG_TYPES).toContain('risk_language');
     expect(DICTATION_AUDIT_EVENT_NAMES).toContain('dictation_session_started');
+    expect(DICTATION_AUDIT_EVENT_NAMES).toContain('dictation_draft_resumed');
     expect(DICTATION_AUDIT_EVENT_NAMES).toContain('dictation_segment_inserted');
   });
 

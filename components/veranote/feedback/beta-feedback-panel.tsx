@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { BetaFeedbackCategory, BetaFeedbackItem } from '@/types/beta-feedback';
+import type { FeedbackNotificationResult } from '@/lib/beta/feedback-email';
 
 const categoryOptions: { value: BetaFeedbackCategory; label: string }[] = [
   { value: 'workflow', label: 'Workflow issue' },
@@ -45,14 +46,22 @@ export function BetaFeedbackPanel({ pageContext }: BetaFeedbackPanelProps) {
         } satisfies Partial<BetaFeedbackItem>),
       });
 
-      const data = (await response.json()) as { feedback?: BetaFeedbackItem; error?: string };
+      const data = (await response.json()) as {
+        feedback?: BetaFeedbackItem;
+        error?: string;
+        notification?: FeedbackNotificationResult;
+      };
 
       if (!response.ok) {
         throw new Error(data.error || 'Unable to save feedback right now.');
       }
 
       setMessage('');
-      setStatusMessage('Feedback saved. The beta team can review it from the feedback inbox.');
+      if (data.notification?.delivered && data.notification.recipient) {
+        setStatusMessage(`Feedback saved and emailed to ${data.notification.recipient}. It also remains in the feedback inbox.`);
+      } else {
+        setStatusMessage('Feedback saved. The beta team can review it from the feedback inbox.');
+      }
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : 'Unable to save feedback right now.');
     } finally {

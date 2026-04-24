@@ -28,9 +28,43 @@ export type AssistantExternalAnswerMeta = {
   detail: string;
 };
 
+export type AssistantAnswerMode =
+  | 'mse_completion_limits'
+  | 'warning_language'
+  | 'chart_ready_wording'
+  | 'uncertainty_preserving_substance_documentation'
+  | 'clinical_explanation'
+  | 'workflow_guidance'
+  | 'direct_reference_answer'
+  | 'medication_reference_answer'
+  | 'general_health_reference';
+
+export type AssistantBuilderFamily =
+  | 'mse'
+  | 'substance'
+  | 'capacity'
+  | 'hold'
+  | 'discharge'
+  | 'ama-elopement'
+  | 'risk'
+  | 'contradiction'
+  | 'overlap'
+  | 'fragmented-source'
+  | 'malingering'
+  | 'medication-boundary'
+  | 'medication-refusal'
+  | 'chart-wording'
+  | 'personality-language'
+  | 'acute-hpi'
+  | 'progress-note'
+  | 'discharge-summary'
+  | 'workflow';
+
 export type AssistantThreadTurn = {
   role: AssistantMessageRole;
   content: string;
+  answerMode?: AssistantAnswerMode;
+  builderFamily?: AssistantBuilderFamily;
 };
 
 export type AssistantMessage = {
@@ -41,6 +75,8 @@ export type AssistantMessage = {
   references?: AssistantReferenceSource[];
   externalAnswerMeta?: AssistantExternalAnswerMeta;
   modeMeta?: AssistantModeMeta;
+  answerMode?: AssistantAnswerMode;
+  builderFamily?: AssistantBuilderFamily;
 };
 
 export type AssistantAction =
@@ -102,9 +138,13 @@ export type AssistantResponsePayload = {
   references?: AssistantReferenceSource[];
   externalAnswerMeta?: AssistantExternalAnswerMeta;
   modeMeta?: AssistantModeMeta;
+  answerMode?: AssistantAnswerMode;
+  builderFamily?: AssistantBuilderFamily;
 };
 
 export type AssistantApiContext = {
+  providerAccountId?: string;
+  providerIdentityId?: string;
   noteType?: string;
   specialty?: string;
   currentDraftText?: string;

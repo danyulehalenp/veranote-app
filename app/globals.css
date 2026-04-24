@@ -81,6 +81,156 @@ h1, h2, h3, h4 {
   --theme-card-shadow-strong: 0 28px 90px rgba(19, 49, 82, 0.16);
 }
 
+.workspace-shell {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+}
+
+.workspace-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  border-radius: 38px;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(42, 210, 199, 0.16), transparent 28%),
+    radial-gradient(circle at 88% 8%, rgba(68, 139, 255, 0.18), transparent 26%),
+    radial-gradient(circle at 50% 100%, rgba(12, 70, 112, 0.28), transparent 40%),
+    linear-gradient(155deg, rgba(4, 10, 20, 0.95), rgba(6, 16, 31, 0.92) 54%, rgba(4, 12, 24, 0.98));
+  box-shadow:
+    0 40px 120px rgba(2, 8, 18, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.workspace-shell::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  border-radius: 37px;
+  border: 1px solid rgba(154, 214, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.02), transparent 14%),
+    linear-gradient(125deg, rgba(9, 25, 43, 0.54), rgba(4, 11, 21, 0.08));
+  pointer-events: none;
+}
+
+.workspace-grid {
+  background-image:
+    linear-gradient(rgba(158, 222, 255, 0.038) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(158, 222, 255, 0.038) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.workspace-grid-fade {
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.35) 72%, transparent);
+}
+
+.workspace-command-bar {
+  border: 1px solid rgba(148, 214, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(11, 25, 42, 0.88), rgba(7, 17, 29, 0.82)),
+    rgba(7, 17, 29, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 18px 44px rgba(2, 8, 18, 0.28);
+  backdrop-filter: blur(18px);
+}
+
+.workspace-chip {
+  border: 1px solid rgba(150, 215, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.workspace-kpi {
+  border: 1px solid rgba(138, 207, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(11, 29, 47, 0.9), rgba(7, 19, 33, 0.88));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    0 18px 40px rgba(2, 8, 18, 0.24);
+}
+
+.workspace-panel {
+  border: 1px solid rgba(148, 214, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(10, 22, 38, 0.96), rgba(7, 16, 28, 0.94));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    0 22px 52px rgba(2, 8, 18, 0.3);
+  min-width: 0;
+}
+
+.workspace-subpanel {
+  border: 1px solid rgba(150, 214, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(15, 33, 54, 0.72), rgba(8, 18, 31, 0.72));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    0 10px 28px rgba(2, 8, 18, 0.12);
+  min-width: 0;
+}
+
+.workspace-control {
+  border: 1px solid rgba(144, 211, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(13, 29, 47, 0.9), rgba(9, 20, 34, 0.94));
+  color: #eff8ff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  min-width: 0;
+}
+
+.workspace-control::placeholder {
+  color: rgba(187, 210, 227, 0.56);
+}
+
+.workspace-control:focus {
+  outline: none;
+  border-color: rgba(118, 222, 255, 0.44);
+  box-shadow:
+    0 0 0 3px rgba(34, 211, 238, 0.12),
+    inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.workspace-glow {
+  position: relative;
+}
+
+.workspace-glow::after {
+  content: '';
+  position: absolute;
+  inset: auto 14% -18% 14%;
+  height: 44%;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.14), transparent 72%);
+  filter: blur(24px);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.workspace-shine {
+  position: relative;
+  overflow: hidden;
+}
+
+.workspace-shine::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.08) 12%, transparent 24%);
+  transform: translateX(-140%);
+  animation: workspace-sheen 12s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes workspace-sheen {
+  to {
+    transform: translateX(170%);
+  }
+}
+
 .veranote-theme .text-ink {
   color: #eff8ff !important;
 }
@@ -109,6 +259,32 @@ h1, h2, h3, h4 {
   box-shadow: 0 28px 84px rgba(3, 10, 22, 0.36) !important;
 }
 
+@media (max-width: 768px) {
+  .workspace-shell::before {
+    border-radius: 28px;
+  }
+
+  .workspace-shell::after {
+    border-radius: 27px;
+  }
+
+  .workspace-command-bar {
+    backdrop-filter: blur(14px);
+  }
+
+  .workspace-panel,
+  .workspace-subpanel,
+  .workspace-kpi {
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.04),
+      0 16px 34px rgba(2, 8, 18, 0.22);
+  }
+
+  .workspace-grid {
+    background-size: 22px 22px;
+  }
+}
+
 .veranote-theme .bg-accent {
   background: linear-gradient(135deg, var(--aurora-cyan) 0%, #1498c0 46%, #2081bc 100%) !important;
 }
@@ -128,6 +304,10 @@ h1, h2, h3, h4 {
   background-color: rgba(8, 20, 36, 0.70);
   border-color: rgba(119, 179, 213, 0.22);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.veranote-theme textarea {
+  line-height: 1.7;
 }
 
 .veranote-theme textarea::placeholder,

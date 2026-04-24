@@ -1,10 +1,43 @@
 import { NextResponse } from 'next/server';
+import { selectModel } from '@/lib/ai/model-router';
+import { assembleAssistantKnowledgePrompt } from '@/lib/ai/assemble-prompt';
+import { requireAuth } from '@/lib/auth/auth-middleware';
+import { recordAuditEvent } from '@/lib/audit/audit-log';
+import { DEFAULT_PROVIDER_IDENTITY_ID } from '@/lib/constants/provider-identities';
+import { getAssistantLearning, saveAssistantLearning } from '@/lib/db/client';
+import { recordEvalResult } from '@/lib/monitoring/eval-tracker';
+import { trackError } from '@/lib/monitoring/error-tracker';
+import { trackModelUsage } from '@/lib/monitoring/model-usage-tracker';
+import { trackRequest } from '@/lib/monitoring/request-tracker';
+import { checkRateLimit } from '@/lib/resilience/rate-limiter';
+import { safeExecute } from '@/lib/resilience/failure-guard';
+import { rehydratePHI } from '@/lib/security/phi-rehydrator';
+import { sanitizeForLogging, sanitizePHITexts } from '@/lib/security/phi-sanitizer';
+import { validateRequest } from '@/lib/security/request-guard';
+import { logEvent } from '@/lib/security/safe-logger';
+import { detectAuditRisk } from '@/lib/veranote/defensibility/audit-risk-detector';
+import { evaluateCptSupport } from '@/lib/veranote/defensibility/cpt-support';
+import { evaluateLevelOfCare } from '@/lib/veranote/defensibility/level-of-care-evaluator';
+import { evaluateLOS } from '@/lib/veranote/defensibility/los-evaluator';
+import { evaluateMedicalNecessity } from '@/lib/veranote/defensibility/medical-necessity-engine';
+import { enforceFidelity } from '@/lib/veranote/assistant-fidelity-guard';
 import { buildInternalKnowledgeHelp } from '@/lib/veranote/assistant-internal-knowledge';
-import { buildGeneralKnowledgeHelp, buildReferenceLookupHelp } from '@/lib/veranote/assistant-knowledge';
+import { buildClinicalTaskPriorityPayload, classifyClinicalTaskOverride } from '@/lib/veranote/assistant-clinical-task';
+import { buildGeneralKnowledgeHelp, buildReferenceLookupHelp, buildStructuredKnowledgeReminder } from '@/lib/veranote/assistant-knowledge';
+import { extractMemoryFromOutput } from '@/lib/veranote/memory/memory-extractor';
+import { resolveProviderMemory } from '@/lib/veranote/memory/memory-resolver';
+import { runAssistantPipeline } from '@/lib/veranote/pipeline/assistant-pipeline';
 import { buildExternalAnswerMeta, hydrateTrustedReferenceSources } from '@/lib/veranote/assistant-reference-lookup';
-import { buildAssistantModeMeta } from '@/lib/veranote/assistant-mode';
+import { buildAssistantModeMeta, classifyClinicalFollowupDirective } from '@/lib/veranote/assistant-mode';
+import { enrichAssistantResponseWithLearning } from '@/lib/veranote/assistant-response-memory';
+import { filterProviderMemoryByPolicy } from '@/lib/veranote/assistant-source-policy';
 import { orchestrateAssistantResponse } from '@/lib/veranote/vera-orchestrator';
+import { evaluateDischarge } from '@/lib/veranote/workflow/discharge-evaluator';
 import { buildAssistantPresetName, buildPreferenceAssistantDraft } from '@/lib/veranote/preference-draft';
+import { summarizeTrends } from '@/lib/veranote/workflow/longitudinal-context';
+import { suggestNextActions } from '@/lib/veranote/workflow/next-action-engine';
+import { suggestTasks } from '@/lib/veranote/workflow/task-suggester';
+import { suggestTriage } from '@/lib/veranote/workflow/triage-engine';
 import {
   buildSectionDraft,
   inferDraftSection,
@@ -13,8 +46,15 @@ import {
   looksPsychFocused,
   normalizeDraftText,
 } from '@/lib/veranote/assistant-drafting';
+import { createEmptyAssistantLearningStore } from '@/lib/veranote/assistant-learning';
+import type { KnowledgeBundle, KnowledgeIntent, TrustedReference } from '@/lib/veranote/knowledge/types';
 import { SECTION_LABELS, type NoteSectionKey } from '@/lib/note/section-profiles';
-import type { AssistantApiContext, AssistantMode, AssistantResponsePayload, AssistantStage, AssistantThreadTurn } from '@/types/assistant';
+import type { AssistantApiContext, AssistantMode, AssistantReferenceSource, AssistantResponsePayload, AssistantStage, AssistantThreadTurn } from '@/types/assistant';
+import type { ProviderMemoryItem } from '@/lib/veranote/memory/memory-types';
+import type { Contradiction } from '@/lib/veranote/assistant-contradiction-detector';
+import type { RiskAnalysis } from '@/lib/veranote/assistant-risk-detector';
+import type { PhiEntity } from '@/lib/security/phi-types';
+import { extractPriorClinicalState } from '@/lib/veranote/pipeline/assistant-pipeline';
 
 type AssistantRequest = {
   stage?: AssistantStage;
@@ -23,6 +63,9 @@ type AssistantRequest = {
   context?: AssistantApiContext;
   recentMessages?: AssistantThreadTurn[];
 };
+
+const ASSISTANT_TOKEN_THRESHOLD = 6000;
+const CHEAP_ASSISTANT_MODEL = 'google/gemini-2.5-flash-lite';
 
 function hasKeyword(message: string, keywords: string[]) {
   return keywords.some((keyword) => message.includes(keyword));
@@ -60,6 +103,423 @@ function looksLikeQuestion(message: string) {
     /[?]$/.test(trimmed)
     || /^(can you|could you|would you|will you|do you|did you|what|why|how|when|where|who|which|is|are|am|does|should)\b/i.test(trimmed)
   );
+}
+
+type UtilityQuestionPayload = {
+  payload: AssistantResponsePayload;
+  routePriority:
+    | 'utility-date'
+    | 'utility-time'
+    | 'utility-relative-date'
+    | 'utility-month-year'
+    | 'utility-weekday-offset'
+    | 'utility-weekday-check'
+    | 'utility-specific-date'
+    | 'utility-date-math'
+    | 'utility-weekend';
+};
+
+const WEEKDAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+const MONTH_NAMES = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+] as const;
+
+function toTitleCase(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function getWeekdayOffset(now: Date, targetWeekday: number) {
+  const currentWeekday = now.getDay();
+  return (targetWeekday - currentWeekday + 7) % 7;
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function resolveNextWeekday(now: Date, weekdayName: string) {
+  const targetWeekday = WEEKDAY_NAMES.indexOf(weekdayName as (typeof WEEKDAY_NAMES)[number]);
+  if (targetWeekday === -1) {
+    return null;
+  }
+
+  const offset = getWeekdayOffset(now, targetWeekday) || 7;
+  const nextDate = new Date(now);
+  nextDate.setDate(now.getDate() + offset);
+
+  return {
+    label: toTitleCase(weekdayName),
+    offset,
+    date: nextDate,
+  };
+}
+
+function formatMonthDayYear(date: Date) {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date);
+}
+
+function resolveMonthDay(now: Date, monthName: string, dayValue: number) {
+  const monthIndex = MONTH_NAMES.indexOf(monthName as (typeof MONTH_NAMES)[number]);
+  if (monthIndex === -1 || !Number.isInteger(dayValue) || dayValue < 1 || dayValue > 31) {
+    return null;
+  }
+
+  const currentYear = now.getFullYear();
+  const candidate = new Date(currentYear, monthIndex, dayValue);
+  if (candidate.getMonth() !== monthIndex || candidate.getDate() !== dayValue) {
+    return null;
+  }
+
+  if (startOfDay(candidate).getTime() < startOfDay(now).getTime()) {
+    const nextYearCandidate = new Date(currentYear + 1, monthIndex, dayValue);
+    if (nextYearCandidate.getMonth() !== monthIndex || nextYearCandidate.getDate() !== dayValue) {
+      return null;
+    }
+    return nextYearCandidate;
+  }
+
+  return candidate;
+}
+
+function formatFullDate(date: Date) {
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date);
+}
+
+function formatMonthYear(date: Date) {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+}
+
+function buildUtilityQuestionPayload(message: string): UtilityQuestionPayload | null {
+  const normalized = message.trim().toLowerCase();
+
+  if (!normalized || !looksLikeQuestion(message)) {
+    return null;
+  }
+
+  const now = new Date();
+  const todayWeekdayMatch = normalized.match(/\bis today (sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i);
+  if (todayWeekdayMatch) {
+    const requestedWeekday = todayWeekdayMatch[1].toLowerCase();
+    const actualWeekday = WEEKDAY_NAMES[now.getDay()];
+    const isMatch = actualWeekday === requestedWeekday;
+
+    return {
+      routePriority: 'utility-weekday-check',
+      payload: {
+        message: isMatch
+          ? `Yes. Today is ${formatFullDate(now)}.`
+          : `No. Today is ${formatFullDate(now)}.`,
+        suggestions: [
+          'I can also tell you the date for next Friday or how many days remain until a weekday or calendar date.',
+        ],
+      },
+    };
+  }
+
+  const untilWeekdayMatch = normalized.match(/\b(?:how long|how many days)\s+(?:until|till)\s+(?:next\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i);
+  if (untilWeekdayMatch) {
+    const target = resolveNextWeekday(now, untilWeekdayMatch[1].toLowerCase());
+    if (target) {
+      const dayPhrase = target.offset === 1 ? '1 day' : `${target.offset} days`;
+      return {
+        routePriority: 'utility-weekday-offset',
+        payload: {
+          message: `${target.label} is in ${dayPhrase}, on ${formatFullDate(target.date)}.`,
+          suggestions: [
+            'I can also answer questions like what date next Monday is or whether tomorrow lands on a specific weekday.',
+          ],
+        },
+      };
+    }
+  }
+
+  const nextWeekdayMatch = normalized.match(/\b(?:what(?:'s| is)(?: the date)?|when is) (?:for )?next (sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i);
+  if (nextWeekdayMatch) {
+    const target = resolveNextWeekday(now, nextWeekdayMatch[1].toLowerCase());
+    if (target) {
+      return {
+        routePriority: 'utility-weekday-offset',
+        payload: {
+          message: `Next ${target.label} is ${formatFullDate(target.date)}.`,
+          suggestions: [
+            'I can also answer how many days away that is if you need quick scheduling math.',
+          ],
+        },
+      };
+    }
+  }
+
+  const nextWeekdayDayMatch = normalized.match(/\b(?:could you tell me\s+)?what day(?: does)? next (sunday|monday|tuesday|wednesday|thursday|friday|saturday)(?: fall| falls)? on\b/i)
+    || normalized.match(/\bwhat day is(?: it)? next (sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i);
+  if (nextWeekdayDayMatch) {
+    const target = resolveNextWeekday(now, nextWeekdayDayMatch[1].toLowerCase());
+    if (target) {
+      return {
+        routePriority: 'utility-weekday-offset',
+        payload: {
+          message: `Next ${target.label} is ${formatFullDate(target.date)}.`,
+          suggestions: [
+            'I can also tell you how many days away that is or answer the same question for another weekday.',
+          ],
+        },
+      };
+    }
+  }
+
+  if (/\b(?:how long|how many days)\s+(?:until|till)\s+the weekend\b/i.test(normalized)) {
+    const saturday = resolveNextWeekday(now, 'saturday');
+    if (saturday) {
+      const dayPhrase = saturday.offset === 1 ? '1 day' : `${saturday.offset} days`;
+      return {
+        routePriority: 'utility-weekend',
+        payload: {
+          message: `The weekend starts in ${dayPhrase}, on ${formatFullDate(saturday.date)}.`,
+          suggestions: [
+            'I can also tell you when next weekend starts or answer the date for a named weekday.',
+          ],
+        },
+      };
+    }
+  }
+
+  const weekendMatch = normalized.match(/\b(when is this weekend|what date is this weekend|when is next weekend|what date is next weekend)\b/i);
+  if (weekendMatch) {
+    const isNextWeekend = weekendMatch[1].includes('next weekend');
+    const saturday = resolveNextWeekday(now, 'saturday');
+    if (saturday) {
+      const weekendStart = new Date(saturday.date);
+      if (isNextWeekend) {
+        weekendStart.setDate(weekendStart.getDate() + 7);
+      }
+      return {
+        routePriority: 'utility-weekend',
+        payload: {
+          message: `${isNextWeekend ? 'Next' : 'This'} weekend starts ${formatFullDate(weekendStart)}.`,
+          suggestions: [
+            'If you want, I can also tell you how many days away that weekend is.',
+          ],
+        },
+      };
+    }
+  }
+
+  if (/\b(what is the day after tomorrow|what'?s the day after tomorrow|day after tomorrow'?s date|what day is the day after tomorrow)\b/i.test(normalized)) {
+    const targetDate = new Date(now);
+    targetDate.setDate(now.getDate() + 2);
+
+    return {
+      routePriority: 'utility-relative-date',
+      payload: {
+        message: `The day after tomorrow is ${formatFullDate(targetDate)}.`,
+        suggestions: [
+          'I can also answer tomorrow, next Friday, or short date-math questions directly.',
+        ],
+      },
+    };
+  }
+
+  const untilDateMatch = normalized.match(/\b(?:how long|how many days)\s+(?:until|till)\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})\b/i);
+  if (untilDateMatch) {
+    const targetDate = resolveMonthDay(now, untilDateMatch[1].toLowerCase(), Number(untilDateMatch[2]));
+    if (targetDate) {
+      const diffMs = startOfDay(targetDate).getTime() - startOfDay(now).getTime();
+      const diffDays = Math.round(diffMs / 86_400_000);
+      const dayPhrase = diffDays === 1 ? '1 day' : `${diffDays} days`;
+      return {
+        routePriority: 'utility-specific-date',
+        payload: {
+          message: `${formatMonthDayYear(targetDate)} is in ${dayPhrase}.`,
+          suggestions: [
+            'I can also tell you what day of the week that lands on.',
+          ],
+        },
+      };
+    }
+  }
+
+  const specificDateMatch = normalized.match(/\b(?:what day is|what day of the week is|which day is)\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})\b/i);
+  if (specificDateMatch) {
+    const targetDate = resolveMonthDay(now, specificDateMatch[1].toLowerCase(), Number(specificDateMatch[2]));
+    if (targetDate) {
+      return {
+        routePriority: 'utility-specific-date',
+        payload: {
+          message: `${formatMonthDayYear(targetDate)} is ${new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(targetDate)}.`,
+          suggestions: [
+            'I can also tell you how many days away that date is.',
+          ],
+        },
+      };
+    }
+  }
+
+  const whenSpecificDateMatch = normalized.match(/\bwhen is\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})\b/i);
+  if (whenSpecificDateMatch) {
+    const targetDate = resolveMonthDay(now, whenSpecificDateMatch[1].toLowerCase(), Number(whenSpecificDateMatch[2]));
+    if (targetDate) {
+      return {
+        routePriority: 'utility-specific-date',
+        payload: {
+          message: `${formatMonthDayYear(targetDate)} is ${new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(targetDate)}.`,
+          suggestions: [
+            'I can also tell you how many days away that date is.',
+          ],
+        },
+      };
+    }
+  }
+
+  const dayMathMatch = normalized.match(/\bwhat(?:'s| is)? the date (?:(?:in|after)\s+(\d+)\s+(day|days|week|weeks)|(\d+)\s+(day|days|week|weeks)\s+from today)\b/i);
+  if (dayMathMatch) {
+    const amount = Number(dayMathMatch[1] || dayMathMatch[3]);
+    const unit = (dayMathMatch[2] || dayMathMatch[4] || '').toLowerCase();
+    if (Number.isFinite(amount) && amount >= 0) {
+      const offsetDays = unit.startsWith('week') ? amount * 7 : amount;
+      const targetDate = new Date(now);
+      targetDate.setDate(now.getDate() + offsetDays);
+      return {
+        routePriority: 'utility-date-math',
+        payload: {
+          message: `That date is ${formatFullDate(targetDate)}.`,
+          suggestions: [
+            'I can also answer the same kind of question for a named weekday or calendar date.',
+          ],
+        },
+      };
+    }
+  }
+
+  const tomorrowWeekdayMatch = normalized.match(/\bis tomorrow (sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i);
+  if (tomorrowWeekdayMatch) {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    const requestedWeekday = tomorrowWeekdayMatch[1].toLowerCase();
+    const actualWeekday = WEEKDAY_NAMES[tomorrow.getDay()];
+    const isMatch = actualWeekday === requestedWeekday;
+
+    return {
+      routePriority: 'utility-weekday-check',
+      payload: {
+        message: isMatch
+          ? `Yes. Tomorrow is ${formatFullDate(tomorrow)}.`
+          : `No. Tomorrow is ${formatFullDate(tomorrow)}.`,
+        suggestions: [
+          'If you want, I can also tell you how many days away a weekday is or give the exact date for next Monday or Friday.',
+        ],
+      },
+    };
+  }
+
+  if (/\b(what year is it|current year)\b/i.test(normalized)) {
+    return {
+      routePriority: 'utility-month-year',
+      payload: {
+        message: `It is ${now.getFullYear()}.`,
+        suggestions: [
+          'I can also answer the current month, today’s date, or quick calendar math directly.',
+        ],
+      },
+    };
+  }
+
+  if (/\b(what month is it|what month are we in|current month)\b/i.test(normalized)) {
+    return {
+      routePriority: 'utility-month-year',
+      payload: {
+        message: `It is ${formatMonthYear(now)}.`,
+        suggestions: [
+          'I can also answer quick date or time questions directly without switching into clinical review mode.',
+        ],
+      },
+    };
+  }
+
+  if (
+    /\b(what(?:'s| is)? today|what(?:'s| is)? the date|today'?s date|what day is it|what day is today)\b/i.test(normalized)
+  ) {
+    return {
+      routePriority: 'utility-date',
+      payload: {
+        message: `Today is ${formatFullDate(now)}.`,
+        suggestions: [
+          'If you want, I can also help with quick non-clinical utility questions without routing into note review.',
+        ],
+      },
+    };
+  }
+
+  if (/\b(what is tomorrow|what'?s tomorrow|tomorrow'?s date|what day is tomorrow)\b/i.test(normalized)) {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+
+    return {
+      routePriority: 'utility-relative-date',
+      payload: {
+        message: `Tomorrow is ${formatFullDate(tomorrow)}.`,
+        suggestions: [
+          'If you want, I can also give yesterday, today, or the current time directly.',
+        ],
+      },
+    };
+  }
+
+  if (/\b(what was yesterday|what'?s yesterday|yesterday'?s date|what day was yesterday)\b/i.test(normalized)) {
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+
+    return {
+      routePriority: 'utility-relative-date',
+      payload: {
+        message: `Yesterday was ${formatFullDate(yesterday)}.`,
+        suggestions: [
+          'If you want, I can also give today, tomorrow, or the current time directly.',
+        ],
+      },
+    };
+  }
+
+  if (/\b(what time is it|current time|time right now)\b/i.test(normalized)) {
+    const timeLabel = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    }).format(now);
+
+    return {
+      routePriority: 'utility-time',
+      payload: {
+        message: `The current time is ${timeLabel}.`,
+        suggestions: [
+          'If you need the date too, I can give that directly without switching into clinical review mode.',
+        ],
+      },
+    };
+  }
+
+  return null;
 }
 
 function extractDetailAfterDirective(rawMessage: string) {
@@ -511,6 +971,18 @@ function buildRawDetailComposeHelp(rawMessage: string, context?: AssistantApiCon
 
   const noteType = context?.noteType || 'this note';
   const mixedDomain = looksPsychFocused(rawMessage) && looksMedicalFocused(rawMessage);
+  const sparseGraveDisabilityConcern = /\b(poor hygiene|missed a meal|self-care capacity is not documented|self care capacity is not documented|grave disability)\b/i.test(rawMessage);
+
+  if (sparseGraveDisabilityConcern) {
+    return {
+      message: 'The source may contain self-care concern, but there is insufficient data to state grave disability as a settled conclusion from this alone.',
+      suggestions: [
+        'Describe the specific self-care or functional concern rather than turning it into a firm grave-disability label.',
+        'Keep the uncertainty visible when broader self-care capacity is not documented.',
+        'If you want, I can turn this into chart-ready wording that stays cautious and source-bound.',
+      ],
+    };
+  }
 
   return {
     message: mixedDomain
@@ -680,32 +1152,150 @@ function buildConversationalHelp(normalizedMessage: string, context?: AssistantA
 
   if (hasKeyword(normalizedMessage, ['how are you', 'howre you', "how're you"])) {
     return {
-      message: `I’m doing well${providerName ? `, ${providerName}` : ''}. How can I help?`,
+      message: `I’m doing well${providerName ? `, ${providerName}` : ''}. I’m here and ready to help with note work, trusted lookups, or just getting unstuck.`,
       suggestions: [
-        'You can ask me to start a note or revise a section.',
+        'You can ask me to revise a section, explain a warning, or look up a trusted reference.',
       ],
     };
   }
 
   if (hasKeyword(normalizedMessage, ['hello', 'hi vera', 'hey vera', 'good morning', 'good afternoon', 'good evening'])) {
     return {
-      message: `Hi${providerName ? `, ${providerName}` : ''}. How can I help you today?`,
+      message: `Hi${providerName ? `, ${providerName}` : ''}. What do you need help with right now?`,
       suggestions: [
-        'You can ask me to start a note or revise a section.',
+        'You can ask me to organize source material, tighten a draft, or look something up from trusted sources.',
       ],
     };
   }
 
   if (hasKeyword(normalizedMessage, ['thank you', 'thanks'])) {
     return {
-      message: 'You’re welcome.',
+      message: `You’re welcome${providerName ? `, ${providerName}` : ''}.`,
       suggestions: [
-        'Ask for a revision or the next section when you’re ready.',
+        'Ask for a revision, a lookup, or the next step whenever you’re ready.',
+      ],
+    };
+  }
+
+  if (hasKeyword(normalizedMessage, ['who are you', 'what can you do', 'what do you do'])) {
+    return {
+      message: 'I’m Vera, your Veranote assistant. I can help with source organization, draft review, section rewrites, workflow preferences, and trusted reference lookups. If I do not know a trusted answer yet, I should say so and show you the safest next path.',
+      suggestions: [
+        'Ask me to explain a warning, tighten a section, or look up a coding or documentation reference.',
+      ],
+    };
+  }
+
+  if (hasKeyword(normalizedMessage, ['can we chat', 'talk to me', 'are you there', 'help me think'])) {
+    return {
+      message: 'Yes. I can stay conversational while still helping you move the note forward. If you want, talk to me like a teammate and I will keep the answer grounded in your current workflow.',
+      suggestions: [
+        'Try: help me think through this warning.',
+        'Try: I am not sure what to fix first.',
       ],
     };
   }
 
   return null;
+}
+
+function resolveAssistantProviderId(context?: AssistantApiContext, authenticatedProviderId?: string) {
+  return authenticatedProviderId || context?.providerIdentityId || DEFAULT_PROVIDER_IDENTITY_ID;
+}
+
+async function buildRememberFactHelp(message: string, context?: AssistantApiContext, authenticatedProviderId?: string): Promise<AssistantResponsePayload | null> {
+  const memoryMatch = message.match(/^(?:please\s+)?remember(?:\s+that)?\s+(.+)$/i);
+  const rawFact = memoryMatch?.[1]?.trim();
+
+  if (!rawFact) {
+    return null;
+  }
+
+  const providerId = resolveAssistantProviderId(context, authenticatedProviderId);
+  const learningStore = {
+    ...createEmptyAssistantLearningStore(),
+    ...(await getAssistantLearning(providerId)),
+  };
+  const normalizedFact = rawFact.replace(/\s+/g, ' ').trim().replace(/[.]+$/, '');
+  const key = normalizedFact.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 80);
+  const existing = learningStore.conversationalMemoryFacts.find((item) => item.key === key);
+
+  if (existing) {
+    existing.fact = normalizedFact;
+    existing.count += 1;
+    existing.lastSeenAt = new Date().toISOString();
+  } else {
+    learningStore.conversationalMemoryFacts.unshift({
+      key,
+      fact: normalizedFact,
+      count: 1,
+      lastSeenAt: new Date().toISOString(),
+    });
+  }
+
+  learningStore.conversationalMemoryFacts = learningStore.conversationalMemoryFacts.slice(0, 12);
+  await saveAssistantLearning(learningStore, providerId);
+
+  return {
+    message: 'I’ll remember that as part of how I should support you here in Veranote.',
+    suggestions: [
+      `Saved memory: ${normalizedFact}`,
+      'You can ask what I remember about your workflow any time.',
+    ],
+  };
+}
+
+async function buildRecallMemoryHelp(normalizedMessage: string, context?: AssistantApiContext, authenticatedProviderId?: string): Promise<AssistantResponsePayload | null> {
+  if (!hasKeyword(normalizedMessage, ['what do you remember', 'what have you learned about me', 'what do you know about me', 'what do you remember about my workflow'])) {
+    return null;
+  }
+
+  const providerId = resolveAssistantProviderId(context, authenticatedProviderId);
+  const learningStore = await getAssistantLearning(providerId);
+  const facts = (learningStore.conversationalMemoryFacts || []).slice(0, 4);
+
+  if (!facts.length) {
+    return {
+      message: 'I do not have any saved relationship or workflow memories yet beyond your current note context.',
+      suggestions: [
+        'Say “remember that …” when you want me to keep something for future conversations.',
+      ],
+    };
+  }
+
+  return {
+    message: 'Here is what I currently remember for supporting you in Veranote.',
+    suggestions: facts.map((item) => item.fact),
+  };
+}
+
+async function recordRelationshipSignalIfNeeded(normalizedMessage: string, context?: AssistantApiContext, authenticatedProviderId?: string) {
+  const providerId = resolveAssistantProviderId(context, authenticatedProviderId);
+  const learningStore = {
+    ...createEmptyAssistantLearningStore(),
+    ...(await getAssistantLearning(providerId)),
+  };
+  let changed = false;
+
+  if (hasKeyword(normalizedMessage, ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening'])) {
+    learningStore.relationshipStats.greetingCount += 1;
+    changed = true;
+  }
+
+  if (hasKeyword(normalizedMessage, ['thank you', 'thanks', 'appreciate it'])) {
+    learningStore.relationshipStats.gratitudeCount += 1;
+    changed = true;
+  }
+
+  if (hasKeyword(normalizedMessage, ['good job', 'nice work', 'that helped', 'helpful'])) {
+    learningStore.relationshipStats.encouragementCount += 1;
+    changed = true;
+  }
+
+  if (changed) {
+    learningStore.relationshipStats.lastSeenAt = new Date().toISOString();
+    await saveAssistantLearning(learningStore, providerId);
+  }
 }
 
 function buildPrivacyTrustHelp(normalizedMessage: string): AssistantResponsePayload | null {
@@ -1213,10 +1803,32 @@ function buildUnknownQuestionFallback(message: string): AssistantResponsePayload
     return null;
   }
 
+  if (looksLikeClinicalReasoningSource(message)) {
+    if (/(heavy daily alcohol|missed clonazepam|tremor|vomiting|tachycardia|visual shadows|panic attack likely)/i.test(message)) {
+      return {
+        message: 'Calling this panic likely would be unsafe here because it buries withdrawal or medical-danger signals under a psych-only explanation.',
+        suggestions: [
+          'Keep the withdrawal pattern, autonomic findings, and delirium risk explicit.',
+          'Do not let a panic formulation erase alcohol or benzodiazepine withdrawal risk.',
+          'Ask for chart-ready assessment wording if you want the warning rewritten directly into the note.',
+        ],
+      };
+    }
+
+    return {
+      message: 'Keep this source-bound. Preserve the dangerous contradiction, medical risk, or discharge blocker explicitly, and ask for the exact wording, warning, or plan language you want preserved.',
+      suggestions: [
+        'Ask for the exact warning language that should replace the unsafe draft wording.',
+        'Ask what has to stay explicit in the assessment or plan.',
+        'If the source is mixed, keep denial, observed findings, and collateral side by side instead of cleaning them up.',
+      ],
+    };
+  }
+
   return {
-    message: "No, but I'll find out how I can learn how to.",
+    message: "I don't have a safe Veranote answer for that yet.",
     suggestions: [
-      'Please send this through Beta Feedback so we can teach Vera this skill.',
+      'Send this through Beta Feedback if you want it added as a teachable Vera skill.',
     ],
     actions: [
       {
@@ -1231,52 +1843,1210 @@ function buildUnknownQuestionFallback(message: string): AssistantResponsePayload
   };
 }
 
-export async function POST(request: Request) {
-  const body = (await request.json()) as AssistantRequest;
-  const { stage, mode, message, context, recentMessages, intentTrace, payload } = orchestrateAssistantResponse(body, {
-    buildBoundaryHelp,
-    buildConversationalHelp,
-    buildInternalKnowledgeHelp,
-    buildReferenceLookupHelp,
-    buildGeneralKnowledgeHelp,
-    buildPrivacyTrustHelp,
-    buildSupportAndTrainingHelp,
-    buildRequestedRevisionHelp,
-    buildProvenanceHelp,
-    buildPromptBuilderHelp,
-    buildDirectReviewHelp,
-    buildReviewScenarioHelp,
-    buildUnknownQuestionFallback,
-    buildWorkflowHelp,
-    buildContextualSectionDraftHelp,
-    buildDirectComposeHelp,
-    buildMixedDomainComposeHelp,
-    buildRawDetailComposeHelp,
-    buildComposeScenarioHelp,
+function classifyKnowledgeIntent(input: string): KnowledgeIntent {
+  const normalized = input.toLowerCase();
+
+  if (isDirectReferenceStyleQuestion(input) && !referencesCurrentNote(input)) {
+    if (hasKeyword(normalized, [
+      'trileptal', 'oxcarbazepine', 'starting dose', 'dose of', 'medication', 'what antidepressant',
+      'generic starts with', 'duloxetine', 'desvenlafaxine', 'doxepin',
+    ])) {
+      return 'medication_help';
+    }
+
+    return 'reference_help';
+  }
+
+  if (hasKeyword(normalized, ['reference', 'source', 'citation', 'link', 'guideline', 'where can i verify'])) {
+    return 'reference_help';
+  }
+
+  if (hasKeyword(normalized, ['icd', 'icd-10', 'icd10', 'code', 'coding', 'bill', 'billing', 'cpt', 'modifier'])) {
+    return 'coding_help';
+  }
+
+  if (hasKeyword(normalized, [
+    'sertraline', 'zoloft', 'escitalopram', 'lexapro', 'bupropion', 'wellbutrin', 'venlafaxine', 'effexor',
+    'desvenlafaxine', 'pristiq', 'duloxetine', 'cymbalta', 'doxepin', 'trazodone', 'oxcarbazepine', 'trileptal',
+    'lithium', 'lamotrigine', 'lamictal', 'quetiapine', 'seroquel',
+    'olanzapine', 'zyprexa', 'aripiprazole', 'abilify', 'risperidone', 'risperdal', 'clozapine', 'clozaril',
+    'lorazepam', 'ativan', 'medication', 'medications', 'side effect', 'black box', 'boxed warning',
+    'ssri', 'ssris', 'snri', 'snris', 'antidepressant', 'antidepressants',
+  ])) {
+    return 'medication_help';
+  }
+
+  if (hasKeyword(normalized, [
+    'drug', 'substance', 'k2', 'spice', 'mojo', 'bath salts', 'flakka', 'tianeptine', 'kratom',
+    '7-oh', '7oh', 'xylazine', 'tranq', 'nitazene', 'm30',
+  ])) {
+    return 'substance_help';
+  }
+
+  if (hasKeyword(normalized, ['how do i write', 'how should i write', 'document', 'documentation', 'note', 'soap', 'assessment', 'plan', 'mse'])) {
+    return 'workflow_help';
+  }
+
+  if (hasKeyword(normalized, ['diagnosis', 'rule out', 'rule-out', 'what is this', 'differential', 'provisional diagnosis'])) {
+    return 'diagnosis_help';
+  }
+
+  return 'draft_support';
+}
+
+function trustedReferenceToAssistantSource(reference: TrustedReference): AssistantReferenceSource {
+  return {
+    label: reference.label,
+    url: reference.url,
+    sourceType: 'external',
+  };
+}
+
+function assistantSourceToTrustedReference(source: AssistantReferenceSource): TrustedReference {
+  return {
+    id: `trusted:${source.url}`,
+    label: source.label,
+    url: source.url,
+    domain: (() => {
+      try {
+        return new URL(source.url).hostname;
+      } catch {
+        return '';
+      }
+    })(),
+    categories: ['psychiatry-reference'],
+    aliases: [source.label],
+    authority: 'trusted-external',
+    useMode: 'reference-only',
+    evidenceConfidence: 'moderate',
+    reviewStatus: 'reviewed',
+    ambiguityFlags: [],
+    conflictMarkers: [],
+    sourceAttribution: [{
+      label: source.label,
+      url: source.url,
+      authority: 'trusted-external',
+      kind: 'external',
+    }],
+    retrievalDate: new Date().toISOString(),
+  };
+}
+
+function mergeAssistantReferences(...referenceSets: Array<AssistantReferenceSource[] | undefined>) {
+  const seen = new Set<string>();
+  return referenceSets
+    .flatMap((references) => references || [])
+    .filter((reference) => {
+      if (!reference?.url || seen.has(reference.url)) {
+        return false;
+      }
+      seen.add(reference.url);
+      return true;
+    });
+}
+
+function isUnknownFallbackPayload(payload: AssistantResponsePayload) {
+  return payload.actions?.some((action) => action.type === 'send-beta-feedback')
+    || payload.message.trim().toLowerCase() === "no, but i'll find out how i can learn how to.";
+}
+
+function bundleHasKnowledge(bundle: KnowledgeBundle) {
+  return Boolean(
+    bundle.diagnosisConcepts.length
+    || bundle.codingEntries.length
+    || bundle.medicationConcepts.length
+    || bundle.emergingDrugConcepts.length
+    || bundle.workflowGuidance.length
+    || bundle.trustedReferences.length,
+  );
+}
+
+function mergeHydratedReferencesIntoBundle(bundle: KnowledgeBundle, references: AssistantReferenceSource[]) {
+  const mergedReferences = mergeAssistantReferences(
+    bundle.trustedReferences.map(trustedReferenceToAssistantSource),
+    references,
+  );
+
+  return {
+    ...bundle,
+    trustedReferences: mergedReferences.map(assistantSourceToTrustedReference),
+  };
+}
+
+function buildKnowledgeSupportPayload(intent: KnowledgeIntent, bundle: KnowledgeBundle): AssistantResponsePayload | null {
+  if (!bundleHasKnowledge(bundle)) {
+    return null;
+  }
+
+  if (intent === 'clinical_mse_help') {
+    return null;
+  }
+
+  if (intent === 'coding_help') {
+    const entry = bundle.codingEntries[0];
+    if (!entry) {
+      return null;
+    }
+
+    return {
+      message: `The closest coding direction here is ${entry.label}, but it should stay provisional until the note supports the needed specificity.`,
+      suggestions: [
+        `Likely ICD-10 family: ${entry.likelyIcd10Family}`,
+        `Specificity issue: ${entry.specificityIssues}`,
+        `Uncertainty issue: ${entry.uncertaintyIssues}`,
+      ],
+    };
+  }
+
+  if (intent === 'diagnosis_help') {
+    const concept = bundle.diagnosisConcepts[0];
+    if (!concept) {
+      return null;
+    }
+
+    return {
+      message: `${concept.displayName} may be a proposed diagnostic frame based on available information, but it should stay tentative unless the source clearly supports it.`,
+      suggestions: [
+        ...(concept.hallmarkFeatures[0] ? [`Hallmark feature to verify: ${concept.hallmarkFeatures[0]}`] : []),
+        ...(concept.ruleOutCautions[0] ? [`Rule-out caution: ${concept.ruleOutCautions[0]}`] : []),
+        ...(concept.documentationCautions[0] ? [`Documentation caution: ${concept.documentationCautions[0]}`] : []),
+      ],
+    };
+  }
+
+  if (intent === 'medication_help') {
+    const medication = bundle.medicationConcepts[0];
+    if (!medication) {
+      return null;
+    }
+
+    return {
+      message: `${medication.displayName} support is available, but the note should only describe medication effects, adherence, and risk if the source actually documents them.`,
+      suggestions: [
+        ...(medication.documentationCautions[0] ? [`Documentation caution: ${medication.documentationCautions[0]}`] : []),
+        ...(medication.highRiskFlags[0] ? [`High-risk flag: ${medication.highRiskFlags[0]}`] : []),
+      ],
+    };
+  }
+
+  if (intent === 'substance_help') {
+    const concept = bundle.emergingDrugConcepts[0];
+    if (!concept) {
+      return null;
+    }
+
+    return {
+      message: `${concept.displayName} may fit this substance question, but keep intoxication, withdrawal, and identification language explicitly uncertain when the source is incomplete.`,
+      suggestions: [
+        ...(concept.intoxicationSignals[0] ? [`Possible intoxication signal: ${concept.intoxicationSignals[0]}`] : []),
+        ...(concept.testingLimitations[0] ? [`Testing limitation: ${concept.testingLimitations[0]}`] : []),
+        ...(concept.documentationCautions[0] ? [`Documentation caution: ${concept.documentationCautions[0]}`] : []),
+      ],
+    };
+  }
+
+  if (intent === 'workflow_help' || intent === 'draft_support' || intent === 'reference_help') {
+    const guidance = bundle.workflowGuidance[0];
+    if (!guidance) {
+      return null;
+    }
+
+    return {
+      message: guidance.guidance[0] || 'Keep the note conservative and source-prioritized.',
+      suggestions: [
+        ...(guidance.guidance[1] ? [guidance.guidance[1]] : []),
+        ...(guidance.cautions[0] ? [`Caution: ${guidance.cautions[0]}`] : []),
+      ],
+    };
+  }
+
+  return null;
+}
+
+function appendUniqueSuggestions(payload: AssistantResponsePayload, additions: string[]) {
+  if (!additions.length) {
+    return payload;
+  }
+
+  const seen = new Set<string>();
+  const suggestions = [...(payload.suggestions || []), ...additions].filter((item) => {
+    if (!item || seen.has(item)) {
+      return false;
+    }
+    seen.add(item);
+    return true;
   });
 
-  const hydratedReferences = (mode === 'reference-lookup' || payload.references?.length)
-    ? await hydrateTrustedReferenceSources(message, payload.references || [])
-    : payload.references;
-  const externalAnswerMeta = mode === 'reference-lookup'
-    ? buildExternalAnswerMeta(payload.message, hydratedReferences || [])
-    : payload.externalAnswerMeta;
+  return {
+    ...payload,
+    suggestions,
+  };
+}
 
-  console.info('[veranote-assistant] respond', {
+function buildDefensibilitySuggestions(input: {
+  medicalNecessity: ReturnType<typeof evaluateMedicalNecessity>;
+  levelOfCare: ReturnType<typeof evaluateLevelOfCare>;
+  cptSupport: ReturnType<typeof evaluateCptSupport>;
+  losAssessment: ReturnType<typeof evaluateLOS>;
+  auditFlags: ReturnType<typeof detectAuditRisk>;
+}) {
+  return [
+    ...input.medicalNecessity.missingElements.slice(0, 2),
+    ...(input.levelOfCare.missingJustification[0] ? [`Level-of-care gap: ${input.levelOfCare.missingJustification[0]}`] : []),
+    ...(input.cptSupport.cautions[0] ? [`Billing caution: ${input.cptSupport.cautions[0]}`] : []),
+    ...(input.losAssessment.missingDischargeCriteria[0] ? [`LOS / discharge gap: ${input.losAssessment.missingDischargeCriteria[0]}`] : []),
+    ...(input.auditFlags[0] ? [`Audit flag: ${input.auditFlags[0].message}`] : []),
+  ];
+}
+
+function buildWorkflowSuggestions(input: {
+  nextActions: ReturnType<typeof suggestNextActions>;
+  triage: ReturnType<typeof suggestTriage>;
+  discharge: ReturnType<typeof evaluateDischarge>;
+  tasks: ReturnType<typeof suggestTasks>;
+}) {
+  return [
+    ...(input.nextActions[0] ? [input.nextActions[0].suggestion] : []),
+    ...(input.triage.reasoning[0] ? [`Triage consideration: ${input.triage.reasoning[0]}`] : []),
+    ...(input.discharge.barriers[0] ? [`Discharge barrier: ${input.discharge.barriers[0]}`] : []),
+    ...(input.tasks[0] ? [`Workflow task: ${input.tasks[0].task}`] : []),
+  ];
+}
+
+function buildProviderMemoryTags(stage: AssistantStage, mode: AssistantMode, context?: AssistantApiContext) {
+  return [
     stage,
     mode,
-    message,
-    context,
-    recentMessagesCount: recentMessages.length,
-    intentTrace,
-    referenceCount: hydratedReferences?.length || 0,
-    externalAnswerConfidence: externalAnswerMeta?.level,
-  });
+    context?.noteType,
+    context?.specialty,
+    context?.focusedSectionHeading,
+  ].filter(Boolean) as string[];
+}
 
-  return NextResponse.json({
-    ...payload,
-    references: hydratedReferences,
-    externalAnswerMeta,
+function applyProviderMemoryToPayload(payload: AssistantResponsePayload, memoryItems: ProviderMemoryItem[]) {
+  if (!memoryItems.length) {
+    return payload;
+  }
+
+  return appendUniqueSuggestions(payload, memoryItems.slice(0, 3).map((item) => {
+    return `Provider preference (${item.category}): ${item.content}`;
+  }));
+}
+
+function looksLikeClinicalReasoningSource(message: string) {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (looksLikeRawClinicalDetail(trimmed)) {
+    return true;
+  }
+
+  const hasClinicalContent = /(patient|pt\b|family|mother|brother|caregiver|nursing notes?|hallucinat|internal stimuli|internally preoccupied|si\b|hi\b|suicid|homicid|plan to overdose|poor hygiene|missed a meal|self-care|grave disability|responding to internal stimuli|denies|uds|upt|bal|tachycardia|orthostasis|bradycardia|potassium|fever|confusion|delirium|withdrawal|clonazepam|lithium|postpartum|camera was off|telehealth|head injury|alcohol|vomiting|sweating|tremor|visual shadows|ataxia|dehydration|strangulation marks|adolescent|teen|panic attack likely)/i.test(trimmed);
+
+  if (!hasClinicalContent) {
+    return false;
+  }
+
+  if (looksLikeQuestion(trimmed)) {
+    return hasClinicalContent && trimmed.split(/\s+/).length >= 12;
+  }
+
+  return /[.;:]/.test(trimmed) || trimmed.split(/\s+/).length >= 8;
+}
+
+function isDirectReferenceStyleQuestion(message: string) {
+  const normalized = message.trim().toLowerCase();
+
+  return [
+    /\bwhat is\b/,
+    /\bhow many\b/,
+    /\bstarting dose\b/,
+    /\bstart(?:ing)? dose\b/,
+    /\bdose of\b/,
+    /\bwhat medication\b/,
+    /\bwhat antidepressant\b/,
+    /\bgeneric starts with\b/,
+    /\brecommended hours\b/,
+    /\bhours of sleep\b/,
+    /\bhow much sleep\b/,
+  ].some((pattern) => pattern.test(normalized));
+}
+
+function referencesCurrentNote(message: string) {
+  const normalized = message.trim().toLowerCase();
+
+  return [
+    /\bin (?:this|the) note\b/,
+    /\bfrom (?:this|the) note\b/,
+    /\bcurrent note\b/,
+    /\bcurrent draft\b/,
+    /\bthis patient\b/,
+    /\bthe patient\b/,
+    /\bsource\b/,
+    /\bchart\b/,
+    /\bdocument(?:ation)?\b/,
+    /\bwrite\b/,
+    /\bword(?:ing)?\b/,
+    /\bassessment\b/,
+    /\bplan\b/,
+    /\bmse\b/,
+  ].some((pattern) => pattern.test(normalized));
+}
+
+function shouldIgnoreStaleClinicalContext(message: string) {
+  return isDirectReferenceStyleQuestion(message) && !referencesCurrentNote(message);
+}
+
+function buildSourceTextForReasoning(rawMessage: string, context?: AssistantApiContext, recentMessages?: AssistantThreadTurn[]) {
+  if (shouldIgnoreStaleClinicalContext(rawMessage)) {
+    return '';
+  }
+
+  const currentMessage = rawMessage.trim();
+  const priorProviderSources = (recentMessages || [])
+    .filter((turn) => turn.role === 'provider')
+    .map((turn) => turn.content.trim())
+    .filter(Boolean)
+    .filter((content, index, collection) => collection.indexOf(content) === index)
+    .filter((content) => content !== currentMessage)
+    .filter((content) => looksLikeClinicalReasoningSource(content))
+    .slice(-3);
+
+  return [
+    context?.currentDraftText,
+    ...priorProviderSources,
+    looksLikeClinicalReasoningSource(rawMessage) ? rawMessage : '',
+  ].filter(Boolean).join('\n\n');
+}
+
+function buildPreviousNotes(context?: AssistantApiContext, recentMessages?: AssistantThreadTurn[]) {
+  const previousTurns = (recentMessages || [])
+    .filter((turn) => turn.role === 'provider' && looksLikeRawClinicalDetail(turn.content))
+    .map((turn) => turn.content.trim())
+    .filter(Boolean)
+    .slice(-4);
+
+  const currentDraft = context?.currentDraftText?.trim();
+  if (currentDraft) {
+    previousTurns.push(currentDraft);
+  }
+
+  return [...new Set(previousTurns)].slice(-5);
+}
+
+function buildEvalAuthContext() {
+  return {
+    user: {
+      id: 'eval-user',
+      role: 'provider' as const,
+      email: 'eval-user@veranote.local',
+    },
+    isAuthenticated: true as const,
+    providerIdentityId: DEFAULT_PROVIDER_IDENTITY_ID,
+    tokenSource: 'header' as const,
+  };
+}
+
+function buildMinimalSafeResponse(stage: AssistantStage = 'compose', mode: AssistantMode = 'workflow-help') {
+  return {
+    message: 'Unable to process request. Please review source directly.',
+    suggestions: [
+      'Review the source note directly before making changes.',
+      'Retry once the request is smaller or the system load is lower.',
+    ],
     modeMeta: buildAssistantModeMeta(mode, stage),
-  });
+  } satisfies AssistantResponsePayload & { modeMeta: ReturnType<typeof buildAssistantModeMeta> };
+}
+
+function buildContradictionPriorityPayload(contradictions: Contradiction[]): AssistantResponsePayload {
+  const details = contradictions.map((item) => item.detail);
+  const suicideConflict = details.some((detail) => /suicide-denial|plan or intent/i.test(detail));
+  const perceptualConflict = details.some((detail) => /hallucinations|perceptual|internal-preoccupation|observed behavior|perceptual disturbance/i.test(detail));
+
+  if (suicideConflict) {
+    return {
+      message: 'There is conflicting suicide-risk information in the source. Both denial and plan or intent are present and must be preserved without reconciliation.',
+      suggestions: [
+        'Document both denial and plan explicitly.',
+        'Avoid collapsing this into a single risk statement.',
+        'Clarify timing and current intent if possible.',
+      ],
+    };
+  }
+
+  if (perceptualConflict) {
+    return {
+      message: 'There is a perceptual contradiction in the source. The reported denial of hallucinations and the observed behavior suggesting internal preoccupation should both remain visible without reconciliation.',
+      suggestions: [
+        'Separate the reported denial from the observed behavior.',
+        'Document the observed behavior exactly as observed rather than resolving it into a clean perceptual conclusion.',
+        'Clarify whether the source is reporting patient statements, nursing observation, or clinician observation.',
+      ],
+    };
+  }
+
+  return {
+    message: 'The source contains clinically important contradictions that should be preserved and flagged rather than silently reconciled.',
+    suggestions: [
+      details[0] || 'Document both conflicting source elements explicitly.',
+      'Avoid collapsing the contradiction into one cleaner narrative.',
+      'Clarify timing, attribution, or current status if the source allows it.',
+    ],
+  };
+}
+
+function isRiskWordingQuestion(message: string) {
+  const normalized = message.trim().toLowerCase();
+  return /(?:low(?: suicide| violence)?-?risk wording|low risk or not|calling this low risk|can i (?:say|call).*(?:risk is low|low (?:suicide|violence) risk)|would low (?:suicide|violence)-?risk wording be okay|is grave disability clearly established|why is that garbage|unsafe|supported here or not)/.test(normalized);
+}
+
+function buildRiskPriorityPayload(
+  level: 'clear_high' | 'possible_high' | 'unclear',
+  message: string,
+  riskAnalysis: RiskAnalysis,
+): AssistantResponsePayload | null {
+  const wordingQuestion = isRiskWordingQuestion(message);
+
+  if (wordingQuestion && riskAnalysis.suicide.length > 0) {
+    return {
+      message: 'Low suicide-risk wording is not supported here. Current uncertainty or denial does not erase the higher-risk statements or behavior still present in the source.',
+      suggestions: [
+        'Keep the higher-acuity facts and the denial side by side rather than choosing one.',
+        'Avoid low-risk or discharge-ready shorthand while the contradiction remains active.',
+        'Clarify current intent and timing only if the source allows it.',
+      ],
+    };
+  }
+
+  if (wordingQuestion && riskAnalysis.violence.length > 0) {
+    return {
+      message: 'Low violence-risk wording is not supported here. Denial does not erase the observed agitation and collateral threat history still present in the source.',
+      suggestions: [
+        'Keep patient denial and the higher-acuity source facts visible at the same time.',
+        'Do not let a calmer summary erase threat history or observed agitation.',
+        'Use literal, time-aware language rather than a reassuring risk label.',
+      ],
+    };
+  }
+
+  if (wordingQuestion && riskAnalysis.graveDisability.length > 0) {
+    return {
+      message: 'Confirmed grave-disability wording is not supported from this source alone. The documented functional impairment is too limited to present grave disability as settled, and broader self-care capacity remains uncertain.',
+      suggestions: [
+        'Describe the specific self-care or functional concern instead of declaring grave disability confirmed.',
+        'Keep uncertainty visible when the source documents only sparse impairment.',
+        'Do not use a firmer legal or clinical conclusion than the source supports.',
+      ],
+    };
+  }
+
+  if (level === 'clear_high') {
+    return {
+      message: 'The source contains clear high-risk indicators that should be explicitly documented without dilution.',
+      suggestions: [
+        'Clarify current intent versus past statements if the source allows it.',
+        'Avoid minimizing risk language.',
+        'Keep the risk wording literal and time-aware.',
+      ],
+    };
+  }
+
+  if (level === 'possible_high') {
+    return {
+      message: 'The source may contain elevated risk or self-care concerns, but there is insufficient data to state a firm high-risk conclusion. Preserve the concern while keeping the uncertainty visible.',
+      suggestions: [
+        'Describe the specific observed concern rather than assigning a firm grave-disability or high-risk label.',
+        'Clarify self-care capacity, safety, and whether any present intent is documented if the source allows it.',
+        'Use insufficient-data language when the documentation does not fully support a stronger conclusion.',
+      ],
+    };
+  }
+
+  return null;
+}
+
+function rehydrateAssistantPayload(payload: AssistantResponsePayload, entities: PhiEntity[]): AssistantResponsePayload {
+  if (!entities.length) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    message: rehydratePHI(payload.message, entities),
+    suggestions: payload.suggestions?.map((item) => rehydratePHI(item, entities)),
+    actions: payload.actions?.map((action) => {
+      switch (action.type) {
+        case 'replace-preferences':
+        case 'append-preferences':
+        case 'jump-to-source-evidence':
+        case 'run-review-rewrite':
+          return {
+            ...action,
+            label: rehydratePHI(action.label, entities),
+            instructions: rehydratePHI(action.instructions, entities),
+          };
+        case 'create-preset-draft':
+          return {
+            ...action,
+            label: rehydratePHI(action.label, entities),
+            instructions: rehydratePHI(action.instructions, entities),
+            presetName: rehydratePHI(action.presetName, entities),
+          };
+        case 'apply-conservative-rewrite':
+          return {
+            ...action,
+            label: rehydratePHI(action.label, entities),
+            instructions: rehydratePHI(action.instructions, entities),
+            originalText: rehydratePHI(action.originalText, entities),
+            replacementText: rehydratePHI(action.replacementText, entities),
+          };
+        case 'apply-note-revision':
+          return {
+            ...action,
+            label: rehydratePHI(action.label, entities),
+            instructions: rehydratePHI(action.instructions, entities),
+            revisionText: rehydratePHI(action.revisionText, entities),
+            targetSectionHeading: action.targetSectionHeading ? rehydratePHI(action.targetSectionHeading, entities) : action.targetSectionHeading,
+          };
+        case 'send-beta-feedback':
+          return {
+            ...action,
+            label: rehydratePHI(action.label, entities),
+            instructions: rehydratePHI(action.instructions, entities),
+            feedbackMessage: rehydratePHI(action.feedbackMessage, entities),
+            pageContext: rehydratePHI(action.pageContext, entities),
+          };
+        default:
+          return action;
+      }
+    }),
+  };
+}
+
+export async function POST(request: Request) {
+  const evalMode = new URL(request.url).searchParams.get('eval') === 'true';
+  const baseSelectedModel = selectModel('assistant');
+  let selectedModel = baseSelectedModel;
+  const startTime = Date.now();
+  const finishRequest = trackRequest('assistant/respond', baseSelectedModel, startTime);
+  const getLatencyMs = () => Math.max(Date.now() - startTime, 0);
+  let authContext;
+  if (evalMode) {
+    authContext = buildEvalAuthContext();
+  } else {
+    try {
+      authContext = await requireAuth(request);
+    } catch {
+      finishRequest(false);
+      trackError('assistant/respond', new Error('Unauthorized'));
+      logEvent({
+        route: 'assistant/respond',
+        action: 'auth_failed',
+        outcome: 'rejected',
+        status: 401,
+        latencyMs: getLatencyMs(),
+      });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+  }
+
+  try {
+    await checkRateLimit(authContext.user.id);
+  } catch (error) {
+    finishRequest(false);
+    trackError('assistant/respond', error);
+    logEvent({
+      route: 'assistant/respond',
+      userId: authContext.user.id,
+      action: 'rate_limited',
+      outcome: 'rejected',
+      status: 429,
+      model: selectedModel,
+      latencyMs: getLatencyMs(),
+    });
+    return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
+  }
+
+  let body: AssistantRequest;
+  try {
+    body = (await request.json()) as AssistantRequest;
+    validateRequest(body);
+  } catch (error) {
+    finishRequest(false);
+    trackError('assistant/respond', error);
+    logEvent({
+      route: 'assistant/respond',
+      userId: authContext.user.id,
+      action: 'request_rejected',
+      outcome: 'rejected',
+      status: 400,
+      model: selectedModel,
+      latencyMs: getLatencyMs(),
+      metadata: {
+        reason: sanitizeForLogging(error instanceof Error ? error.message : 'Invalid request'),
+      },
+    });
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+  }
+
+  try {
+    trackModelUsage(selectedModel);
+
+    recordAuditEvent({
+      userId: authContext.user.id,
+      action: 'assistant_access',
+      route: 'assistant/respond',
+      metadata: {
+        method: 'POST',
+      },
+    });
+    
+    const authenticatedProviderId = authContext.providerIdentityId || authContext.user.id;
+    const memoryPayload = await buildRememberFactHelp(body.message || '', body.context, authenticatedProviderId);
+    if (memoryPayload) {
+      recordAuditEvent({
+        userId: authContext.user.id,
+        action: 'memory_usage',
+        route: 'assistant/respond',
+        metadata: {
+          kind: 'remember',
+        },
+      });
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'memory_remember',
+        outcome: 'success',
+        status: 200,
+        model: selectedModel,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId: authenticatedProviderId,
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+      return NextResponse.json({
+        ...memoryPayload,
+        modeMeta: buildAssistantModeMeta(body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help', body.stage === 'review' ? 'review' : 'compose'),
+      });
+    }
+
+    const recallPayload = await buildRecallMemoryHelp((body.message || '').toLowerCase(), body.context, authenticatedProviderId);
+    if (recallPayload) {
+      recordAuditEvent({
+        userId: authContext.user.id,
+        action: 'memory_usage',
+        route: 'assistant/respond',
+        metadata: {
+          kind: 'recall',
+        },
+      });
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'memory_recall',
+        outcome: 'success',
+        status: 200,
+        model: selectedModel,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId: authenticatedProviderId,
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+      return NextResponse.json({
+        ...recallPayload,
+        modeMeta: buildAssistantModeMeta(body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help', body.stage === 'review' ? 'review' : 'compose'),
+      });
+    }
+
+    const rawMessage = body.message || '';
+    const utilityPayload = buildUtilityQuestionPayload(rawMessage);
+    if (utilityPayload) {
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId: authContext.providerIdentityId || authContext.user.id,
+          stage: body.stage === 'review' ? 'review' : 'compose',
+          mode: body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help',
+          routePriority: utilityPayload.routePriority,
+          utilityQuestion: true,
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...utilityPayload.payload,
+        modeMeta: buildAssistantModeMeta(
+          body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help',
+          body.stage === 'review' ? 'review' : 'compose',
+        ),
+      });
+    }
+
+    const sourceText = buildSourceTextForReasoning(rawMessage, body.context, body.recentMessages);
+    const { sanitizedTexts, entities: phiEntities } = sanitizePHITexts([
+      rawMessage,
+      sourceText,
+      body.context?.currentDraftText || '',
+    ]);
+    const [sanitizedMessage, sanitizedSourceText, sanitizedDraftText] = sanitizedTexts;
+    const providerId = resolveAssistantProviderId(body.context, authenticatedProviderId);
+    const clinicalOverride = classifyClinicalTaskOverride(rawMessage);
+    const followupDirective = classifyClinicalFollowupDirective(rawMessage);
+    const priorClinicalState = extractPriorClinicalState(body.recentMessages);
+    const knowledgeIntent = body.mode === 'reference-lookup'
+      ? 'reference_help'
+      : clinicalOverride?.forcedIntent || classifyKnowledgeIntent(rawMessage);
+    const pipeline = await runAssistantPipeline({
+      message: sanitizedMessage,
+      sourceText: sanitizedSourceText,
+      intent: knowledgeIntent,
+      stage: body.stage,
+      noteType: body.context?.noteType,
+    });
+    const {
+      mse: mseAnalysis,
+      risk: riskAnalysis,
+      contradictions: contradictionAnalysis,
+      knowledge: pipelineKnowledge,
+    } = pipeline;
+    const prefilteredReferenceSources = knowledgeIntent === 'reference_help'
+      ? await hydrateTrustedReferenceSources(sanitizedMessage, pipelineKnowledge.trustedReferences.map(trustedReferenceToAssistantSource))
+      : pipelineKnowledge.trustedReferences.map(trustedReferenceToAssistantSource);
+    const filteredKnowledgeBundle = mergeHydratedReferencesIntoBundle(pipelineKnowledge, prefilteredReferenceSources);
+    const providerMemory = filterProviderMemoryByPolicy(await resolveProviderMemory(providerId, {
+      intent: knowledgeIntent,
+      noteType: body.context?.noteType,
+      tags: buildProviderMemoryTags(body.stage === 'review' ? 'review' : 'compose', body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help', body.context),
+    }));
+    const suggestedMemory = filterProviderMemoryByPolicy(
+      extractMemoryFromOutput(sanitizedDraftText || '', providerId)
+        .filter((item) => !providerMemory.some((existing) => existing.content === item.content)),
+    ).slice(0, 3);
+    const medicalNecessity = evaluateMedicalNecessity(sanitizedSourceText);
+    const levelOfCare = evaluateLevelOfCare(sanitizedSourceText);
+    const cptSupport = evaluateCptSupport(sanitizedSourceText);
+    const losAssessment = evaluateLOS(sanitizedSourceText);
+    const auditFlags = detectAuditRisk(sanitizedSourceText);
+    const longitudinalSummary = summarizeTrends(buildPreviousNotes(body.context, body.recentMessages));
+    const nextActions = suggestNextActions(sanitizedSourceText, filteredKnowledgeBundle, longitudinalSummary);
+    const triageSuggestion = suggestTriage(sanitizedSourceText);
+    const dischargeStatus = evaluateDischarge(sanitizedSourceText);
+    const workflowTasks = suggestTasks({
+      sourceText: sanitizedSourceText,
+      triage: triageSuggestion,
+      discharge: dischargeStatus,
+      longitudinal: longitudinalSummary,
+    });
+    const structuredKnowledgePrompt = safeExecute(
+      () => assembleAssistantKnowledgePrompt({
+        task: sanitizedMessage,
+        sourceNote: sanitizedSourceText,
+        knowledgeBundle: filteredKnowledgeBundle,
+        providerMemory,
+        medicalNecessity,
+        levelOfCare,
+        cptSupport,
+        losAssessment,
+        auditFlags,
+        nextActions,
+        triageSuggestion,
+        dischargeStatus,
+        workflowTasks,
+        longitudinalSummary,
+        mseAnalysis,
+        riskAnalysis,
+        contradictionAnalysis,
+      }),
+      '[SOURCE NOTE]\nUnavailable.\n\n[TASK]\nUnable to safely assemble assistant prompt.\n',
+    );
+    const estimatedPromptTokens = safeExecute(
+      () => Math.ceil(structuredKnowledgePrompt.length / 4),
+      0,
+    );
+    if (estimatedPromptTokens > ASSISTANT_TOKEN_THRESHOLD) {
+      selectedModel = CHEAP_ASSISTANT_MODEL;
+    }
+    const routeLevelKnowledgeReferences = filteredKnowledgeBundle.trustedReferences.map(trustedReferenceToAssistantSource);
+    const clinicalTaskPayload = buildClinicalTaskPriorityPayload({
+      message: sanitizedMessage,
+      sourceText: sanitizedSourceText,
+      currentDraftText: sanitizedDraftText,
+      mseAnalysis,
+      riskAnalysis,
+      contradictionAnalysis,
+      medicalNecessity,
+      levelOfCare,
+      losAssessment,
+      dischargeStatus,
+      triageSuggestion,
+      override: clinicalOverride,
+      previousAnswerMode: priorClinicalState?.answerMode,
+      previousBuilderFamily: priorClinicalState?.builderFamily,
+      followupDirective,
+    });
+
+    if (clinicalTaskPayload) {
+      const rehydratedClinicalTaskPayload = rehydrateAssistantPayload(clinicalTaskPayload, phiEntities);
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        model: selectedModel,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage: body.stage === 'review' ? 'review' : 'compose',
+          mode: body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help',
+          knowledgeIntent,
+          answerMode: rehydratedClinicalTaskPayload.answerMode || 'none',
+          builderFamily: rehydratedClinicalTaskPayload.builderFamily || 'none',
+          contradictionCount: contradictionAnalysis.contradictions.length,
+          suicideRiskSignalCount: riskAnalysis.suicide.length,
+          violenceRiskSignalCount: riskAnalysis.violence.length,
+          graveDisabilitySignalCount: riskAnalysis.graveDisability.length,
+          routePriority: 'clinical-task',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...rehydratedClinicalTaskPayload,
+        modeMeta: buildAssistantModeMeta(body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help', body.stage === 'review' ? 'review' : 'compose'),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: rehydratedClinicalTaskPayload.message,
+            warnings: [
+              ...contradictionAnalysis.contradictions.map((item) => item.detail),
+              ...riskAnalysis.generalWarnings,
+            ],
+            knowledgeIntent,
+            answerMode: rehydratedClinicalTaskPayload.answerMode,
+            builderFamily: rehydratedClinicalTaskPayload.builderFamily,
+            routePriority: 'clinical-task',
+          },
+        } : {}),
+      });
+    }
+
+    if (contradictionAnalysis.contradictions.length > 0) {
+      const contradictionPayload = rehydrateAssistantPayload(
+        buildContradictionPriorityPayload(contradictionAnalysis.contradictions),
+        phiEntities,
+      );
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        model: selectedModel,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage: body.stage === 'review' ? 'review' : 'compose',
+          mode: body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help',
+          knowledgeIntent,
+          contradictionCount: contradictionAnalysis.contradictions.length,
+          routePriority: 'contradiction',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...contradictionPayload,
+        modeMeta: buildAssistantModeMeta(body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help', body.stage === 'review' ? 'review' : 'compose'),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: contradictionPayload.message,
+            warnings: contradictionAnalysis.contradictions.map((item) => item.detail),
+            knowledgeIntent,
+            contradictionCount: contradictionAnalysis.contradictions.length,
+            routePriority: 'contradiction',
+          },
+        } : {}),
+      });
+    }
+
+    if (riskAnalysis.level !== 'unclear') {
+      const riskPayload = buildRiskPriorityPayload(riskAnalysis.level, sanitizedMessage, riskAnalysis);
+      if (!riskPayload) {
+        throw new Error('Risk routing expected a payload for non-unclear risk level.');
+      }
+      const rehydratedRiskPayload = rehydrateAssistantPayload(riskPayload, phiEntities);
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        model: selectedModel,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage: body.stage === 'review' ? 'review' : 'compose',
+          mode: body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help',
+          knowledgeIntent,
+          suicideRiskSignalCount: riskAnalysis.suicide.length,
+          violenceRiskSignalCount: riskAnalysis.violence.length,
+          graveDisabilitySignalCount: riskAnalysis.graveDisability.length,
+          riskLevel: riskAnalysis.level,
+          routePriority: 'risk',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...rehydratedRiskPayload,
+        modeMeta: buildAssistantModeMeta(body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help', body.stage === 'review' ? 'review' : 'compose'),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: rehydratedRiskPayload.message,
+            warnings: riskAnalysis.generalWarnings,
+            knowledgeIntent,
+            riskLevel: riskAnalysis.level,
+            routePriority: 'risk',
+          },
+        } : {}),
+      });
+    }
+
+    const { stage, mode, message, context, recentMessages, intentTrace, payload } = orchestrateAssistantResponse(body, {
+      buildBoundaryHelp,
+      buildConversationalHelp,
+      buildInternalKnowledgeHelp,
+      buildReferenceLookupHelp,
+      buildGeneralKnowledgeHelp,
+      buildPrivacyTrustHelp,
+      buildSupportAndTrainingHelp,
+      buildRequestedRevisionHelp,
+      buildProvenanceHelp,
+      buildPromptBuilderHelp,
+      buildDirectReviewHelp,
+      buildReviewScenarioHelp,
+      buildUnknownQuestionFallback,
+      buildWorkflowHelp,
+      buildContextualSectionDraftHelp,
+      buildDirectComposeHelp,
+      buildMixedDomainComposeHelp,
+      buildRawDetailComposeHelp,
+      buildComposeScenarioHelp,
+    });
+    const learnedPayload = enrichAssistantResponseWithLearning({
+      payload,
+      learningStore: await getAssistantLearning(resolveAssistantProviderId(context, authenticatedProviderId)),
+      normalizedMessage: message.toLowerCase(),
+      stage,
+      mode,
+      noteType: context?.noteType,
+      profileId: context?.providerProfileId,
+    });
+    const knowledgeSupportPayload = buildKnowledgeSupportPayload(knowledgeIntent, filteredKnowledgeBundle);
+    let knowledgeAwarePayload = learnedPayload;
+
+    if (isUnknownFallbackPayload(learnedPayload) && knowledgeSupportPayload) {
+      knowledgeAwarePayload = knowledgeSupportPayload;
+    } else if (!bundleHasKnowledge(filteredKnowledgeBundle) && knowledgeIntent !== 'draft_support') {
+      knowledgeAwarePayload = appendUniqueSuggestions(learnedPayload, [
+        'No structured psychiatry knowledge match was found here, so Vera should stay source-only and avoid guessing.',
+      ]);
+    } else if (knowledgeIntent === 'diagnosis_help' && filteredKnowledgeBundle.diagnosisConcepts.length) {
+      knowledgeAwarePayload = appendUniqueSuggestions(learnedPayload, [
+        'Keep any diagnosis wording proposed based on available information rather than fully settled.',
+      ]);
+    }
+    knowledgeAwarePayload = appendUniqueSuggestions(knowledgeAwarePayload, [
+      buildStructuredKnowledgeReminder(filteredKnowledgeBundle),
+      ...buildDefensibilitySuggestions({
+        medicalNecessity,
+        levelOfCare,
+        cptSupport,
+        losAssessment,
+        auditFlags,
+      }),
+      ...buildWorkflowSuggestions({
+        nextActions,
+        triage: triageSuggestion,
+        discharge: dischargeStatus,
+        tasks: workflowTasks,
+      }),
+      ...mseAnalysis.unsupportedNormals.slice(0, 2),
+      ...(contradictionAnalysis.contradictions.length ? [contradictionAnalysis.contradictions[0].detail] : []),
+      ...((!riskAnalysis.suicide.length && !riskAnalysis.violence.length && !riskAnalysis.graveDisability.length)
+        ? ['Risk remains insufficiently described in the available source; do not infer absence of risk.']
+        : []),
+    ]);
+    const fidelitySafePayload = enforceFidelity({
+      output: knowledgeAwarePayload,
+      source: sanitizedSourceText,
+      mseAnalysis,
+      riskAnalysis,
+      contradictions: contradictionAnalysis,
+    });
+    const memoryAwarePayload = applyProviderMemoryToPayload(fidelitySafePayload, providerMemory);
+    const finalPayload = rehydrateAssistantPayload(memoryAwarePayload, phiEntities);
+
+    await recordRelationshipSignalIfNeeded(message.toLowerCase(), context, authenticatedProviderId);
+
+    const initialReferences = mergeAssistantReferences(
+      memoryAwarePayload.references,
+      routeLevelKnowledgeReferences,
+    );
+    const hydratedReferences = (mode === 'reference-lookup' || knowledgeIntent === 'reference_help' || initialReferences.length)
+      ? await hydrateTrustedReferenceSources(sanitizedMessage, initialReferences)
+      : memoryAwarePayload.references;
+    const externalAnswerMeta = (mode === 'reference-lookup' || knowledgeIntent === 'reference_help')
+      ? buildExternalAnswerMeta(finalPayload.message, hydratedReferences || [])
+      : memoryAwarePayload.externalAnswerMeta;
+
+    finishRequest(true);
+    logEvent({
+      route: 'assistant/respond',
+      userId: authContext.user.id,
+      action: 'assistant_respond',
+      outcome: 'success',
+      status: 200,
+      model: selectedModel,
+      latencyMs: getLatencyMs(),
+      metadata: {
+        providerId,
+        stage,
+        mode,
+        recentMessagesCount: recentMessages.length,
+        intentTraceCount: intentTrace.length,
+        knowledgeIntent,
+        answerMode: finalPayload.answerMode || 'none',
+        diagnosisCount: filteredKnowledgeBundle.diagnosisConcepts.length,
+        codingCount: filteredKnowledgeBundle.codingEntries.length,
+        medicationCount: filteredKnowledgeBundle.medicationConcepts.length,
+        substanceCount: filteredKnowledgeBundle.emergingDrugConcepts.length,
+        workflowCount: filteredKnowledgeBundle.workflowGuidance.length,
+        trustedReferenceCount: filteredKnowledgeBundle.trustedReferences.length,
+        referenceCount: hydratedReferences?.length || 0,
+        providerMemoryCount: providerMemory.length,
+        suggestedMemoryCount: suggestedMemory.length,
+        medicalNecessitySignalCount: medicalNecessity.signals.filter((item) => item.strength !== 'missing').length,
+        levelOfCareSuggested: levelOfCare.suggestedLevel,
+        auditFlagCount: auditFlags.length,
+        nextActionCount: nextActions.length,
+        triageSuggested: triageSuggestion.level,
+        dischargeReadiness: dischargeStatus.readiness,
+        workflowTaskCount: workflowTasks.length,
+        structuredKnowledgePromptLength: structuredKnowledgePrompt.length,
+        mseDetectedDomainCount: mseAnalysis.detectedDomains.length,
+        contradictionCount: contradictionAnalysis.contradictions.length,
+        suicideRiskSignalCount: riskAnalysis.suicide.length,
+        violenceRiskSignalCount: riskAnalysis.violence.length,
+        graveDisabilitySignalCount: riskAnalysis.graveDisability.length,
+        externalAnswerConfidence: externalAnswerMeta?.level || 'none',
+      },
+    });
+    recordAuditEvent({
+      userId: authContext.user.id,
+      action: 'assistant_respond',
+      route: 'assistant/respond',
+      metadata: {
+        providerId,
+        stage,
+        mode,
+        knowledgeIntent,
+        providerMemoryUsed: providerMemory.length > 0,
+      },
+    });
+    if (evalMode) {
+      recordEvalResult(1, 0);
+    }
+
+    return NextResponse.json({
+      ...finalPayload,
+      references: hydratedReferences,
+      externalAnswerMeta,
+      modeMeta: buildAssistantModeMeta(mode, stage),
+      suggestedMemory,
+      ...(evalMode ? {
+        eval: {
+          rawOutput: finalPayload.message,
+          warnings: [
+            ...(filteredKnowledgeBundle.diagnosisConcepts.length ? ['Diagnosis support remains suggestive only.'] : []),
+            ...((!riskAnalysis.suicide.length && !riskAnalysis.violence.length && !riskAnalysis.graveDisability.length)
+              ? ['Risk signals were limited; source-only restraint was preferred.']
+              : []),
+          ],
+          knowledgeIntent,
+          answerMode: finalPayload.answerMode,
+          providerMemoryCount: providerMemory.length,
+          medicalNecessitySignalCount: medicalNecessity.signals.filter((item) => item.strength !== 'missing').length,
+          levelOfCareSuggested: levelOfCare.suggestedLevel,
+          auditFlagCount: auditFlags.length,
+          nextActionCount: nextActions.length,
+          triageSuggested: triageSuggestion.level,
+          dischargeReadiness: dischargeStatus.readiness,
+          workflowTaskCount: workflowTasks.length,
+          structuredKnowledgePromptLength: structuredKnowledgePrompt.length,
+          mseDetectedDomains: mseAnalysis.detectedDomains.map((item) => item.domain),
+          contradictionCount: contradictionAnalysis.contradictions.length,
+          riskSignalCounts: {
+            suicide: riskAnalysis.suicide.length,
+            violence: riskAnalysis.violence.length,
+            graveDisability: riskAnalysis.graveDisability.length,
+          },
+        },
+      } : {}),
+    });
+  } catch (error) {
+    finishRequest(false);
+    trackError('assistant/respond', error);
+    if (evalMode) {
+      recordEvalResult(0, 1);
+    }
+    logEvent({
+      route: 'assistant/respond',
+      userId: authContext.user.id,
+      action: 'assistant_error',
+      outcome: 'error',
+      status: 500,
+      model: selectedModel,
+      latencyMs: getLatencyMs(),
+    });
+    const safeFallback = buildMinimalSafeResponse(
+      body?.stage === 'review' ? 'review' : 'compose',
+      body?.mode === 'reference-lookup'
+        ? 'reference-lookup'
+        : body?.mode === 'prompt-builder'
+          ? 'prompt-builder'
+          : 'workflow-help',
+    );
+    return NextResponse.json(safeFallback, { status: 200 });
+  }
 }

@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { findProviderProfile } from '@/lib/constants/provider-profiles';
 import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '@/lib/constants/settings';
-import { DRAFT_SESSION_KEY } from '@/lib/constants/storage';
 import { describePopulatedSourceSections, EMPTY_SOURCE_SECTIONS, normalizeSourceSections } from '@/lib/ai/source-sections';
-import { countWords, parseDraftSections, reconcileSectionReviewState } from '@/lib/note/review-sections';
+import { countWords, parseDraftSections, reconcileSectionReviewState, type ParsedDraftSection } from '@/lib/note/review-sections';
 import { buildSectionEvidenceMap, buildSourceBlocks, getSignalLabel, highlightTermsInText, type SourceBlock } from '@/lib/note/source-linking';
 import { getHighRiskWarnings } from '@/lib/eval/high-risk-warnings';
 import { buildDiagnosisProfileSummary, normalizeDiagnosisProfile } from '@/lib/note/diagnosis-profile';
@@ -19,12 +19,27 @@ import { evaluateMedicationWarningsSorted } from '@/lib/medications/runtime-warn
 import { findMedicationMentionsInText, getMedicationById, getPsychMedicationWarningBundle } from '@/lib/medications/seed-loader';
 import { findDiagnosisAvoidTermsInText, findDiagnosisMentionsInText, findDiagnosisNonAutoMapTermsInText } from '@/lib/psychiatry-diagnosis/seed-loader';
 import { detectRiskTerms, findAbbreviationMentionsInText, findAvoidTermsInText, findMseTermsInText } from '@/lib/psychiatry-terminology/seed-loader';
-import { ASSISTANT_ACTION_EVENT, ASSISTANT_PENDING_ACTION_KEY, publishAssistantContext } from '@/lib/veranote/assistant-context';
+import { ASSISTANT_ACTION_EVENT, publishAssistantContext } from '@/lib/veranote/assistant-context';
 import { dismissLanePreferenceSuggestion, getLanePreferenceSuggestion, recordLanePreferenceSelection } from '@/lib/veranote/assistant-learning';
+import { buildDraftRecoveryState } from '@/lib/veranote/draft-recovery';
+import {
+  formatTextForOutputDestination,
+  getOutputDestinationFieldTargets,
+  getOutputDestinationMeta,
+  getOutputNoteFocusLabel,
+  inferOutputNoteFocus,
+} from '@/lib/veranote/output-destinations';
 import { buildLanePreferencePrompt } from '@/lib/veranote/preference-draft';
-import { getCurrentProviderId, getProviderSettingsStorageKey } from '@/lib/veranote/provider-identity';
+import {
+  getAssistantPendingActionStorageKey,
+  getCurrentProviderId,
+  getDraftRecoveryStorageKey,
+  getDraftSessionStorageKey,
+  getProviderSettingsStorageKey,
+} from '@/lib/veranote/provider-identity';
 import { resolveVeraAddress } from '@/lib/veranote/vera-relationship';
-import type { DraftSession, ReviewStatus, SourceSections } from '@/types/session';
+import type { DraftSession, PersistedDraftSession, ReviewStatus, SourceSections } from '@/types/session';
+import type { DictationTargetSection } from '@/types/dictation';
 import type { NoteSectionKey, OutputScope } from '@/lib/note/section-profiles';
 
 function sanitizeFileName(value: string) {
@@ -55,6 +70,14 @@ function uniqueBy<T>(items: T[], getKey: (item: T) => string) {
   });
 }
 
+function isDictationTargetSection(value: string): value is DictationTargetSection {
+  return value === 'clinicianNotes' || value === 'intakeCollateral' || value === 'patientTranscript' || value === 'objectiveData';
+}
+
+function flattenDictationInsertions(insertions: DraftSession['dictationInsertions']) {
+  return Object.values(insertions || {}).flatMap((records) => records || []);
+}
+
 function extractFirstReviewSentence(text: string | null | undefined) {
   if (!text?.trim()) {
     return undefined;
@@ -82,6 +105,24 @@ function hasDestinationConstraintSignal(session: DraftSession | null) {
   ].filter(Boolean).join('\n').toLowerCase();
 
   return /ascii-safe|wellsky|destination|template|format|paragraph only|minimal headings/.test(combined);
+}
+
+type ReviewSignalTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
+
+function getReviewSignalClasses(tone: ReviewSignalTone) {
+  switch (tone) {
+    case 'success':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-900';
+    case 'warning':
+      return 'border-amber-200 bg-amber-50 text-amber-900';
+    case 'danger':
+      return 'border-rose-200 bg-rose-50 text-rose-900';
+    case 'info':
+      return 'border-sky-200 bg-sky-50 text-sky-950';
+    case 'neutral':
+    default:
+      return 'border-slate-200 bg-slate-50 text-slate-900';
+  }
 }
 
 function collectMedicationSignals(sourceText: string) {
@@ -576,25 +617,18 @@ function formatExportBundle(session: DraftSession, draftText: string) {
   return bundle.join('\n');
 }
 
-function toAsciiSafe(value: string) {
-  return value
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/[–—]/g, '-')
-    .replace(/…/g, '...')
-    .replace(/\u00A0/g, ' ');
-}
-
 function buildExportConstraintList(session: DraftSession | null, providerSettings: ProviderSettings) {
+  const destinationMeta = getOutputDestinationMeta(providerSettings.outputDestination);
   const constraints = [
     `Destination: ${providerSettings.outputDestination}`,
+    `Profile: ${destinationMeta.behavior}`,
     `ASCII-safe: ${providerSettings.asciiSafe ? 'On' : 'Off'}`,
     `Paragraph-only: ${providerSettings.paragraphOnly ? 'On' : 'Off'}`,
     `Format: ${session?.format || 'Unknown'}`,
   ];
 
-  if (providerSettings.wellskyFriendly || providerSettings.outputDestination === 'WellSky') {
-    constraints.push('WellSky-friendly cleanup active');
+  if (providerSettings.wellskyFriendly || destinationMeta.behavior === 'strict-template-safe') {
+    constraints.push('Strict template-safe cleanup active');
   }
 
   if (session?.customInstructions?.trim()) {
@@ -605,19 +639,54 @@ function buildExportConstraintList(session: DraftSession | null, providerSetting
 }
 
 function buildExportPreviewText(draftText: string, session: DraftSession | null, providerSettings: ProviderSettings) {
-  let preview = draftText || '';
+  return formatTextForOutputDestination({
+    text: draftText,
+    destination: providerSettings.outputDestination,
+    asciiSafe: providerSettings.asciiSafe,
+    paragraphOnly: providerSettings.paragraphOnly || session?.format === 'Paragraph Style',
+    preserveHeadings: session?.format !== 'Paragraph Style',
+  });
+}
 
-  if (providerSettings.asciiSafe || providerSettings.outputDestination === 'WellSky') {
-    preview = toAsciiSafe(preview);
-  }
+function findSectionsForAliases(sections: ParsedDraftSection[], aliases: string[]) {
+  const normalizedAliases = aliases.map((alias) => alias.toLowerCase());
 
-  if (providerSettings.paragraphOnly || session?.format === 'Paragraph Style') {
-    preview = preview
-      .replace(/\n{3,}/g, '\n\n')
-      .replace(/[ \t]+\n/g, '\n');
-  }
+  return sections.filter((section) => {
+    const heading = section.heading.toLowerCase();
+    return normalizedAliases.some((alias) => heading.includes(alias) || alias.includes(heading));
+  });
+}
 
-  return preview.trim();
+function buildDestinationPasteTargets(
+  sections: ParsedDraftSection[],
+  draftText: string,
+  providerSettings: ProviderSettings,
+  session: DraftSession | null,
+) {
+  const noteFocus = providerSettings.outputNoteFocus || inferOutputNoteFocus(session?.noteType || '');
+  const fieldTargets = getOutputDestinationFieldTargets(providerSettings.outputDestination, noteFocus);
+
+  return fieldTargets.map((target) => {
+    const matches = findSectionsForAliases(sections, target.aliases);
+    const sectionText = matches
+      .map((section) => `${section.heading}:\n${section.body}`.trim())
+      .filter(Boolean)
+      .join('\n\n')
+      .trim();
+    const text = formatTextForOutputDestination({
+      text: sectionText || (target.id.endsWith('summary') || target.id.endsWith('narrative') ? draftText : ''),
+      destination: providerSettings.outputDestination,
+      asciiSafe: providerSettings.asciiSafe,
+      paragraphOnly: providerSettings.paragraphOnly || session?.format === 'Paragraph Style',
+      preserveHeadings: true,
+    });
+
+    return {
+      ...target,
+      text,
+      matchedHeadings: matches.map((section) => section.heading),
+    };
+  }).filter((target) => target.text.trim().length > 0);
 }
 
 const sourceSectionMeta: Array<{ key: keyof SourceSections; label: string; hint: string }> = [
@@ -663,7 +732,7 @@ function WarningWhyThisAppeared(props: {
   }
 
   return (
-    <details className={`aurora-soft-panel mt-3 rounded-[18px] border p-3 ${props.toneClassName}`}>
+    <details className={`group aurora-soft-panel mt-3 rounded-[18px] border p-3 ${props.toneClassName}`}>
       <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide">
         Why this appeared
       </summary>
@@ -688,15 +757,16 @@ function CollapsibleReviewSection(props: {
   children: React.ReactNode;
 }) {
   return (
-    <details id={props.id} open={props.defaultOpen} className={`aurora-panel mb-4 rounded-[26px] px-5 py-5 text-sm ${props.toneClassName}`}>
+    <details id={props.id} open={props.defaultOpen} className={`group workspace-panel mb-4 rounded-[28px] px-5 py-5 text-sm ${props.toneClassName}`}>
       <summary className="cursor-pointer list-none">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-lg font-semibold">{props.title}</div>
             <p className="mt-2 max-w-3xl text-sm leading-7 opacity-90">{props.subtitle}</p>
           </div>
-          <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-cyan-50 shadow-[0_8px_22px_rgba(4,12,24,0.18)]">
-            Expand
+          <div className="workspace-chip inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-cyan-50 shadow-[0_8px_22px_rgba(4,12,24,0.18)]">
+            <span className="transition-transform duration-150 group-open:rotate-90">›</span>
+            <span>Open</span>
           </div>
         </div>
       </summary>
@@ -704,6 +774,102 @@ function CollapsibleReviewSection(props: {
         {props.children}
       </div>
     </details>
+  );
+}
+
+function CompactMetric(props: {
+  label: string;
+  value: React.ReactNode;
+  detail?: string;
+}) {
+  return (
+    <div className="workspace-kpi rounded-[18px] px-4 py-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-cyan-100/62">{props.label}</div>
+      <div className="mt-1 text-xl font-semibold text-white">{props.value}</div>
+      {props.detail ? <div className="mt-0.5 text-xs text-cyan-50/66">{props.detail}</div> : null}
+    </div>
+  );
+}
+
+function InlineMetric(props: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="workspace-chip rounded-full px-3 py-1.5 text-xs font-medium text-cyan-50/76">
+      <span className="text-white">{props.value}</span> {props.label}
+    </div>
+  );
+}
+
+function DrawerJumpButton(props: {
+  label: string;
+  targetId: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        const target = document.getElementById(props.targetId);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }}
+      className="workspace-chip rounded-full px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:shadow-[0_14px_32px_rgba(2,8,18,0.2)]"
+    >
+      {props.label}
+    </button>
+  );
+}
+
+function ReviewItemDisclosure(props: {
+  title: React.ReactNode;
+  meta?: React.ReactNode;
+  summary?: React.ReactNode;
+  className: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className={`group workspace-subpanel rounded-[18px] p-3 ${props.className}`}>
+      <summary className="cursor-pointer list-none">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="font-medium">{props.title}</div>
+            {props.summary ? <div className="mt-1 text-xs opacity-90">{props.summary}</div> : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {props.meta ? <div className="flex flex-wrap gap-2">{props.meta}</div> : null}
+            <DisclosureAffordance />
+          </div>
+        </div>
+      </summary>
+      <div className="mt-3">
+        {props.children}
+      </div>
+    </details>
+  );
+}
+
+function OptionalBadge(props: {
+  className?: string;
+}) {
+  return (
+    <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide ${props.className || 'border-white/12 bg-white/8 text-cyan-50/74'}`}>
+      <span className="transition-transform duration-150 group-open:rotate-90">›</span>
+      <span>Optional</span>
+    </div>
+  );
+}
+
+function DisclosureAffordance(props: {
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide ${props.className || 'border-white/12 bg-white/8 text-cyan-50/74'}`}>
+      <span className="transition-transform duration-150 group-open:rotate-90">›</span>
+      <span>{props.label || 'Details'}</span>
+    </div>
   );
 }
 
@@ -1120,6 +1286,142 @@ function buildPhaseTwoTrustCues(input: {
   return cues.slice(0, 4);
 }
 
+function buildReviewStageItems(input: {
+  reviewCounts: { approved: number; needsReview: number; unreviewed: number };
+  exportReady: boolean;
+  focusedSectionHeading?: string;
+}) {
+  const reviewOpenCount = input.reviewCounts.unreviewed + input.reviewCounts.needsReview;
+
+  return [
+    {
+      id: 'source-intake',
+      label: 'Source intake',
+      detail: 'Source and draft are already loaded into the review workspace.',
+      status: 'complete',
+    },
+    {
+      id: 'draft-shaping',
+      label: 'Draft shaping',
+      detail: input.focusedSectionHeading ? `${input.focusedSectionHeading} is currently in focus.` : 'Draft text is available for manual shaping.',
+      status: 'complete',
+    },
+    {
+      id: 'review',
+      label: 'Review',
+      detail: reviewOpenCount
+        ? `${reviewOpenCount} section${reviewOpenCount === 1 ? '' : 's'} still need attention.`
+        : 'All detected sections have been reviewed.',
+      status: input.exportReady ? 'complete' : 'active',
+    },
+    {
+      id: 'finish',
+      label: 'Finish',
+      detail: input.exportReady
+        ? 'Copy and export are ready without leaving this workspace.'
+        : 'Finish becomes active once the open review items are cleared.',
+      status: input.exportReady ? 'active' : 'upcoming',
+    },
+  ] as const;
+}
+
+function getReviewStageTone(status: 'complete' | 'active' | 'upcoming') {
+  if (status === 'complete') {
+    return 'border-emerald-200/24 bg-[rgba(20,83,45,0.22)] text-emerald-100';
+  }
+
+  if (status === 'active') {
+    return 'border-cyan-200/24 bg-[rgba(18,181,208,0.14)] text-cyan-50';
+  }
+
+  return 'border-cyan-200/10 bg-[rgba(13,30,50,0.56)] text-cyan-50/70';
+}
+
+function buildReviewReasonTags(input: {
+  hasObjectiveConflict: boolean;
+  hasTrustCues: boolean;
+  hasDestinationConstraint: boolean;
+  hasHighRiskWarnings: boolean;
+  hasDiagnosisCues: boolean;
+}) {
+  const tags: Array<{ id: string; label: string; targetId: string }> = [];
+
+  if (input.hasTrustCues || input.hasObjectiveConflict) {
+    tags.push({ id: 'too-strong-for-source', label: 'Too strong for source', targetId: 'phase-two-trust-layer' });
+  }
+
+  if (input.hasObjectiveConflict) {
+    tags.push({ id: 'needs-attribution', label: 'Needs attribution', targetId: 'objective-warning-layer' });
+  }
+
+  if (input.hasHighRiskWarnings || input.hasDiagnosisCues) {
+    tags.push({ id: 'timeline-unclear', label: 'Timeline unclear', targetId: input.hasDiagnosisCues ? 'diagnosis-warning-layer' : 'high-risk-warning-layer' });
+  }
+
+  if (input.hasDestinationConstraint) {
+    tags.push({ id: 'destination-fit', label: 'Destination fit', targetId: 'active-output-profile-layer' });
+  }
+
+  return tags.slice(0, 4);
+}
+
+function buildSectionReviewReasonTags(input: {
+  sectionHeading: string;
+  claimSupportCues: SectionClaimSupportCue[];
+  pressureCues: SectionPressureCue[];
+  hasEvidenceLinks: boolean;
+}) {
+  const tags: Array<{ id: string; label: string; toneClassName: string }> = [];
+  const thinClaimCue = input.claimSupportCues.find((cue) => cue.statusLabel === 'Review support looks thin');
+  const partialClaimCue = input.claimSupportCues.find((cue) => cue.statusLabel === 'Partial source support');
+  const heading = input.sectionHeading.toLowerCase();
+
+  if (thinClaimCue) {
+    tags.push({
+      id: 'thin-support',
+      label: /assessment|diagnosis|impression|formulation/.test(heading) ? 'Diagnosis outruns evidence' : 'Support looks thin',
+      toneClassName: 'border-amber-200 bg-amber-50 text-amber-950',
+    });
+  } else if (partialClaimCue) {
+    tags.push({
+      id: 'partial-support',
+      label: 'Needs attribution',
+      toneClassName: 'border-sky-200 bg-sky-50 text-sky-950',
+    });
+  }
+
+  if (!input.hasEvidenceLinks) {
+    tags.push({
+      id: 'no-evidence',
+      label: 'No linked source yet',
+      toneClassName: 'border-slate-200 bg-slate-50 text-slate-900',
+    });
+  }
+
+  input.pressureCues.forEach((cue) => {
+    if (cue.warningFamily === 'objective-warning-layer') {
+      tags.push({ id: 'objective', label: 'Objective facts need check', toneClassName: cue.toneClassName });
+    }
+    if (cue.warningFamily === 'diagnosis-warning-layer') {
+      tags.push({ id: 'diagnosis', label: 'Diagnosis pressure', toneClassName: cue.toneClassName });
+    }
+    if (cue.warningFamily === 'terminology-warning-layer') {
+      tags.push({ id: 'terminology', label: 'Timeline or wording unclear', toneClassName: cue.toneClassName });
+    }
+    if (cue.warningFamily === 'medication-warning-layer') {
+      tags.push({ id: 'medication', label: 'Medication facts need check', toneClassName: cue.toneClassName });
+    }
+    if (cue.warningFamily === 'high-risk-warning-layer') {
+      tags.push({ id: 'risk', label: 'High-risk wording', toneClassName: cue.toneClassName });
+    }
+    if (cue.warningFamily === 'encounter-warning-layer') {
+      tags.push({ id: 'encounter', label: 'Encounter or destination fit', toneClassName: cue.toneClassName });
+    }
+  });
+
+  return unique(tags.map((tag) => tag.id)).map((id) => tags.find((tag) => tag.id === id)!).slice(0, 4);
+}
+
 type ReviewWorkspaceProps = {
   initialSession?: DraftSession | null;
   embedded?: boolean;
@@ -1132,6 +1434,7 @@ export function ReviewWorkspace({
   onBackToEdit,
 }: ReviewWorkspaceProps = {}) {
   const router = useRouter();
+  const { data: authSession } = useSession();
   const [session, setSession] = useState<DraftSession | null>(initialSession);
   const [providerSettings, setProviderSettings] = useState<ProviderSettings>(DEFAULT_PROVIDER_SETTINGS);
   const [draftText, setDraftText] = useState(initialSession?.note || '');
@@ -1140,13 +1443,81 @@ export function ReviewWorkspace({
   const [exportMessage, setExportMessage] = useState('');
   const [rewriteMessage, setRewriteMessage] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
+  const [interactionMessage, setInteractionMessage] = useState('');
   const [activeSourceKey, setActiveSourceKey] = useState<keyof SourceSections | 'combined'>('combined');
   const [isRewriting, setIsRewriting] = useState<RewriteMode | null>(null);
   const [focusedSectionAnchor, setFocusedSectionAnchor] = useState<string | null>(null);
   const [focusedEvidenceBlockId, setFocusedEvidenceBlockId] = useState<string | null>(null);
+  const reviewAutoFocusSeedRef = useRef<string | null>(null);
   const [lanePreferenceSuggestion, setLanePreferenceSuggestion] = useState<ReturnType<typeof getLanePreferenceSuggestion>>(null);
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const resolvedProviderIdentityId = authSession?.user?.providerIdentityId || getCurrentProviderId();
+  const draftSessionStorageKey = getDraftSessionStorageKey(resolvedProviderIdentityId);
+  const draftRecoveryStorageKey = getDraftRecoveryStorageKey(resolvedProviderIdentityId);
+  const assistantPendingActionStorageKey = getAssistantPendingActionStorageKey(resolvedProviderIdentityId);
   const activeProviderProfile = useMemo(() => findProviderProfile(providerSettings.providerProfileId), [providerSettings.providerProfileId]);
+  const activeDestinationMeta = useMemo(
+    () => getOutputDestinationMeta(providerSettings.outputDestination),
+    [providerSettings.outputDestination],
+  );
+  const activeOutputProfile = useMemo(
+    () => providerSettings.outputProfiles.find((profile) => profile.id === providerSettings.activeOutputProfileId) || null,
+    [providerSettings.activeOutputProfileId, providerSettings.outputProfiles],
+  );
+
+  async function handleApplyOutputProfile(profileId: string) {
+    if (!profileId) {
+      const nextSettings = {
+        ...providerSettings,
+        activeOutputProfileId: '',
+      };
+
+      setProviderSettings(nextSettings);
+      localStorage.setItem(getProviderSettingsStorageKey(resolvedProviderIdentityId), JSON.stringify(nextSettings));
+      return;
+    }
+
+    const profile = providerSettings.outputProfiles.find((item) => item.id === profileId);
+    if (!profile) {
+      return;
+    }
+
+    const nextSettings = {
+      ...providerSettings,
+      outputDestination: profile.destination,
+      outputNoteFocus: profile.noteFocus,
+      asciiSafe: profile.asciiSafe,
+      paragraphOnly: profile.paragraphOnly,
+      wellskyFriendly: profile.wellskyFriendly,
+      activeOutputProfileId: profile.id,
+    };
+
+    setProviderSettings(nextSettings);
+    localStorage.setItem(getProviderSettingsStorageKey(resolvedProviderIdentityId), JSON.stringify(nextSettings));
+
+    try {
+      await fetch('/api/settings/provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...nextSettings, providerId: resolvedProviderIdentityId }),
+      });
+    } catch {
+      // Review can continue with local settings if backend persistence is unavailable.
+    }
+  }
+
+  function persistDraftRecovery(nextSession: DraftSession, workflowStage: 'compose' | 'review' = 'review') {
+    const recoveryState = buildDraftRecoveryState(nextSession, {
+      workflowStage,
+      composeLane: nextSession.recoveryState?.composeLane || 'finish',
+      lastOpenedAt: new Date().toISOString(),
+    });
+
+    localStorage.setItem(draftRecoveryStorageKey, JSON.stringify({
+      draftId: nextSession.draftId || null,
+      recoveryState,
+    }));
+  }
 
   useEffect(() => {
     if (!initialSession) {
@@ -1164,29 +1535,37 @@ export function ReviewWorkspace({
     }
 
     async function hydrateDraft() {
-      const raw = localStorage.getItem(DRAFT_SESSION_KEY);
+      const raw = localStorage.getItem(draftSessionStorageKey);
 
       if (raw) {
         try {
           const parsed = JSON.parse(raw) as DraftSession;
+          if (parsed.providerIdentityId && parsed.providerIdentityId !== resolvedProviderIdentityId) {
+            throw new Error('Mismatched provider draft session.');
+          }
           setSession(parsed);
           setDraftText(parsed.note);
           setIsHydrating(false);
           return;
         } catch {
-          localStorage.removeItem(DRAFT_SESSION_KEY);
+          localStorage.removeItem(draftSessionStorageKey);
+          localStorage.removeItem(draftRecoveryStorageKey);
         }
       }
 
       try {
-        const response = await fetch('/api/drafts/latest', { cache: 'no-store' });
-        const data = (await response.json()) as { draft?: DraftSession | null };
+        const response = await fetch(`/api/drafts/latest?providerId=${encodeURIComponent(resolvedProviderIdentityId)}`, { cache: 'no-store' });
+        const data = (await response.json()) as { draft?: PersistedDraftSession | null };
         const parsed = data?.draft;
 
         if (parsed) {
           setSession(parsed);
           setDraftText(parsed.note);
-          localStorage.setItem(DRAFT_SESSION_KEY, JSON.stringify(parsed));
+          localStorage.setItem(draftSessionStorageKey, JSON.stringify(parsed));
+          localStorage.setItem(draftRecoveryStorageKey, JSON.stringify({
+            draftId: parsed.id,
+            recoveryState: parsed.recoveryState,
+          }));
         }
       } catch {
         // Keep the review screen graceful if backend restore is unavailable.
@@ -1196,16 +1575,15 @@ export function ReviewWorkspace({
     }
 
     void hydrateDraft();
-  }, [initialSession]);
+  }, [draftRecoveryStorageKey, draftSessionStorageKey, initialSession, resolvedProviderIdentityId]);
 
   useEffect(() => {
-    setLanePreferenceSuggestion(getLanePreferenceSuggestion(session?.noteType));
-  }, [session?.noteType]);
+    setLanePreferenceSuggestion(getLanePreferenceSuggestion(session?.noteType, resolvedProviderIdentityId));
+  }, [resolvedProviderIdentityId, session?.noteType]);
 
   useEffect(() => {
     async function hydrateProviderSettings() {
-      const providerId = getCurrentProviderId();
-      const storageKey = getProviderSettingsStorageKey(providerId);
+      const storageKey = getProviderSettingsStorageKey(resolvedProviderIdentityId);
       const raw = localStorage.getItem(storageKey);
       if (raw) {
         try {
@@ -1218,7 +1596,7 @@ export function ReviewWorkspace({
       }
 
       try {
-        const response = await fetch(`/api/settings/provider?providerId=${encodeURIComponent(providerId)}`, { cache: 'no-store' });
+        const response = await fetch(`/api/settings/provider?providerId=${encodeURIComponent(resolvedProviderIdentityId)}`, { cache: 'no-store' });
         const data = (await response.json()) as { settings?: ProviderSettings };
         const merged = { ...DEFAULT_PROVIDER_SETTINGS, ...(data?.settings || {}) };
         setProviderSettings(merged);
@@ -1229,7 +1607,7 @@ export function ReviewWorkspace({
     }
 
     void hydrateProviderSettings();
-  }, []);
+  }, [resolvedProviderIdentityId]);
 
   useEffect(() => {
     publishAssistantContext({
@@ -1336,19 +1714,36 @@ export function ReviewWorkspace({
       sectionReviewState: reconciledSectionReviewState,
     };
 
-    localStorage.setItem(DRAFT_SESSION_KEY, JSON.stringify(updatedSession));
-  }, [draftText, reconciledSectionReviewState, session]);
+    localStorage.setItem(draftSessionStorageKey, JSON.stringify(updatedSession));
+    persistDraftRecovery(updatedSession);
+  }, [draftRecoveryStorageKey, draftSessionStorageKey, draftText, reconciledSectionReviewState, session]);
 
   async function persistDraft(nextSession: DraftSession) {
     try {
-      await fetch('/api/drafts', {
+      const response = await fetch('/api/drafts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(nextSession),
+        body: JSON.stringify({
+          ...nextSession,
+          providerId: resolvedProviderIdentityId,
+        }),
       });
+
+      if (!response.ok) {
+        return nextSession;
+      }
+
+      const data = await response.json() as { draft?: PersistedDraftSession };
+      if (data.draft) {
+        localStorage.setItem(draftSessionStorageKey, JSON.stringify(data.draft));
+        persistDraftRecovery(data.draft);
+        return data.draft;
+      }
     } catch {
       // Prototype still works with local persistence if backend save fails.
     }
+
+    return nextSession;
   }
 
   function rememberLanePreferenceFromReview() {
@@ -1362,8 +1757,8 @@ export function ReviewWorkspace({
       outputStyle: session.outputStyle || 'Standard',
       format: session.format || 'Labeled Sections',
       requestedSections: Array.isArray(session.requestedSections) ? session.requestedSections as NoteSectionKey[] : [],
-    });
-    setLanePreferenceSuggestion(getLanePreferenceSuggestion(session.noteType));
+    }, resolvedProviderIdentityId);
+    setLanePreferenceSuggestion(getLanePreferenceSuggestion(session.noteType, resolvedProviderIdentityId));
   }
 
   function handleDraftLanePreferenceFromReview() {
@@ -1379,7 +1774,7 @@ export function ReviewWorkspace({
       requestedSections: lanePreferenceSuggestion.requestedSections as NoteSectionKey[],
     });
 
-    localStorage.setItem(ASSISTANT_PENDING_ACTION_KEY, JSON.stringify({
+    localStorage.setItem(assistantPendingActionStorageKey, JSON.stringify({
       type: 'append-preferences',
       instructions,
     }));
@@ -1392,7 +1787,7 @@ export function ReviewWorkspace({
     router.push('/#workspace');
   }
 
-  async function handleCopy() {
+  async function handleCopy(mode: 'ehr-safe' | 'plain-text' = 'ehr-safe') {
     if (!exportReadiness.ready) {
       setCopyMessage('Finish section review before copying the final note text.');
       window.setTimeout(() => setCopyMessage(''), 2500);
@@ -1400,12 +1795,33 @@ export function ReviewWorkspace({
     }
 
     try {
-      await navigator.clipboard.writeText(draftText);
+      const textToCopy = mode === 'plain-text'
+        ? draftText.trim()
+        : exportPreviewText;
+
+      await navigator.clipboard.writeText(textToCopy);
       rememberLanePreferenceFromReview();
-      setCopyMessage('Note copied.');
+      setCopyMessage(mode === 'plain-text' ? 'Plain text copied.' : `${activeDestinationMeta.summaryLabel} copy ready.`);
       window.setTimeout(() => setCopyMessage(''), 2000);
     } catch {
       setCopyMessage('Unable to copy note automatically on this browser.');
+      window.setTimeout(() => setCopyMessage(''), 2500);
+    }
+  }
+
+  async function handleCopyDestinationField(label: string, text: string) {
+    if (!exportReadiness.ready) {
+      setCopyMessage('Finish section review before copying destination fields.');
+      window.setTimeout(() => setCopyMessage(''), 2500);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyMessage(`${label} copied.`);
+      window.setTimeout(() => setCopyMessage(''), 2000);
+    } catch {
+      setCopyMessage('Unable to copy destination field automatically on this browser.');
       window.setTimeout(() => setCopyMessage(''), 2500);
     }
   }
@@ -1419,7 +1835,7 @@ export function ReviewWorkspace({
 
     try {
       const fileName = `${sanitizeFileName(session?.noteType || 'note')}-draft.txt`;
-      const blob = new Blob([draftText], { type: 'text/plain;charset=utf-8' });
+      const blob = new Blob([exportPreviewText], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -1429,7 +1845,7 @@ export function ReviewWorkspace({
       link.remove();
       URL.revokeObjectURL(url);
       rememberLanePreferenceFromReview();
-      setExportMessage('Text note exported.');
+      setExportMessage(`${activeDestinationMeta.summaryLabel} export ready.`);
       window.setTimeout(() => setExportMessage(''), 2000);
     } catch {
       setExportMessage('Unable to export text file on this browser.');
@@ -1502,9 +1918,10 @@ export function ReviewWorkspace({
       } as DraftSession;
 
       setDraftText(data.note);
-      setSession(nextSession);
-      localStorage.setItem(DRAFT_SESSION_KEY, JSON.stringify(nextSession));
-      void persistDraft(nextSession);
+      const persistedSession = await persistDraft(nextSession);
+      setSession(persistedSession);
+      localStorage.setItem(draftSessionStorageKey, JSON.stringify(persistedSession));
+      persistDraftRecovery(persistedSession);
 
       if (data.mode === 'fallback') {
         setRewriteMessage(`Rewrite completed using fallback mode. ${data.warning || ''}`.trim());
@@ -1519,6 +1936,11 @@ export function ReviewWorkspace({
     } finally {
       setIsRewriting(null);
     }
+  }
+
+  function flashInteractionMessage(message: string, duration = 2200) {
+    setInteractionMessage(message);
+    window.setTimeout(() => setInteractionMessage(''), duration);
   }
 
   function handleSectionStatusChange(anchor: string, status: ReviewStatus) {
@@ -1542,7 +1964,62 @@ export function ReviewWorkspace({
     };
 
     setSession(nextSession);
-    localStorage.setItem(DRAFT_SESSION_KEY, JSON.stringify(nextSession));
+    localStorage.setItem(draftSessionStorageKey, JSON.stringify(nextSession));
+    const sectionHeading = draftSections.find((section) => section.anchor === anchor)?.heading || 'Section';
+    flashInteractionMessage(`${sectionHeading} marked ${status.replace('-', ' ')}.`);
+  }
+
+  function jumpToElementById(id: string) {
+    const node = document.getElementById(id);
+    if (!node) {
+      return;
+    }
+
+    node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function handleJumpToFirstOpenSection() {
+    const nextSection = draftSections.find((section) => {
+      const status = reconciledSectionReviewState[section.anchor]?.status || 'unreviewed';
+      return status === 'needs-review' || status === 'unreviewed';
+    });
+
+    if (!nextSection) {
+      flashInteractionMessage('No open section review items found.');
+      return;
+    }
+
+    setFocusedSectionAnchor(nextSection.anchor);
+    jumpToElementById(nextSection.anchor);
+    flashInteractionMessage(`Jumped to ${nextSection.heading}.`);
+  }
+
+  function handleJumpToFinishPriority() {
+    if (reviewCounts.needsReview || reviewCounts.unreviewed) {
+      handleJumpToFirstOpenSection();
+      return;
+    }
+
+    if (phaseTwoTrustCues.length) {
+      const priorityTarget = phaseTwoTrustCues[0]?.warningFamily || 'phase-two-trust-layer';
+      const priorityAnchor = phaseTwoTrustCues[0]?.sectionAnchor;
+
+      if (priorityAnchor) {
+        setFocusedSectionAnchor(priorityAnchor);
+      }
+
+      jumpToElementById(priorityTarget);
+      flashInteractionMessage('Jumped to the highest-priority finish cue.');
+      return;
+    }
+
+    if (destinationConstraintActive) {
+      jumpToElementById('active-output-profile-layer');
+      flashInteractionMessage('Jumped to destination fit guidance.');
+      return;
+    }
+
+    flashInteractionMessage('Finish lane is already clear.');
   }
 
   function handleConfirmedEvidenceToggle(anchor: string, blockId: string) {
@@ -1571,7 +2048,16 @@ export function ReviewWorkspace({
     };
 
     setSession(nextSession);
-    localStorage.setItem(DRAFT_SESSION_KEY, JSON.stringify(nextSession));
+    localStorage.setItem(draftSessionStorageKey, JSON.stringify(nextSession));
+    const sectionHeading = draftSections.find((section) => section.anchor === anchor)?.heading || 'Section';
+    const block = sourceBlocks.find((item) => item.id === blockId);
+    const isAdding = confirmedEvidenceBlockIds.includes(blockId);
+    flashInteractionMessage(
+      isAdding
+        ? `${sectionHeading}: confirmed ${block?.sourceLabel || 'source block'}.`
+        : `${sectionHeading}: removed confirmed ${block?.sourceLabel || 'source block'}.`,
+      2400,
+    );
   }
 
   function handleReviewerCommentChange(anchor: string, reviewerComment: string) {
@@ -1595,7 +2081,7 @@ export function ReviewWorkspace({
     };
 
     setSession(nextSession);
-    localStorage.setItem(DRAFT_SESSION_KEY, JSON.stringify(nextSession));
+    localStorage.setItem(draftSessionStorageKey, JSON.stringify(nextSession));
   }
 
   async function handleSaveDraft() {
@@ -1609,9 +2095,10 @@ export function ReviewWorkspace({
       sectionReviewState: reconciledSectionReviewState,
     };
 
-    setSession(nextSession);
-    localStorage.setItem(DRAFT_SESSION_KEY, JSON.stringify(nextSession));
-    await persistDraft(nextSession);
+    const persistedSession = await persistDraft(nextSession);
+    setSession(persistedSession);
+    localStorage.setItem(draftSessionStorageKey, JSON.stringify(persistedSession));
+    persistDraftRecovery(persistedSession);
     setSaveMessage('Draft and section review state saved.');
     window.setTimeout(() => setSaveMessage(''), 2500);
   }
@@ -1652,6 +2139,7 @@ export function ReviewWorkspace({
     textarea.focus();
     textarea.setSelectionRange(start, end);
     textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    flashInteractionMessage('Focused the related sentence in the draft.');
   }
 
   function focusDraftMatch(text: string) {
@@ -1666,6 +2154,7 @@ export function ReviewWorkspace({
     textarea.focus();
     textarea.setSelectionRange(start, end);
     textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    flashInteractionMessage('Focused the related text in the draft.');
   }
 
   function replaceDraftSentence(originalText: string, replacementText: string) {
@@ -1751,6 +2240,11 @@ export function ReviewWorkspace({
   const flagItems = useMemo(() => session?.flags ?? [], [session]);
   const { contradictionFlags, missingInfoFlags } = useMemo(() => splitFlags(flagItems), [flagItems]);
   const sourceSections = useMemo(() => normalizeSourceSections(session?.sourceSections || EMPTY_SOURCE_SECTIONS), [session]);
+  const dictationInsertions = useMemo(() => session?.dictationInsertions || {}, [session]);
+  const totalDictationInsertionCount = useMemo(
+    () => flattenDictationInsertions(dictationInsertions).length,
+    [dictationInsertions],
+  );
   const sourceSectionLabels = useMemo(() => describePopulatedSourceSections(sourceSections), [sourceSections]);
   const sourcePanels = useMemo(() => sourceSectionMeta.map((meta) => ({ ...meta, value: sourceSections[meta.key].trim() })), [sourceSections]);
   const activeSourcePanel = useMemo(() => {
@@ -1770,6 +2264,13 @@ export function ReviewWorkspace({
     };
   }, [activeSourceKey, session?.sourceInput, sourcePanels]);
   const sourceBlocks = useMemo(() => buildSourceBlocks(sourceSections), [sourceSections]);
+  const activeDictationInsertions = useMemo(() => {
+    if (activeSourceKey === 'combined') {
+      return flattenDictationInsertions(dictationInsertions);
+    }
+
+    return isDictationTargetSection(activeSourceKey) ? dictationInsertions[activeSourceKey] || [] : [];
+  }, [activeSourceKey, dictationInsertions]);
   const isDischargeNote = useMemo(() => looksLikeDischargeNote(session?.noteType || ''), [session?.noteType]);
   const dischargeTimelineBuckets = useMemo(
     () => (isDischargeNote ? buildDischargeTimelineBuckets(sourceBlocks) : []),
@@ -1777,6 +2278,10 @@ export function ReviewWorkspace({
   );
   const sectionEvidenceMap = useMemo(() => buildSectionEvidenceMap(draftSections, sourceSections), [draftSections, sourceSections]);
   const focusedSectionEvidence = focusedSectionAnchor ? sectionEvidenceMap[focusedSectionAnchor] : null;
+  const focusedEvidenceBlock = useMemo(
+    () => focusedEvidenceBlockId ? sourceBlocks.find((block) => block.id === focusedEvidenceBlockId) || null : null,
+    [focusedEvidenceBlockId, sourceBlocks],
+  );
   const focusedSectionBody = useMemo(
     () => draftSections.find((section) => section.anchor === focusedSectionAnchor)?.body || undefined,
     [draftSections, focusedSectionAnchor],
@@ -1996,6 +2501,8 @@ export function ReviewWorkspace({
       `Style: ${session?.outputStyle || 'Standard'}`,
       `Format: ${session?.format || 'Unknown'}`,
       `Destination: ${providerSettings.outputDestination}`,
+      `Paste profile: ${activeDestinationMeta.behavior}`,
+      `Note focus: ${getOutputNoteFocusLabel(providerSettings.outputNoteFocus || inferOutputNoteFocus(session?.noteType || ''))}`,
     ];
 
     if (providerSettings.asciiSafe) {
@@ -2006,20 +2513,75 @@ export function ReviewWorkspace({
       highlights.push('Paragraph-only output');
     }
 
-    if (providerSettings.wellskyFriendly || providerSettings.outputDestination === 'WellSky') {
-      highlights.push('WellSky-friendly formatting');
+    if (providerSettings.wellskyFriendly || activeDestinationMeta.behavior === 'strict-template-safe') {
+      highlights.push('Strict template-safe formatting');
     }
 
     if (session?.customInstructions?.trim()) {
       highlights.push('Provider-specific instructions attached');
     }
 
+    highlights.push(activeDestinationMeta.pasteExpectation);
+
     return highlights;
-  }, [providerSettings, session]);
+  }, [activeDestinationMeta, providerSettings, session]);
   const exportPreviewText = useMemo(
     () => buildExportPreviewText(draftText, session, providerSettings),
     [draftText, providerSettings, session],
   );
+  const destinationPasteTargets = useMemo(
+    () => buildDestinationPasteTargets(draftSections, draftText, providerSettings, session),
+    [draftSections, draftText, providerSettings, session],
+  );
+  const destinationPastePath = useMemo(() => {
+    const noteFocusLabel = getOutputNoteFocusLabel(providerSettings.outputNoteFocus || inferOutputNoteFocus(session?.noteType || ''));
+
+    if (activeDestinationMeta.behavior === 'section-paste') {
+      return {
+        label: 'Section-by-section paste path',
+        detail: `${activeDestinationMeta.summaryLabel} often works best when providers paste into separate encounter fields instead of dropping one long note body.`,
+        steps: [
+          'Start with the main narrative field such as Subjective, HPI, or Follow Up.',
+          'Paste MSE or observations next if the destination separates mental-status content.',
+          'Finish with Assessment and Plan so the chart mirrors the EHR field order.',
+        ],
+      };
+    }
+
+    if (activeDestinationMeta.behavior === 'strict-template-safe') {
+      return {
+        label: 'Whole-note first paste path',
+        detail: `${activeDestinationMeta.summaryLabel} is optimized for flatter, stricter templates, so the EHR-safe whole-note copy is usually the safest first move.`,
+        steps: [
+          'Use Copy EHR-safe first so punctuation, spacing, and headings stay template-safe.',
+          'If the destination still splits fields, use the Narrative or Assessment/Plan copy targets below as a fallback.',
+          'Do one last visual scan after paste to confirm cleanup did not flatten uncertainty or timing nuance.',
+        ],
+      };
+    }
+
+    if (activeDestinationMeta.behavior === 'psych-ehr-safe') {
+      return {
+        label: 'Hybrid paste path',
+        detail: `${activeDestinationMeta.summaryLabel} can usually take the cleaned whole note, but field-level copy stays useful when the ${noteFocusLabel.toLowerCase()} template is split into sections.`,
+        steps: [
+          'Try Copy EHR-safe first when the note editor accepts a full narrative.',
+          'Switch to the field targets below when the destination uses SOAP, DAP, or psychiatry-specific section blocks.',
+          'Use Copy plain text only when you know you want to hand-edit inside the EHR after paste.',
+        ],
+      };
+    }
+
+    return {
+      label: 'Flexible paste path',
+      detail: `${activeDestinationMeta.summaryLabel} is not enforcing a brittle template profile, so the main decision is whether you want a whole-note paste or manual field-by-field entry.`,
+      steps: [
+        'Use Copy EHR-safe when you want the cleaned export profile as-is.',
+        'Use Copy plain text when you plan to edit inside the destination before finalizing.',
+        'Use field targets only if your local workflow or template still splits the note into sections.',
+      ],
+    };
+  }, [activeDestinationMeta, providerSettings.outputNoteFocus, session?.noteType]);
   const encounterSupport = useMemo(
     () => normalizeEncounterSupport(session?.encounterSupport, session?.noteType || ''),
     [session?.encounterSupport, session?.noteType],
@@ -2142,6 +2704,166 @@ export function ReviewWorkspace({
     reviewCounts.needsReview,
     reviewCounts.unreviewed,
   ]);
+  const reviewStageFocusedSectionHeading = useMemo(
+    () => draftSections.find((section) => section.anchor === focusedSectionAnchor)?.heading,
+    [draftSections, focusedSectionAnchor],
+  );
+  const reviewStageItems = useMemo(
+    () => buildReviewStageItems({
+      reviewCounts,
+      exportReady: exportReadiness.ready,
+      focusedSectionHeading: reviewStageFocusedSectionHeading,
+    }),
+    [exportReadiness.ready, reviewStageFocusedSectionHeading, reviewCounts],
+  );
+  const reviewReasonTags = useMemo(
+    () => buildReviewReasonTags({
+      hasObjectiveConflict: objectiveReview.hasConflictRisk,
+      hasTrustCues: phaseTwoTrustCues.length > 0,
+      hasDestinationConstraint: destinationConstraintActive,
+      hasHighRiskWarnings: highRiskWarnings.length > 0,
+      hasDiagnosisCues: Boolean(draftOnlyDiagnoses.length || diagnosisTimeframeGaps.length || diagnosisNonAutoMapTerms.length || draftDiagnosisAvoidTerms.length),
+    }),
+    [
+      destinationConstraintActive,
+      diagnosisNonAutoMapTerms.length,
+      diagnosisTimeframeGaps.length,
+      draftDiagnosisAvoidTerms.length,
+      draftOnlyDiagnoses.length,
+      highRiskWarnings.length,
+      objectiveReview.hasConflictRisk,
+      phaseTwoTrustCues.length,
+    ],
+  );
+  const finishRationaleCards = useMemo(() => {
+    const cards: Array<{ id: string; label: string; detail: string; toneClassName: string }> = [];
+
+    if (reviewCounts.needsReview > 0 || reviewCounts.unreviewed > 0) {
+      cards.push({
+        id: 'review-open',
+        label: 'Review still open',
+        detail: `${reviewCounts.needsReview + reviewCounts.unreviewed} section${reviewCounts.needsReview + reviewCounts.unreviewed === 1 ? '' : 's'} still need explicit clinician review before finish should feel settled.`,
+        toneClassName: 'border-amber-200 bg-amber-50 text-amber-900',
+      });
+    }
+
+    if (phaseTwoTrustCues.length) {
+      cards.push({
+        id: 'trust-cues',
+        label: 'Trust cues still active',
+        detail: 'These usually mean wording may be too strong for source, diagnosis framing may be outrunning evidence, or medication/risk truth still needs a closer pass.',
+        toneClassName: 'border-rose-200 bg-rose-50 text-rose-900',
+      });
+    }
+
+    if (destinationConstraintActive) {
+      cards.push({
+        id: 'destination',
+        label: 'Destination fit matters',
+        detail: 'Export cleanup is active, so verify that formatting changes did not smooth out uncertainty, chronology, or symptom meaning.',
+        toneClassName: 'border-sky-200 bg-sky-50 text-sky-950',
+      });
+    }
+
+    if (!cards.length) {
+      cards.push({
+        id: 'clear-to-finish',
+        label: 'Finish lane is clear',
+        detail: 'The remaining work is mostly final manual review, destination fit, and copy/export choices rather than major trust repair.',
+        toneClassName: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+      });
+    }
+
+    return cards.slice(0, 3);
+  }, [destinationConstraintActive, phaseTwoTrustCues.length, reviewCounts.needsReview, reviewCounts.unreviewed]);
+  const firstOpenReviewSection = useMemo(() => {
+    return draftSections.find((section) => {
+      const status = reconciledSectionReviewState[section.anchor]?.status || 'unreviewed';
+      return status === 'needs-review' || status === 'unreviewed';
+    }) || draftSections[0] || null;
+  }, [draftSections, reconciledSectionReviewState]);
+  const hasOpenReviewSections = reviewCounts.needsReview + reviewCounts.unreviewed > 0;
+  const finishGateSignals = useMemo(() => {
+    const items: Array<{ id: string; label: string; detail: string; tone: ReviewSignalTone }> = [];
+    const openReviewCount = reviewCounts.needsReview + reviewCounts.unreviewed;
+
+    items.push({
+      id: 'review-state',
+      label: openReviewCount === 0 ? 'Review cleared' : 'Review still open',
+      detail: openReviewCount === 0
+        ? 'All detected sections have been explicitly reviewed.'
+        : `${openReviewCount} section check${openReviewCount === 1 ? '' : 's'} still needs attention before finish should feel complete.`,
+      tone: openReviewCount === 0 ? 'success' : 'warning',
+    });
+
+    if (phaseTwoTrustCues.length) {
+      items.push({
+        id: 'trust-cues',
+        label: 'Trust cues still active',
+        detail: 'At least one wording, diagnosis, medication, or risk cue still suggests a closer source pass before copy/export.',
+        tone: 'danger',
+      });
+    }
+
+    if (contradictionFlags.length) {
+      items.push({
+        id: 'contradictions',
+        label: 'Contradiction prompts remain',
+        detail: `${contradictionFlags.length} contradiction prompt${contradictionFlags.length === 1 ? '' : 's'} still relies on clinician judgment.`,
+        tone: 'warning',
+      });
+    }
+
+    if (destinationConstraintActive) {
+      items.push({
+        id: 'destination-fit',
+        label: 'Destination fit is active',
+        detail: `${activeDestinationMeta.summaryLabel} cleanup is active, so confirm that the final text still preserves uncertainty, timeline, and source nuance.`,
+        tone: 'info',
+      });
+    }
+
+    if (exportReadiness.ready && items.every((item) => item.tone !== 'danger' && item.tone !== 'warning')) {
+      items.push({
+        id: 'ready-copy',
+        label: 'Ready to copy',
+        detail: 'The remaining work is mostly a final clinician read for tone and destination fit.',
+        tone: 'success',
+      });
+    }
+
+    return items.slice(0, 4);
+  }, [
+    activeDestinationMeta.summaryLabel,
+    contradictionFlags.length,
+    destinationConstraintActive,
+    exportReadiness.ready,
+    phaseTwoTrustCues.length,
+    reviewCounts.needsReview,
+    reviewCounts.unreviewed,
+  ]);
+  const finishTargetCard = useMemo(() => {
+    if (!firstOpenReviewSection) {
+      return null;
+    }
+
+    const reviewState = reconciledSectionReviewState[firstOpenReviewSection.anchor];
+    const evidence = sectionEvidenceMap[firstOpenReviewSection.anchor];
+    const linkedEvidenceCount = evidence?.links.length ?? 0;
+    const status = reviewState?.status || 'unreviewed';
+    const detail = status === 'needs-review'
+      ? 'This section is already flagged and should be tightened before finish clears.'
+      : linkedEvidenceCount === 0
+        ? 'This section is still open and does not yet show linked evidence in review.'
+        : 'This is the first open section still holding finish open.';
+
+    return {
+      heading: firstOpenReviewSection.heading,
+      detail,
+      linkedEvidenceCount,
+      statusLabel: status.replace('-', ' '),
+    };
+  }, [firstOpenReviewSection, reconciledSectionReviewState, sectionEvidenceMap]);
 
   useEffect(() => {
     const topHighRiskWarning = highRiskWarnings[0];
@@ -2220,6 +2942,26 @@ export function ReviewWorkspace({
   }, [draftSections, focusedSectionAnchor]);
 
   useEffect(() => {
+    if (!firstOpenReviewSection) {
+      return;
+    }
+
+    const seed = `${session?.draftId || draftText.slice(0, 80)}:${embedded ? 'embedded' : 'full'}`;
+    if (reviewAutoFocusSeedRef.current === seed) {
+      return;
+    }
+
+    reviewAutoFocusSeedRef.current = seed;
+    setFocusedSectionAnchor(firstOpenReviewSection.anchor);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        jumpToElementById(embedded ? `embedded-${firstOpenReviewSection.anchor}` : firstOpenReviewSection.anchor);
+      });
+    });
+  }, [draftText, embedded, firstOpenReviewSection, session?.draftId]);
+
+  useEffect(() => {
     if (!focusedSectionAnchor) {
       setFocusedEvidenceBlockId(null);
       return;
@@ -2234,23 +2976,873 @@ export function ReviewWorkspace({
     });
   }, [focusedSectionAnchor, sectionEvidenceMap, sourceBlocks]);
 
+  const renderRecentActions = () => (copyMessage || exportMessage || rewriteMessage || saveMessage || interactionMessage) ? (
+    <div className="workspace-subpanel rounded-[20px] p-4 text-sm text-cyan-50/84">
+      <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Recent actions</div>
+      <div className="mt-2 space-y-1">
+        {copyMessage ? <div>{copyMessage}</div> : null}
+        {exportMessage ? <div>{exportMessage}</div> : null}
+        {rewriteMessage ? <div>{rewriteMessage}</div> : null}
+        {saveMessage ? <div>{saveMessage}</div> : null}
+        {interactionMessage ? <div>{interactionMessage}</div> : null}
+      </div>
+    </div>
+  ) : null;
+
+  const renderDraftEditorSection = () => {
+    const currentSession = session!;
+
+    return (
+      <section className="workspace-panel workspace-shine rounded-[30px] p-5 shadow-[0_28px_70px_rgba(2,8,18,0.34)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Review cockpit</div>
+            <h2 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.03em] text-white">Draft note</h2>
+            <p className="mt-1 max-w-2xl text-sm text-cyan-50/70">Edit first. Keep only the facts, uncertainty, and timing the source really supports.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <InlineMetric
+              label={draftSections.length === 1 ? 'section' : 'sections'}
+              value={draftSections.length || 1}
+            />
+            <InlineMetric label="approved" value={reviewCounts.approved} />
+            <InlineMetric
+              label="open"
+              value={reviewCounts.unreviewed + reviewCounts.needsReview}
+            />
+            <div className="workspace-chip rounded-full px-3 py-1.5 text-xs font-medium text-cyan-50/74">
+              {currentSession.mode === 'live' ? 'Live generation' : 'Draft output. Clinician review required before use.'}
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2 text-xs">
+          <span className="rounded-full border border-amber-300/18 bg-amber-400/10 px-3 py-1 font-medium text-amber-100">
+            Keep missing or uncertain facts visibly missing or uncertain.
+          </span>
+          {focusedSectionHeading ? (
+            <span className="workspace-chip rounded-full px-3 py-1 font-medium text-cyan-50">
+              Focus: {focusedSectionHeading}
+            </span>
+          ) : null}
+        </div>
+        {reviewReasonTags.length ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {reviewReasonTags.map((tag) => (
+              <DrawerJumpButton key={tag.id} label={tag.label} targetId={tag.targetId} />
+            ))}
+          </div>
+        ) : null}
+        <div className="workspace-subpanel mt-4 rounded-[22px] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Section navigator</div>
+            <div className="text-xs text-cyan-50/64">Jump to the section you are checking.</div>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {draftSections.length ? draftSections.map((section) => {
+              const reviewState = reconciledSectionReviewState[section.anchor];
+              return (
+                <a
+                  key={section.anchor}
+                  href={`#${section.anchor}`}
+                  onClick={() => setFocusedSectionAnchor(section.anchor)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium ${reviewStatusClasses[reviewState?.status || 'unreviewed']} ${focusedSectionAnchor === section.anchor ? 'ring-2 ring-sky-200 shadow-[0_10px_24px_rgba(2,8,18,0.16)]' : ''}`}
+                >
+                  {section.heading}
+                </a>
+              );
+            }) : (
+              <div className="text-sm text-cyan-50/64">No section headings detected yet. The note is still fully editable below.</div>
+            )}
+          </div>
+        </div>
+        {(focusedSectionHeading || focusedEvidenceBlock) ? (
+          <div className="sticky top-2 z-10 mt-4 rounded-[20px] border border-sky-300/22 bg-[rgba(56,189,248,0.12)] p-3 backdrop-blur">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-sky-100">Active review focus</div>
+              <div className="flex flex-wrap gap-2">
+                {focusedSectionHeading ? (
+                  <span className="rounded-full border border-sky-200/20 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-sky-50">
+                    Section: {focusedSectionHeading}
+                  </span>
+                ) : null}
+                {focusedEvidenceBlock ? (
+                  <span className="rounded-full border border-sky-200/20 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-sky-50">
+                    Source: {focusedEvidenceBlock.sourceLabel}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
+        <textarea ref={draftTextareaRef} value={draftText} onChange={(event) => setDraftText(event.target.value)} className="workspace-control mt-4 min-h-[500px] w-full rounded-[24px] p-4 text-sm leading-7" />
+        <div className="workspace-subpanel mt-4 rounded-[24px] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-white">Section review cues</div>
+            <div className="text-xs text-cyan-50/66">Approve, flag, or leave unreviewed as you work.</div>
+          </div>
+          <div className="mt-3 space-y-3">
+            {draftSections.length ? draftSections.map((section) => {
+              const reviewState = reconciledSectionReviewState[section.anchor];
+              const evidence = sectionEvidenceMap[section.anchor];
+              const sectionClaimSupportCues = buildSectionClaimSupportCues({
+                sectionHeading: section.heading,
+                sectionBody: section.body,
+                evidenceLinks: evidence?.links || [],
+                sourceBlocks,
+              });
+              const topSourceBlock = evidence?.links[0]
+                ? sourceBlocks.find((item) => item.id === evidence.links[0]?.blockId)
+                : null;
+              const sectionPressureCues = buildSectionPressureCues({
+                sectionHeading: section.heading,
+                objectiveCount: objectiveReview.sourceSignals.length + objectiveReview.conflictBullets.length,
+                highRiskCount: highRiskWarnings.length,
+                diagnosisCount: draftOnlyDiagnoses.length + diagnosisTimeframeGaps.length + diagnosisNonAutoMapTerms.length + draftDiagnosisAvoidTerms.length,
+                terminologyCount: reviewFirstAbbreviations.length + draftAvoidTerms.length + draftRiskTerms.length + draftMseTermsNeedingReview.length,
+                medicationCount: matchedMedicationEntries.length + medicationScaffoldWarnings.length,
+                encounterCount: encounterSupportWarnings.length + encounterDocumentationChecks.length + medicalNecessitySupport.nationalCues.length + medicalNecessitySupport.louisianaCues.length,
+                topSourceLabel: topSourceBlock ? `${topSourceBlock.sourceLabel} (${topSourceBlock.id})` : undefined,
+              });
+              const confirmedEvidenceIds = getConfirmedEvidenceBlockIds(currentSession, section.anchor);
+              const isFirstOpenSection = firstOpenReviewSection?.anchor === section.anchor;
+              const firstEvidenceLink = evidence?.links[0];
+              const firstEvidenceBlock = firstEvidenceLink
+                ? sourceBlocks.find((item) => item.id === firstEvidenceLink.blockId) ?? null
+                : null;
+              const sectionReasonTags = buildSectionReviewReasonTags({
+                sectionHeading: section.heading,
+                claimSupportCues: sectionClaimSupportCues,
+                pressureCues: sectionPressureCues,
+                hasEvidenceLinks: Boolean(evidence?.links.length),
+              });
+              const nextReviewPrompt = !evidence?.links.length
+                ? "Start by checking the source support for this section before approving any wording."
+                : sectionClaimSupportCues.length || sectionPressureCues.length
+                  ? "Review the wording against source and soften anything the source does not fully support."
+                  : "Do a quick source-aligned read, then approve if the phrasing matches the record."
+
+              return (
+                <div
+                  key={section.anchor}
+                  id={section.anchor}
+                  className={`rounded-[20px] border p-3 ${focusedSectionAnchor === section.anchor
+                    ? 'border-sky-300/30 bg-[rgba(56,189,248,0.08)] shadow-[0_18px_42px_rgba(2,8,18,0.22)]'
+                    : isFirstOpenSection
+                      ? 'border-amber-300/30 bg-[rgba(180,83,9,0.14)] shadow-[0_18px_42px_rgba(120,53,15,0.16)]'
+                      : 'border-white/10 bg-[rgba(255,255,255,0.04)]'
+                  }`}
+                >
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button type="button" onClick={() => setFocusedSectionAnchor(section.anchor)} className="text-left font-medium text-white">{section.heading}</button>
+                        {isFirstOpenSection ? (
+                          <span className="rounded-full border border-amber-300/30 bg-amber-500/18 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-100">
+                            Start here
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-sm text-cyan-50/66">
+                        Keep only the facts, uncertainty, and timing the source really supports.
+                      </p>
+                      {isFirstOpenSection ? (
+                        <p className="mt-2 text-[11px] text-amber-100/90">
+                          This is the first section that still needs review attention.
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className={`rounded-full border px-2 py-1 text-[11px] font-medium ${reviewStatusClasses[reviewState?.status || 'unreviewed']}`}>
+                        {(reviewState?.status || 'unreviewed').replace('-', ' ')}
+                      </div>
+                      <div className="text-xs text-cyan-50/62">{countWords(section.body)} words</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {isFirstOpenSection ? (
+                      <span className="rounded-full border border-amber-300/30 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-100">
+                        Next action
+                      </span>
+                    ) : null}
+                    <button
+                      onClick={() => handleSectionStatusChange(section.anchor, 'approved')}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                        isFirstOpenSection
+                          ? 'border border-emerald-200 bg-emerald-100 text-emerald-900 shadow-[0_10px_24px_rgba(16,185,129,0.14)]'
+                          : 'border border-emerald-200 bg-emerald-50 text-emerald-800'
+                      }`}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => handleSectionStatusChange(section.anchor, 'needs-review')}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                        isFirstOpenSection
+                          ? 'border border-amber-200 bg-amber-100 text-amber-950 shadow-[0_10px_24px_rgba(245,158,11,0.16)]'
+                          : 'border border-amber-200 bg-amber-50 text-amber-900'
+                      }`}
+                    >
+                      Needs review
+                    </button>
+                    <button
+                      onClick={() => handleSectionStatusChange(section.anchor, 'unreviewed')}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                        isFirstOpenSection
+                          ? 'border border-white/18 bg-white/12 text-white'
+                          : 'border border-border bg-white text-ink'
+                      }`}
+                    >
+                      Mark unreviewed
+                    </button>
+                  </div>
+                  {isFirstOpenSection ? (
+                    <div className="mt-3 rounded-[16px] border border-amber-300/24 bg-[rgba(120,53,15,0.16)] p-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-100/90">
+                        Review task
+                      </div>
+                      <p className="mt-1 text-sm text-amber-50/92">{nextReviewPrompt}</p>
+                      {sectionReasonTags.length ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {sectionReasonTags.map((tag) => (
+                            <span key={tag.id} className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${tag.toneClassName}`}>
+                              {tag.label}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setFocusedSectionAnchor(section.anchor)}
+                          className="rounded-full border border-white/16 bg-white/10 px-3 py-1.5 text-xs font-medium text-white"
+                        >
+                          Focus section
+                        </button>
+                        {firstEvidenceBlock ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFocusedSectionAnchor(section.anchor);
+                              setFocusedEvidenceBlockId(firstEvidenceBlock.id);
+                              setActiveSourceKey(firstEvidenceBlock.sourceKey);
+                            }}
+                            className="rounded-full border border-amber-200/26 bg-amber-500/16 px-3 py-1.5 text-xs font-medium text-amber-50"
+                          >
+                            Open first source
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="mt-3 text-xs text-cyan-50/62">
+                    {evidence?.links.length ? `${evidence.links.length} evidence link${evidence.links.length === 1 ? '' : 's'}` : 'No evidence links yet'}
+                    {' · '}
+                    {sectionClaimSupportCues.length ? `${sectionClaimSupportCues.length} claim cue${sectionClaimSupportCues.length === 1 ? '' : 's'}` : 'No claim cue'}
+                    {' · '}
+                    {sectionPressureCues.length ? `${sectionPressureCues.length} warning cue${sectionPressureCues.length === 1 ? '' : 's'}` : 'No warning cue'}
+                    {' · '}
+                    {confirmedEvidenceIds.length ? `${confirmedEvidenceIds.length} confirmed source block${confirmedEvidenceIds.length === 1 ? '' : 's'}` : 'No confirmed evidence yet'}
+                  </div>
+                  {evidence?.links.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {evidence.links.slice(0, 3).map((link) => {
+                        const block = sourceBlocks.find((item) => item.id === link.blockId);
+                        if (!block) {
+                          return null;
+                        }
+
+                        return (
+                          <button
+                            key={link.blockId}
+                            type="button"
+                            onClick={() => {
+                              setFocusedSectionAnchor(section.anchor);
+                              setFocusedEvidenceBlockId(link.blockId);
+                              setActiveSourceKey(block.sourceKey);
+                            }}
+                            className={`rounded-lg border px-3 py-2 text-left text-xs ${evidenceSignalClasses[link.signal]} ${focusedEvidenceBlockId === link.blockId ? 'ring-2 ring-sky-200' : ''}`}
+                          >
+                            <div className="font-semibold">{block.sourceLabel}</div>
+                            <div className="mt-1">{getSignalLabel(link.signal)}</div>
+                            {link.overlapTerms.length ? <div className="mt-1 opacity-80">Matches: {link.overlapTerms.join(', ')}</div> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  {reviewState?.updatedAt ? (
+                    <div className="mt-3 text-xs text-cyan-50/58">Updated {new Date(reviewState.updatedAt).toLocaleString()}</div>
+                  ) : null}
+
+                  <details className="group mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <summary className="cursor-pointer list-none">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Evidence and claim support</div>
+                          <p className="mt-1 text-xs text-muted">Full evidence map and sentence-level support cues.</p>
+                        </div>
+                        <OptionalBadge className="border-slate-200 bg-white text-slate-700" />
+                      </div>
+                    </summary>
+                    <div className="mt-3">
+                      <div className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted">Suggested evidence links</div>
+                        <p className="mt-1 text-xs text-muted">Heuristic suggestions only. Use these to review faster, then explicitly confirm the links you actually checked.</p>
+                        {evidence?.links.length ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {evidence.links.map((link) => {
+                              const block = sourceBlocks.find((item) => item.id === link.blockId);
+                              if (!block) {
+                                return null;
+                              }
+
+                              return (
+                                <div
+                                  key={link.blockId}
+                                  className={`rounded-lg border px-3 py-2 text-left text-xs ${evidenceSignalClasses[link.signal]} ${focusedEvidenceBlockId === link.blockId ? 'ring-2 ring-sky-200' : ''}`}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFocusedSectionAnchor(section.anchor);
+                                      setFocusedEvidenceBlockId(link.blockId);
+                                      setActiveSourceKey(block.sourceKey);
+                                    }}
+                                    className="w-full text-left"
+                                  >
+                                    <div className="font-semibold">{block.sourceLabel}</div>
+                                    <div className="mt-1">{getSignalLabel(link.signal)}</div>
+                                    {link.overlapTerms.length ? <div className="mt-1 opacity-80">Matches: {link.overlapTerms.join(', ')}</div> : null}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleConfirmedEvidenceToggle(section.anchor, link.blockId)}
+                                    className={`mt-2 rounded-full border px-2 py-1 font-medium ${confirmedEvidenceIds.includes(link.blockId) ? 'border-violet-200 bg-violet-50 text-violet-800' : 'border-white/70 bg-white/70 text-slate-700'}`}
+                                  >
+                                    {confirmedEvidenceIds.includes(link.blockId) ? 'Remove reviewer confirmation' : 'Mark reviewer-confirmed'}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="mt-2 text-sm text-muted">No obvious lexical support found yet. Treat this as a prompt to inspect the source manually, not proof that the section is unsupported.</div>
+                        )}
+                      </div>
+
+                      {sectionClaimSupportCues.length ? (
+                        <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-muted">Claim support snapshot</div>
+                            <ProvenanceChip label="Section evidence map" />
+                          </div>
+                          <p className="mt-1 text-xs text-muted">
+                            This is a quick source-backing read for the strongest sentences in this section, not a proof engine.
+                          </p>
+                          <div className="mt-2 grid gap-2">
+                            {sectionClaimSupportCues.map((cue) => (
+                              <div key={cue.id} className={`rounded-lg border px-3 py-2 text-xs ${cue.toneClassName}`}>
+                                <div className="font-semibold">{cue.statusLabel}</div>
+                                <div className="mt-1 text-sm">{cue.claimText}</div>
+                                <div className="mt-1">{cue.detail}</div>
+                                <div className="mt-2 rounded-lg border border-white/70 bg-white/70 px-2.5 py-2 text-xs">
+                                  <div className="font-semibold">Revision help</div>
+                                  <div className="mt-1">{cue.revisionHint}</div>
+                                </div>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => focusDraftSentence(cue.claimText)}
+                                    className="rounded-full border border-current/20 bg-white/80 px-2.5 py-1 font-medium"
+                                  >
+                                    Focus sentence in draft
+                                  </button>
+                                  {cue.statusLabel !== 'Better visible support' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => replaceDraftSentence(cue.claimText, buildCautiousClaimReplacement(section.heading, cue))}
+                                      className="rounded-full border border-current/20 bg-white/80 px-2.5 py-1 font-medium"
+                                    >
+                                      Replace with cautious wording
+                                    </button>
+                                  ) : null}
+                                  {cue.topSourceBlockId && cue.topSourceKey ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setFocusedSectionAnchor(section.anchor);
+                                        setFocusedEvidenceBlockId(cue.topSourceBlockId);
+                                        setActiveSourceKey(cue.topSourceKey);
+                                      }}
+                                      className="rounded-full border border-current/20 bg-white/80 px-2.5 py-1 font-medium"
+                                    >
+                                      Focus best supporting source block
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </details>
+
+                  {sectionPressureCues.length ? (
+                    <details className="group mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <summary className="cursor-pointer list-none">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-wide text-muted">Warning pressure</div>
+                            <p className="mt-1 text-xs text-muted">Jump into related deeper review layers.</p>
+                          </div>
+                          <OptionalBadge className="border-slate-200 bg-white text-slate-700" />
+                        </div>
+                      </summary>
+                      <div className="mt-3 grid gap-2">
+                        {sectionPressureCues.map((cue) => (
+                          <button
+                            key={`${section.anchor}-${cue.id}`}
+                            type="button"
+                            onClick={() => handleSectionPressureNavigate({
+                              sectionAnchor: section.anchor,
+                              warningFamily: cue.warningFamily,
+                              sourceBlockId: topSourceBlock?.id,
+                              sourceKey: topSourceBlock?.sourceKey,
+                            })}
+                            className={`rounded-lg border px-3 py-2 text-left text-xs transition hover:shadow-sm ${cue.toneClassName}`}
+                          >
+                            <div className="font-semibold">{cue.label}</div>
+                            <div className="mt-1">{cue.detail}</div>
+                            <div className="mt-2 font-medium underline underline-offset-2">Jump to related warning layer</div>
+                          </button>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
+
+                  <details className="group mt-3 rounded-lg border border-violet-200 bg-violet-50 p-3">
+                    <summary className="cursor-pointer list-none">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-violet-900">Reviewer-confirmed evidence</div>
+                          <p className="mt-1 text-xs text-violet-800">
+                            {confirmedEvidenceIds.length
+                              ? `${confirmedEvidenceIds.length} source block${confirmedEvidenceIds.length === 1 ? '' : 's'} recorded for this section.`
+                              : 'No reviewer-confirmed evidence recorded yet.'}
+                          </p>
+                        </div>
+                        <OptionalBadge className="border-violet-200 bg-white text-violet-800" />
+                      </div>
+                    </summary>
+                    {confirmedEvidenceIds.length ? (
+                      <div className="mt-3 space-y-2">
+                        {confirmedEvidenceIds.map((blockId) => {
+                          const block = sourceBlocks.find((item) => item.id === blockId);
+                          if (!block) {
+                            return null;
+                          }
+
+                          return (
+                            <div key={blockId} className="rounded-lg border border-violet-200 bg-white px-3 py-2">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <div className="text-xs font-semibold uppercase tracking-wide text-violet-900">{block.sourceLabel}</div>
+                                  <div className="mt-1 text-sm text-ink whitespace-pre-wrap">{block.text}</div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmedEvidenceToggle(section.anchor, blockId)}
+                                  className="rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-800"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </details>
+
+                  <details className="group mt-3 rounded-lg border border-border bg-paper p-3">
+                    <summary className="cursor-pointer list-none">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Reviewer note</div>
+                          <p className="mt-1 text-xs text-muted">
+                            {reviewState?.reviewerComment?.trim() ? 'Saved comment present for this section.' : 'Manual review note.'}
+                          </p>
+                        </div>
+                        <OptionalBadge />
+                      </div>
+                    </summary>
+                    <textarea
+                      value={reviewState?.reviewerComment || ''}
+                      onChange={(event) => handleReviewerCommentChange(section.anchor, event.target.value)}
+                      className="mt-3 min-h-[90px] w-full rounded-lg border border-border p-3 text-sm"
+                      placeholder="Example: wording okay, but med-list conflict still needs explicit mention in final note."
+                    />
+                  </details>
+                </div>
+              );
+            }) : (
+              <div className="rounded-[18px] border border-white/10 bg-[rgba(255,255,255,0.04)] p-3 text-sm text-cyan-50/64">Add labeled headings if you want section-by-section review anchors here.</div>
+            )}
+          </div>
+        </div>
+      </section>
+    );
+  };
+
+  const renderFinishSection = () => (
+    <div className="workspace-panel rounded-[28px] p-5 shadow-[0_24px_60px_rgba(2,8,18,0.28)]">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Finish lane</div>
+          <h2 className="mt-2 text-[1.3rem] font-semibold tracking-[-0.03em] text-white">Finish review</h2>
+          <p className="mt-1 text-sm text-cyan-50/70">Finish only after the draft, warnings, and source checks feel clinically faithful.</p>
+        </div>
+        <span className={`rounded-full border px-3 py-1 text-xs font-medium ${exportReadiness.ready ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+          {exportReadiness.ready ? 'ready to export' : 'review still open'}
+        </span>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <CompactMetric label="Reviewed sections" value={reviewCounts.approved} detail="Approved and ready" />
+        <CompactMetric label="Still open" value={reviewCounts.unreviewed + reviewCounts.needsReview} detail="Unreviewed or needs review" />
+        <CompactMetric label="Reviewer evidence" value={reviewCounts.confirmedEvidence} detail="Confirmed source links" />
+        <CompactMetric label="Draft size" value={draftWordCount} detail={`${sourceWordCount} source words`} />
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        {finishRationaleCards.map((card) => (
+          <div key={card.id} className={`rounded-[18px] border px-4 py-3 ${card.toneClassName}`}>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em]">{card.label}</div>
+            <div className="mt-2 text-sm leading-6">{card.detail}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 rounded-[18px] border border-cyan-200/12 bg-[rgba(255,255,255,0.05)] p-4">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Pre-copy gate</div>
+            <div className="mt-1 text-sm leading-6 text-cyan-50/72">
+              This replaces noisy finish popups with one visible checkpoint that stays in view while providers decide whether to copy.
+            </div>
+          </div>
+          <div className="text-xs text-cyan-50/58">
+            Red means stop-risk, amber means review it, blue is guidance, and green means operationally clear.
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {finishGateSignals.map((item) => (
+            <div key={item.id} className={`rounded-[16px] border px-4 py-3 ${getReviewSignalClasses(item.tone)}`}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em]">{item.label}</div>
+              <div className="mt-2 text-sm leading-6">{item.detail}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={handleJumpToFinishPriority}
+            className="rounded-[14px] border border-cyan-200/18 bg-[rgba(8,27,44,0.9)] px-4 py-2.5 text-sm font-medium text-cyan-50"
+          >
+            Open next finish item
+          </button>
+          {reviewCounts.needsReview || reviewCounts.unreviewed ? (
+            <button
+              type="button"
+              onClick={handleJumpToFirstOpenSection}
+              className="rounded-[14px] border border-cyan-200/18 bg-[rgba(8,27,44,0.72)] px-4 py-2.5 text-sm font-medium text-cyan-50/86"
+            >
+              Jump to open section
+            </button>
+          ) : null}
+          {destinationConstraintActive ? (
+            <button
+              type="button"
+              onClick={() => jumpToElementById('active-output-profile-layer')}
+              className="rounded-[14px] border border-cyan-200/18 bg-[rgba(8,27,44,0.72)] px-4 py-2.5 text-sm font-medium text-cyan-50/86"
+            >
+              Review destination fit
+            </button>
+          ) : null}
+        </div>
+        {finishTargetCard && !exportReadiness.ready ? (
+          <div className="mt-4 rounded-[18px] border border-amber-300/24 bg-[rgba(120,53,15,0.16)] p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-100/90">Current blocker</div>
+                <div className="mt-1 text-base font-semibold text-white">{finishTargetCard.heading}</div>
+                <div className="mt-1 text-sm leading-6 text-amber-50/86">{finishTargetCard.detail}</div>
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-amber-100/78">
+                  <span className="rounded-full border border-amber-300/22 bg-amber-500/10 px-2.5 py-1 uppercase tracking-[0.14em]">
+                    Status: {finishTargetCard.statusLabel}
+                  </span>
+                  <span className="rounded-full border border-amber-300/22 bg-amber-500/10 px-2.5 py-1 uppercase tracking-[0.14em]">
+                    Evidence links: {finishTargetCard.linkedEvidenceCount}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleJumpToFirstOpenSection}
+                className="rounded-[14px] border border-amber-200/24 bg-amber-500/14 px-4 py-2.5 text-sm font-medium text-amber-50"
+              >
+                Open this section
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-4 space-y-3 text-sm text-ink">
+        {exportReadiness.blockers.length ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <div className="font-medium text-amber-950">Blockers</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-900">
+              {exportReadiness.blockers.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">
+            All detected sections have been reviewed. Final note copy/export is available.
+          </div>
+        )}
+
+        {exportReadiness.warnings.length ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="font-medium text-slate-900">Still worth checking</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-800">
+              {exportReadiness.warnings.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+      <div className="workspace-subpanel mt-5 rounded-[22px] p-4">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Final checkpoint</div>
+            <p className="mt-1 text-sm text-cyan-50/68">
+              This is the last confidence check before copy or export.
+            </p>
+          </div>
+          <div className="text-xs text-cyan-50/62">
+            {exportReadiness.ready ? 'Content risk looks lower; finish decisions are now mostly operational.' : 'Finish is being held open by review-state or trust-state signals.'}
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Review state</div>
+            <div className="mt-2 text-sm text-cyan-50">{reviewCounts.unreviewed + reviewCounts.needsReview === 0 ? 'All detected sections reviewed' : `${reviewCounts.unreviewed + reviewCounts.needsReview} section checks still open`}</div>
+          </div>
+          <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Trust state</div>
+            <div className="mt-2 text-sm text-cyan-50">{phaseTwoTrustCues.length ? `${phaseTwoTrustCues.length} trust cues still active` : 'No major trust cues are active'}</div>
+          </div>
+          <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Destination fit</div>
+            <div className="mt-2 text-sm text-cyan-50">{destinationConstraintActive ? `${activeDestinationMeta.summaryLabel} constraints are active and should be rechecked` : 'No strong destination cleanup pressure is active'}</div>
+          </div>
+          <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Next best move</div>
+            <div className="mt-2 text-sm text-cyan-50">
+              {exportReadiness.ready
+                ? 'Copy or export after a final read for tone and destination fit.'
+                : exportReadiness.blockers[0] || exportReadiness.warnings[0] || 'Keep reviewing the highest-pressure section first.'}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="workspace-subpanel mt-5 rounded-[22px] p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Finish actions</div>
+            <p className="mt-1 text-sm text-cyan-50/66">
+              {exportReadiness.ready
+                ? 'The note is ready for paste. Copy stays primary; save and navigation stay quieter.'
+                : 'Copy/export stay primary once review clears. Save and navigation stay quieter.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/dashboard/new-note" className="text-sm text-cyan-50/72 underline underline-offset-2">Back to edit</Link>
+            <Link href="/dashboard/new-note" className="text-sm text-cyan-50/72 underline underline-offset-2">Start new note</Link>
+          </div>
+        </div>
+        {exportReadiness.ready ? (
+          <div className="mt-4 rounded-[18px] border border-emerald-200/28 bg-[rgba(20,83,45,0.26)] px-4 py-4 text-emerald-50 shadow-[0_18px_42px_rgba(6,78,59,0.18)]">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-100/82">Ready for EHR paste</div>
+                <div className="mt-1 text-lg font-semibold text-white">Review is clear enough to copy into {activeDestinationMeta.summaryLabel} now.</div>
+                <div className="mt-1 text-sm leading-6 text-emerald-50/86">
+                  Use the primary copy action if you want destination-safe formatting, or choose plain text / field targets if your workflow needs a different paste style.
+                </div>
+              </div>
+              <button
+                onClick={() => void handleCopy('ehr-safe')}
+                className="rounded-[16px] bg-white px-5 py-3 font-semibold text-emerald-900 shadow-[0_16px_34px_rgba(255,255,255,0.16)]"
+              >
+                Copy note into EHR now
+              </button>
+            </div>
+          </div>
+        ) : null}
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            onClick={() => void handleCopy('ehr-safe')}
+            disabled={!exportReadiness.ready}
+            className={`rounded-[16px] px-5 py-3 font-medium shadow-[0_16px_34px_rgba(18,181,208,0.2)] ${exportReadiness.ready ? 'bg-accent text-white ring-2 ring-emerald-300/32' : 'bg-accent text-white disabled:cursor-not-allowed disabled:opacity-60'}`}
+          >
+            {exportReadiness.ready ? 'Copy EHR-safe' : 'Copy EHR-safe'}
+          </button>
+          <button
+            onClick={() => void handleCopy('plain-text')}
+            disabled={!exportReadiness.ready}
+            className="rounded-[16px] border border-cyan-200/20 bg-[rgba(8,27,44,0.9)] px-5 py-3 font-medium text-cyan-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Copy plain text
+          </button>
+          <button
+            onClick={handleExportNote}
+            disabled={!exportReadiness.ready}
+            className="rounded-[16px] border border-cyan-200/20 bg-[rgba(8,27,44,0.82)] px-5 py-3 font-medium text-cyan-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Export .txt
+          </button>
+          <button onClick={handleSaveDraft} className="rounded-[16px] border border-border bg-white px-5 py-3 font-medium text-cyan-50/84">
+            Save draft
+          </button>
+          <button onClick={handleExportReviewBundle} className="rounded-[16px] border border-border bg-white px-5 py-3 font-medium text-cyan-50/84">
+            Export review bundle
+          </button>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <div className={`rounded-[16px] border px-4 py-3 text-sm ${exportReadiness.ready ? 'border-emerald-200/20 bg-[rgba(20,83,45,0.18)] text-emerald-50/92' : 'border-cyan-200/10 bg-[rgba(13,30,50,0.48)] text-cyan-50/78'}`}>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Copy EHR-safe</div>
+            <div className="mt-2 leading-6">{exportReadiness.ready ? 'This is the main “paste now” action. It matches the selected destination profile and is the fastest path into the chart.' : 'Use this when the destination profile matters and formatting cleanup should match the selected EHR behavior.'}</div>
+          </div>
+          <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3 text-sm text-cyan-50/78">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Copy plain text</div>
+            <div className="mt-2 leading-6">Use this when you want the note without destination cleanup, usually for manual editing before paste.</div>
+          </div>
+          <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3 text-sm text-cyan-50/78">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Copy field targets</div>
+            <div className="mt-2 leading-6">Use the field-level copy buttons below when your EHR splits the note across multiple paste areas.</div>
+          </div>
+        </div>
+        {!exportReadiness.ready ? (
+          <div className="mt-4 rounded-[16px] border border-amber-200/24 bg-[rgba(146,98,18,0.18)] px-4 py-3 text-sm text-amber-50">
+            Copy and export are intentionally held until review is clearer. Use <span className="font-semibold text-white">Open next finish item</span> to jump to the highest-priority blocker instead of guessing.
+          </div>
+        ) : null}
+        {(copyMessage || exportMessage || rewriteMessage || saveMessage) ? (
+          <div className="mt-4">
+            {renderRecentActions()}
+          </div>
+        ) : null}
+        <div className="mt-4 rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3 text-sm text-cyan-50/78">
+          Active paste profile: <span className="font-semibold text-cyan-50">{activeDestinationMeta.summaryLabel}</span>. {activeDestinationMeta.pasteExpectation}
+        </div>
+        {activeOutputProfile ? (
+          <div className="mt-3 rounded-[16px] border border-cyan-200/10 bg-[rgba(7,18,32,0.72)] px-4 py-3 text-sm text-cyan-50/76">
+            Active site preset: <span className="font-semibold text-cyan-50">{activeOutputProfile.name}</span> ({activeOutputProfile.siteLabel}) • {getOutputNoteFocusLabel(activeOutputProfile.noteFocus)}
+          </div>
+        ) : null}
+        <div className="mt-3 rounded-[18px] border border-cyan-200/10 bg-[rgba(8,24,40,0.76)] p-4">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Recommended paste path</div>
+              <div className="mt-1 text-sm font-semibold text-cyan-50">{destinationPastePath.label}</div>
+              <div className="mt-2 text-sm leading-6 text-cyan-50/78">{destinationPastePath.detail}</div>
+            </div>
+            <div className="rounded-full border border-cyan-200/16 bg-[rgba(13,30,50,0.82)] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/72">
+              {activeDestinationMeta.behavior}
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            {destinationPastePath.steps.map((step, index) => (
+              <div key={step} className="rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] p-4 text-sm text-cyan-50/78">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/60">Step {index + 1}</div>
+                <div className="mt-2 leading-6">{step}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        {destinationPasteTargets.length ? (
+          <div className="mt-4 rounded-[18px] border border-cyan-200/10 bg-[rgba(9,24,40,0.74)] p-4">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Suggested Paste Targets</div>
+                <div className="mt-1 text-sm text-cyan-50/78">
+                  {activeDestinationMeta.fieldGuideSummary || 'Use these field-level copy targets when your destination splits the note across multiple sections.'}
+                </div>
+              </div>
+              <div className="text-xs text-cyan-50/58">
+                Providers working across multiple sites can switch destinations in settings and come back here for the matching copy layout.
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {destinationPasteTargets.map((target, index) => (
+                <div key={target.id} className="rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.52)] p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border border-cyan-200/18 bg-[rgba(8,27,44,0.9)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/76">
+                          {index + 1}
+                        </span>
+                        <div className="text-sm font-semibold text-cyan-50">{target.label}</div>
+                      </div>
+                      <div className="mt-1 text-xs leading-5 text-cyan-50/68">{target.note}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleCopyDestinationField(target.label, target.text)}
+                      disabled={!exportReadiness.ready}
+                      className="rounded-[14px] border border-cyan-200/18 bg-[rgba(8,27,44,0.9)] px-3 py-2 text-xs font-medium text-cyan-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Copy field
+                    </button>
+                  </div>
+                  {target.matchedHeadings.length ? (
+                    <div className="mt-3 text-[11px] uppercase tracking-[0.14em] text-cyan-100/50">
+                      Mapped from: {target.matchedHeadings.join(' • ')}
+                    </div>
+                  ) : null}
+                  <div className="mt-3 max-h-40 overflow-y-auto rounded-[14px] border border-cyan-200/10 bg-[rgba(5,16,28,0.74)] px-3 py-3 text-sm leading-6 text-cyan-50/82">
+                    {target.text}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+
   if (isHydrating) {
     return (
-      <div className="aurora-panel rounded-[28px] p-7">
-        <h2 className="text-lg font-semibold">Loading draft...</h2>
-        <p className="mt-2 text-sm text-muted">Restoring the most recently saved draft for review.</p>
+      <div className="workspace-panel rounded-[30px] p-7">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Review workspace</div>
+        <h2 className="mt-2 text-lg font-semibold text-white">Loading draft...</h2>
+        <p className="mt-2 text-sm text-cyan-50/70">Restoring the most recently saved draft for review.</p>
       </div>
     );
   }
 
   if (!session) {
     return (
-      <div className="aurora-panel rounded-[28px] p-7">
-        <h2 className="text-lg font-semibold">No draft loaded yet</h2>
-        <p className="mt-2 text-sm text-muted">
+      <div className="workspace-panel rounded-[30px] p-7">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Review workspace</div>
+        <h2 className="mt-2 text-lg font-semibold text-white">No draft loaded yet</h2>
+        <p className="mt-2 text-sm text-cyan-50/70">
           {embedded
-            ? 'Generate a draft in the note workspace first, then review will open here without leaving the page.'
-            : 'Generate a draft from the New Note page first, then come back here to review it.'}
+            ? 'Generate a draft in the main note workspace first, then review will open here without leaving the page.'
+            : 'Generate a draft from the main note workspace first, then come back here if you want a dedicated review screen.'}
         </p>
         {embedded ? (
           <button onClick={onBackToEdit} className="aurora-primary-button mt-4 inline-flex rounded-xl px-4 py-3 font-medium">
@@ -2265,16 +3857,186 @@ export function ReviewWorkspace({
     );
   }
 
+  if (embedded) {
+    return (
+      <div className="grid h-full min-h-0 gap-4 overflow-y-auto pr-1">
+        <section className="workspace-panel workspace-shine rounded-[30px] p-5 shadow-[0_28px_70px_rgba(2,8,18,0.34)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Embedded review</div>
+              <h2 className="mt-2 text-lg font-semibold text-white">Review note</h2>
+              <p className="mt-1 text-sm text-cyan-50/70">
+                Edit the generated note here. Use the dedicated review page only if you want the deeper trust, source, and warning tools.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button onClick={() => void handleCopy('ehr-safe')} disabled={!exportReadiness.ready} className="rounded-lg bg-accent px-5 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">Copy EHR-safe</button>
+              <button onClick={handleSaveDraft} className="rounded-lg border border-border bg-white px-5 py-3 font-medium">Save Draft</button>
+              {onBackToEdit ? (
+                <button onClick={onBackToEdit} className="rounded-lg border border-border bg-white px-5 py-3 font-medium">Back to Edit</button>
+              ) : null}
+              <Link href="/dashboard/review" className="rounded-lg border border-border bg-white px-5 py-3 font-medium">Open Dedicated Review</Link>
+            </div>
+          </div>
+
+          {firstOpenReviewSection ? (
+            <div className="mt-4 rounded-[20px] border border-cyan-200/12 bg-[rgba(13,30,50,0.48)] p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Review starts here</div>
+                  <div className="mt-1 text-base font-semibold text-white">{firstOpenReviewSection.heading}</div>
+                  <div className="mt-1 text-sm text-cyan-50/72">
+                    {hasOpenReviewSections
+                      ? 'This is the first section still marked open, so it is the fastest place to resume review.'
+                      : 'All sections are reviewed, but this remains the default anchor for a final read.'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFocusedSectionAnchor(firstOpenReviewSection.anchor);
+                    jumpToElementById(`embedded-${firstOpenReviewSection.anchor}`);
+                  }}
+                  className="rounded-[14px] border border-cyan-200/18 bg-[rgba(8,27,44,0.9)] px-4 py-2.5 text-sm font-medium text-cyan-50"
+                >
+                  {hasOpenReviewSections ? 'Jump to first open section' : 'Jump to final read anchor'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <textarea ref={draftTextareaRef} value={draftText} onChange={(event) => setDraftText(event.target.value)} className="workspace-control mt-4 min-h-[780px] w-full rounded-[24px] p-4 text-sm leading-7" />
+
+          {draftSections.length ? (
+            <div className="workspace-subpanel mt-4 rounded-[22px] p-4">
+              <div className="text-sm font-semibold text-white">Section review status</div>
+              <div className="mt-3 grid gap-3">
+                {draftSections.map((section) => {
+                  const reviewState = reconciledSectionReviewState[section.anchor];
+                  const isFirstOpenSection = firstOpenReviewSection?.anchor === section.anchor;
+                  const isActiveReviewTarget = isFirstOpenSection && hasOpenReviewSections;
+                  const embeddedReviewPrompt = !hasOpenReviewSections
+                    ? "All sections are currently reviewed. Use this anchor for a final clinician read before copy."
+                    : reviewState?.status === "needs-review"
+                      ? "This section is still flagged. Tighten the wording before you move on."
+                      : "This is the first open section. Review it before moving deeper into the draft.";
+                  return (
+                    <div
+                      key={section.anchor}
+                      id={`embedded-${section.anchor}`}
+                      className={`rounded-[18px] border p-3 ${
+                        isActiveReviewTarget
+                          ? 'border-amber-300/30 bg-[rgba(180,83,9,0.14)] shadow-[0_14px_34px_rgba(120,53,15,0.16)]'
+                          : 'border-white/10 bg-[rgba(255,255,255,0.04)]'
+                      }`}
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="font-medium text-white">{section.heading}</div>
+                            {isActiveReviewTarget ? (
+                              <span className="rounded-full border border-amber-300/30 bg-amber-500/18 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-100">
+                                Start here
+                              </span>
+                            ) : isFirstOpenSection ? (
+                              <span className="rounded-full border border-emerald-300/24 bg-emerald-500/14 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-emerald-100">
+                                Final read
+                              </span>
+                            ) : null}
+                          </div>
+                          {isActiveReviewTarget ? (
+                            <p className="mt-1 text-[11px] text-amber-100/90">
+                              Review this section first before moving deeper into the draft.
+                            </p>
+                          ) : isFirstOpenSection ? (
+                            <p className="mt-1 text-[11px] text-emerald-100/88">
+                              Review is cleared. Use this anchor for one last read before copy or export.
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isActiveReviewTarget ? (
+                            <span className="rounded-full border border-amber-300/30 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-100">
+                              Next action
+                            </span>
+                          ) : isFirstOpenSection ? (
+                            <span className="rounded-full border border-emerald-300/30 bg-emerald-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-100">
+                              Final check
+                            </span>
+                          ) : null}
+                          <button
+                            onClick={() => handleSectionStatusChange(section.anchor, 'unreviewed')}
+                            className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                              isActiveReviewTarget
+                                ? 'border border-white/18 bg-white/12 text-white'
+                                : 'border border-border bg-white text-ink'
+                            }`}
+                          >
+                            Unreviewed
+                          </button>
+                          <button
+                            onClick={() => handleSectionStatusChange(section.anchor, 'approved')}
+                            className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                              isActiveReviewTarget
+                                ? 'border border-emerald-200 bg-emerald-100 text-emerald-900 shadow-[0_10px_24px_rgba(16,185,129,0.14)]'
+                                : 'border border-emerald-200 bg-emerald-50 text-emerald-800'
+                            }`}
+                          >
+                            Approved
+                          </button>
+                          <button
+                            onClick={() => handleSectionStatusChange(section.anchor, 'needs-review')}
+                            className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                              isActiveReviewTarget
+                                ? 'border border-amber-200 bg-amber-100 text-amber-950 shadow-[0_10px_24px_rgba(245,158,11,0.16)]'
+                                : 'border border-amber-200 bg-amber-50 text-amber-900'
+                            }`}
+                          >
+                            Needs review
+                          </button>
+                        </div>
+                      </div>
+                      {isFirstOpenSection ? (
+                        <div className={`mt-3 rounded-[14px] border p-3 ${hasOpenReviewSections ? 'border-amber-300/24 bg-[rgba(120,53,15,0.16)]' : 'border-emerald-300/24 bg-[rgba(20,83,45,0.18)]'}`}>
+                          <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${hasOpenReviewSections ? 'text-amber-100/90' : 'text-emerald-100/90'}`}>
+                            {hasOpenReviewSections ? 'Review task' : 'Final read'}
+                          </div>
+                          <p className={`mt-1 text-sm ${hasOpenReviewSections ? 'text-amber-50/92' : 'text-emerald-50/92'}`}>{embeddedReviewPrompt}</p>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        {(copyMessage || exportMessage || rewriteMessage || saveMessage) ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted">Recent actions</div>
+            <div className="mt-2 space-y-1">
+              {copyMessage ? <div>{copyMessage}</div> : null}
+              {exportMessage ? <div>{exportMessage}</div> : null}
+              {rewriteMessage ? <div>{rewriteMessage}</div> : null}
+              {saveMessage ? <div>{saveMessage}</div> : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
+      );
+  }
+
   return (
     <>
       {session.warning ? (
-        <div className="aurora-soft-panel mb-4 rounded-[22px] border border-amber-200 px-5 py-4 text-sm text-amber-900">
+        <div className="mb-4 rounded-[22px] border border-amber-300/20 bg-[rgba(245,158,11,0.12)] px-5 py-4 text-sm text-amber-100">
           Live generation was unavailable, so the app used a local fallback draft. Details: {session.warning}
         </div>
       ) : null}
 
       {contradictionFlags.length ? (
-        <div className="aurora-soft-panel mb-4 rounded-[24px] border border-rose-200 px-5 py-4 text-sm text-rose-900">
+        <div className="mb-4 rounded-[24px] border border-rose-300/20 bg-[rgba(244,63,94,0.12)] px-5 py-4 text-sm text-rose-100">
           <div className="font-semibold">Possible contradictions to review</div>
           <ul className="mt-2 list-disc space-y-1 pl-5">
             {contradictionFlags.map((flag) => (
@@ -2284,8 +4046,138 @@ export function ReviewWorkspace({
         </div>
       ) : null}
 
-      {objectiveReview.hasObjectiveData ? (
-        <div id="objective-warning-layer" className="aurora-panel mb-4 rounded-[26px] border border-sky-200 px-5 py-5 text-sm text-sky-950">
+      <div className="workspace-command-bar mb-6 rounded-[28px] p-4 sm:p-5">
+        <div className="grid gap-3 2xl:grid-cols-[minmax(0,1.48fr)_minmax(280px,0.52fr)]">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-100/64">Review workspace</div>
+            <h1 className="mt-2 text-[1.55rem] font-semibold tracking-[-0.04em] text-white sm:text-[1.88rem]">
+              Review wording, preserve uncertainty, and finish with less friction.
+            </h1>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-cyan-50/70">
+              The top strip is only for orientation. The main work stays in the draft, section review, evidence, and finish controls below.
+            </p>
+            {firstOpenReviewSection ? (
+              <div className="mt-4 inline-flex flex-wrap items-center gap-3 rounded-[18px] border border-cyan-200/12 bg-[rgba(13,30,50,0.48)] px-4 py-3 text-sm text-cyan-50/78">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Start with</span>
+                <span className="font-semibold text-white">{firstOpenReviewSection.heading}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFocusedSectionAnchor(firstOpenReviewSection.anchor);
+                    jumpToElementById(firstOpenReviewSection.anchor);
+                  }}
+                  className="rounded-full border border-cyan-200/18 bg-[rgba(8,27,44,0.82)] px-3 py-1.5 text-xs font-medium text-cyan-50"
+                >
+                  Jump there
+                </button>
+              </div>
+            ) : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <div className="workspace-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
+                {session.noteType}
+              </div>
+              <div className="workspace-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
+                {session.specialty}
+              </div>
+              <div className="workspace-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
+                {activeDestinationMeta.summaryLabel}
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-3">
+            <div className="workspace-kpi rounded-[20px] p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Session status</div>
+              <div className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-white">
+                {exportReadiness.ready ? 'Ready to finish' : 'Review in progress'}
+              </div>
+              <p className="mt-2 text-sm leading-6 text-cyan-50/70">
+                {reviewCounts.unreviewed + reviewCounts.needsReview} section{reviewCounts.unreviewed + reviewCounts.needsReview === 1 ? '' : 's'} still open across this draft.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <CompactMetric label="Approved" value={reviewCounts.approved} />
+              <CompactMetric label="Needs review" value={reviewCounts.needsReview} />
+              <CompactMetric label="Evidence" value={reviewCounts.confirmedEvidence} />
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-2 lg:grid-cols-4">
+          {reviewStageItems.map((item, index) => (
+            <div key={item.id} className={`rounded-[18px] border px-4 py-3 ${getReviewStageTone(item.status)}`}>
+              <div className="flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                <span>Step {index + 1}</span>
+                <span>{item.status}</span>
+              </div>
+              <div className="mt-1.5 text-sm font-semibold">{item.label}</div>
+              <div className="mt-1 text-xs leading-5 opacity-80">{item.detail}</div>
+            </div>
+          ))}
+        </div>
+        {providerSettings.outputProfiles.length ? (
+          <label className="mt-4 grid gap-2 text-sm font-medium text-cyan-50/82 lg:max-w-md">
+            <span>Switch site / EHR preset</span>
+            <select
+              value={providerSettings.activeOutputProfileId}
+              onChange={(event) => void handleApplyOutputProfile(event.target.value)}
+              className="rounded-[16px] border border-cyan-200/14 bg-[rgba(6,18,32,0.86)] p-3 text-sm text-cyan-50"
+            >
+              <option value="">No saved preset selected</option>
+              {providerSettings.outputProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name} - {profile.siteLabel}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+
+      <div className="mb-6 space-y-6">
+        {renderDraftEditorSection()}
+        {renderFinishSection()}
+      </div>
+
+      <CollapsibleReviewSection
+        title="Reference and deep review"
+        subtitle="Open this when you want the heavier evidence, warning, preference, export, and support layers. The main draft review work now stays above."
+        toneClassName="border-slate-300 bg-slate-50 text-slate-950"
+      >
+      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted">Deep review overview</div>
+            <p className="mt-1 text-sm text-muted">
+              Use this drawer only for targeted support. Start with the one layer you need instead of opening everything.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <InlineMetric label="source blocks" value={sourceBlocks.length} />
+            <InlineMetric label="trust cues" value={phaseTwoTrustCues.length} />
+            <InlineMetric label="missing items" value={missingInfoFlags.length} />
+            <InlineMetric label="copilot nudges" value={copilotSuggestions.length} />
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {!embedded && objectiveReview.hasObjectiveData ? <DrawerJumpButton label="Objective data" targetId="objective-warning-layer" /> : null}
+          {!embedded && highRiskWarnings.length ? <DrawerJumpButton label="High-risk cues" targetId="high-risk-warning-layer" /> : null}
+          {!embedded && phaseTwoTrustCues.length ? <DrawerJumpButton label="Trust summary" targetId="phase-two-trust-layer" /> : null}
+          {!embedded && (draftOnlyDiagnoses.length || diagnosisTimeframeGaps.length || diagnosisNonAutoMapTerms.length || draftDiagnosisAvoidTerms.length) ? <DrawerJumpButton label="Diagnosis" targetId="diagnosis-warning-layer" /> : null}
+          {!embedded && (reviewFirstAbbreviations.length || draftAvoidTerms.length || draftRiskTerms.length || draftMseTermsNeedingReview.length) ? <DrawerJumpButton label="Terminology" targetId="terminology-warning-layer" /> : null}
+          {!embedded && matchedMedicationEntries.length ? <DrawerJumpButton label="Medication" targetId="medication-warning-layer" /> : null}
+          <DrawerJumpButton label="Encounter support" targetId="encounter-warning-layer" />
+          <DrawerJumpButton label="Output profile" targetId="active-output-profile-layer" />
+          <DrawerJumpButton label="Source evidence" targetId="source-evidence-layer" />
+          <DrawerJumpButton label="Snapshot" targetId="draft-snapshot-layer" />
+        </div>
+      </div>
+
+      {!embedded && objectiveReview.hasObjectiveData ? (
+        <CollapsibleReviewSection
+          id="objective-warning-layer"
+          title="Objective data and lab review"
+          subtitle="Open this when the narrative may be cleaner than the measured or observed source details."
+          toneClassName="border-sky-200 bg-sky-50 text-sky-950"
+        >
           <div className="flex flex-wrap items-center gap-2">
             <div className="font-semibold">Objective data and lab review</div>
             <ProvenanceChip label="Objective source panel" />
@@ -2348,11 +4240,16 @@ export function ReviewWorkspace({
               </div>
             </div>
           ) : null}
-        </div>
+        </CollapsibleReviewSection>
       ) : null}
 
-      {highRiskWarnings.length ? (
-        <div id="high-risk-warning-layer" className="aurora-panel mb-4 rounded-[26px] border border-amber-200 px-5 py-5 text-sm text-amber-950">
+      {!embedded && highRiskWarnings.length ? (
+        <CollapsibleReviewSection
+          id="high-risk-warning-layer"
+          title="High-risk warning cues"
+          subtitle="Open this when you want the conservative distortion and review-risk cues."
+          toneClassName="border-amber-200 bg-amber-50 text-amber-950"
+        >
           <div className="font-semibold">High-risk warning cues</div>
           <p className="mt-1 text-amber-900">These are conservative review cues for known high-risk distortion patterns. They are not diagnoses, risk scores, or proof that the draft is wrong.</p>
           <div className="mt-3 space-y-3">
@@ -2374,52 +4271,60 @@ export function ReviewWorkspace({
               </div>
             ))}
           </div>
-        </div>
+        </CollapsibleReviewSection>
       ) : null}
 
-      <div className="aurora-soft-panel mb-4 rounded-[22px] border border-emerald-200 px-5 py-4 text-sm text-emerald-900">
-        The latest draft can be restored here so you can continue review without losing your place.
-      </div>
-
-      <div className="aurora-panel mb-4 rounded-[26px] border border-slate-300 px-5 py-5 text-sm text-slate-900">
-        <div className="font-semibold">Trust and review notice</div>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-800">
-          <li>This draft is a starting point, not a completed clinical note.</li>
-          <li>Use the source panel to verify wording, dates, meds, doses, routes, frequencies, refill language, timelines, quoted statements, and who is speaking.</li>
-          <li>If the source is thin or the plan is not explicit, the honest answer may be a visibly sparse section or “not documented in source” wording.</li>
-          <li>High-risk warning cues are review prompts for known distortion patterns, not authoritative findings.</li>
-          <li>Suggested evidence is heuristic only: useful for review triage, not proof.</li>
-          <li>Reviewer-confirmed evidence only records what you checked during review. It does not certify medical truth.</li>
-          <li>Mark each section as approved or needs review before export so saved drafts preserve where trust work stopped.</li>
-        </ul>
-      </div>
-
-      {session.specialty === 'Psychiatry' ? (
-        <div className="aurora-panel mb-4 rounded-[26px] border border-violet-200 px-5 py-5 text-sm text-violet-950">
-          <div className="font-semibold">Psych review priorities</div>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-violet-900">
-            <li>Keep risk language literal. Do not let the draft sharpen vague source into stronger suicidality, homicidality, psychosis, or mania claims than the source supports.</li>
-            <li>Check MSE wording carefully, especially affect, thought process, thought content, orientation, insight, judgment, and any quoted patient statements.</li>
-            <li>Leave collateral conflict visible when sources disagree instead of smoothing it into one confident story.</li>
-            <li>Verify medication names, doses, PRNs, refill wording, adherence, side effects, and relevant lab context before export.</li>
+      {!embedded ? (
+        <CollapsibleReviewSection
+          title="Ground rules and recovery"
+          subtitle="Quick reminders for trust review, plus reassurance that the latest draft can be resumed here."
+          toneClassName="border-slate-300 bg-slate-50 text-slate-950"
+        >
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+            The latest draft can be restored here so you can continue review without losing your place.
+          </div>
+          <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate-800">
+            <li>This draft is a starting point, not a completed clinical note.</li>
+            <li>Use the source panel to verify dates, meds, doses, routes, frequencies, timelines, quotes, and who is speaking.</li>
+            <li>If the source is thin or conflicted, the honest answer may be sparse or explicitly uncertain wording.</li>
+            <li>Suggested evidence and warning cues help triage review. They do not prove truth.</li>
+            <li>Mark sections as approved or needs review before export so saved drafts preserve where review stopped.</li>
           </ul>
-        </div>
+          {!embedded && session.specialty === 'Psychiatry' ? (
+            <div className="mt-4 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900">
+              <div className="font-semibold text-violet-950">Psych review emphasis</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>Keep risk language literal and time-bound.</li>
+                <li>Check MSE wording, quoted statements, collateral conflict, and medication details carefully.</li>
+              </ul>
+            </div>
+          ) : null}
+        </CollapsibleReviewSection>
       ) : null}
 
-      {phaseTwoTrustCues.length ? (
-        <div className="aurora-panel aurora-edge-emphasis mb-4 rounded-[26px] border border-sky-200 px-5 py-5 text-sm text-sky-950">
+      {!embedded && phaseTwoTrustCues.length ? (
+        <CollapsibleReviewSection
+          id="phase-two-trust-layer"
+          title="Phase 2 trust cues"
+          subtitle="Open this for the highest-signal trust issues before using deeper specialty layers."
+          toneClassName="border-sky-200 bg-sky-50 text-sky-950"
+        >
           <div className="flex flex-wrap items-center gap-2">
-            <div className="font-semibold">Phase 2 trust summary</div>
+            <div className="font-semibold">Highest-signal trust issues</div>
             <ProvenanceChip label="Core trust workflow" />
+            <InlineMetric label="cue" value={phaseTwoTrustCues.length} />
           </div>
           <p className="mt-1 text-sky-900">
-            These are the highest-signal trust issues still showing in the core workflow. Start here before digging into the deeper review panels.
+            Start here if the draft still feels off but you do not yet know which deeper review layer to open.
           </p>
-          <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          <div className="mt-3 space-y-2">
             {phaseTwoTrustCues.map((cue) => (
-              <div key={cue.id} className={`rounded-[20px] border px-4 py-4 ${cue.toneClassName}`}>
-                <div className="font-medium">{cue.label}</div>
-                <div className="mt-1 text-sm">{cue.detail}</div>
+              <ReviewItemDisclosure
+                key={cue.id}
+                className={cue.toneClassName}
+                title={cue.label}
+                summary={cue.detail}
+              >
                 <div className="mt-2 flex flex-wrap gap-2">
                   {cue.sectionAnchor ? (
                     <button
@@ -2443,10 +4348,10 @@ export function ReviewWorkspace({
                     Open related review layer
                   </button>
                 </div>
-              </div>
+              </ReviewItemDisclosure>
             ))}
           </div>
-        </div>
+        </CollapsibleReviewSection>
       ) : null}
 
       {structuredMedicationProfile.length ? (
@@ -2455,17 +4360,31 @@ export function ReviewWorkspace({
           subtitle="Provider-entered medication details are available here as added review support."
           toneClassName="border-cyan-200 bg-cyan-50 text-cyan-950"
         >
-          <div className="font-semibold">Structured psychiatric medication profile</div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-semibold">Structured psychiatric medication profile</div>
+            <InlineMetric label="summary item" value={structuredMedicationSummary.length} />
+          </div>
           <p className="mt-1 text-cyan-900">
             This draft includes a provider-entered med profile. Veranote should treat these entries as review support, not as a fully reconciled final regimen unless the source packet clearly supports that.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {structuredMedicationSummary.map((item) => (
-              <span key={item} className="aurora-pill rounded-full border border-cyan-200 px-3 py-1 text-xs font-medium text-cyan-950">
-                {item}
-              </span>
-            ))}
-          </div>
+          <details className="group mt-3 rounded-lg border border-cyan-200 bg-white p-3">
+            <summary className="cursor-pointer list-none">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-cyan-900">Profile summary</div>
+                  <p className="mt-1 text-xs text-cyan-800">Provider-entered medication summary used as review support.</p>
+                </div>
+                <OptionalBadge className="border-cyan-200 bg-cyan-50 text-cyan-900" />
+              </div>
+            </summary>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {structuredMedicationSummary.map((item) => (
+                <span key={item} className="aurora-pill rounded-full border border-cyan-200 px-3 py-1 text-xs font-medium text-cyan-950">
+                  {item}
+                </span>
+              ))}
+            </div>
+          </details>
         </CollapsibleReviewSection>
       ) : null}
 
@@ -2475,17 +4394,31 @@ export function ReviewWorkspace({
           subtitle="Provider-entered assessment framing is available here when you want to compare it against the draft."
           toneClassName="border-rose-200 bg-rose-50 text-rose-950"
         >
-          <div className="font-semibold">Structured diagnosis / assessment profile</div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-semibold">Structured diagnosis / assessment profile</div>
+            <InlineMetric label="summary item" value={structuredDiagnosisSummary.length} />
+          </div>
           <p className="mt-1 text-rose-900">
             This draft includes a provider-entered diagnosis profile. Veranote should treat these entries as assessment scaffolding, not as proof that the final draft is allowed to sound more certain than the source.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {structuredDiagnosisSummary.map((item) => (
-              <span key={item} className="aurora-pill rounded-full border border-rose-200 px-3 py-1 text-xs font-medium text-rose-950">
-                {item}
-              </span>
-            ))}
-          </div>
+          <details className="group mt-3 rounded-lg border border-rose-200 bg-white p-3">
+            <summary className="cursor-pointer list-none">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-rose-900">Profile summary</div>
+                  <p className="mt-1 text-xs text-rose-800">Provider-entered diagnosis framing for comparison against the draft.</p>
+                </div>
+                <OptionalBadge className="border-rose-200 bg-rose-50 text-rose-900" />
+              </div>
+            </summary>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {structuredDiagnosisSummary.map((item) => (
+                <span key={item} className="aurora-pill rounded-full border border-rose-200 px-3 py-1 text-xs font-medium text-rose-950">
+                  {item}
+                </span>
+              ))}
+            </div>
+          </details>
           {(structuredDiagnosisAlignment.missingFromDraft.length || structuredDiagnosisAlignment.draftOnlyAgainstStructured.length) ? (
             <div className="aurora-soft-panel mt-4 rounded-lg border border-rose-200 p-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-rose-900">Assessment alignment check</div>
@@ -2546,7 +4479,7 @@ export function ReviewWorkspace({
         </CollapsibleReviewSection>
       ) : null}
 
-      {(draftOnlyDiagnoses.length || diagnosisTimeframeGaps.length || diagnosisNonAutoMapTerms.length || draftDiagnosisAvoidTerms.length) ? (
+      {!embedded && (draftOnlyDiagnoses.length || diagnosisTimeframeGaps.length || diagnosisNonAutoMapTerms.length || draftDiagnosisAvoidTerms.length) ? (
         <CollapsibleReviewSection
           id="diagnosis-warning-layer"
           title="Diagnosis review support"
@@ -2567,21 +4500,32 @@ export function ReviewWorkspace({
 
           {draftOnlyDiagnoses.length ? (
             <div className="mt-4 rounded-lg border border-rose-200 bg-white p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-rose-900">Diagnoses appearing in draft but not clearly in source</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-rose-900">Diagnoses appearing in draft but not clearly in source</div>
+                <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-900">
+                  {draftOnlyDiagnoses.length} cue{draftOnlyDiagnoses.length === 1 ? '' : 's'}
+                </span>
+              </div>
               <div className="mt-3 space-y-3">
                 {draftOnlyDiagnoses.slice(0, 8).map(({ diagnosis, differentialCaution }) => (
-                  <div key={diagnosis.id} className="rounded-lg border border-rose-100 bg-rose-50/40 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-medium text-rose-950">{diagnosis.diagnosis_name}</div>
-                      <span className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-medium text-rose-950">
-                        {diagnosis.category}
-                      </span>
-                      {diagnosis.warn_before_upgrading_symptoms_to_diagnosis ? (
+                  <ReviewItemDisclosure
+                    key={diagnosis.id}
+                    className="border-rose-100 bg-rose-50/40 text-rose-950"
+                    title={diagnosis.diagnosis_name}
+                    meta={
+                      <>
                         <span className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-medium text-rose-950">
-                          review before upgrade
+                          {diagnosis.category}
                         </span>
-                      ) : null}
-                    </div>
+                        {diagnosis.warn_before_upgrading_symptoms_to_diagnosis ? (
+                          <span className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-medium text-rose-950">
+                            review before upgrade
+                          </span>
+                        ) : null}
+                      </>
+                    }
+                    summary={diagnosis.summary}
+                  >
                     <div className="mt-2 text-xs text-rose-900">{diagnosis.summary}</div>
                     <div className="mt-2 text-xs text-rose-800">
                       Outpatient certainty caution: {diagnosis.outpatient_certainty_caution}
@@ -2611,7 +4555,7 @@ export function ReviewWorkspace({
                         Focus in draft
                       </button>
                     </div>
-                  </div>
+                  </ReviewItemDisclosure>
                 ))}
               </div>
             </div>
@@ -2619,17 +4563,21 @@ export function ReviewWorkspace({
 
           {diagnosisTimeframeGaps.length ? (
             <div className="mt-4 rounded-lg border border-rose-200 bg-white p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-rose-900">Timeframe-sensitive diagnoses needing review</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-rose-900">Timeframe-sensitive diagnoses needing review</div>
+                <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-900">
+                  {diagnosisTimeframeGaps.length} cue{diagnosisTimeframeGaps.length === 1 ? '' : 's'}
+                </span>
+              </div>
               <div className="mt-3 space-y-3">
                 {diagnosisTimeframeGaps.slice(0, 8).map(({ diagnosis, timeframeRule }) => (
-                  <div key={`${diagnosis.id}-timeframe`} className="rounded-lg border border-rose-100 bg-rose-50/40 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-medium text-rose-950">{diagnosis.diagnosis_name}</div>
-                      <span className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-medium text-rose-950">
-                        timeframe-sensitive
-                      </span>
-                    </div>
-                    <div className="mt-2 text-xs text-rose-900">{timeframeRule?.minimum_duration_timeframe}</div>
+                  <ReviewItemDisclosure
+                    key={`${diagnosis.id}-timeframe`}
+                    className="border-rose-100 bg-rose-50/40 text-rose-950"
+                    title={diagnosis.diagnosis_name}
+                    meta={<span className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-medium text-rose-950">timeframe-sensitive</span>}
+                    summary={timeframeRule?.minimum_duration_timeframe}
+                  >
                     <div className="mt-2 text-xs text-rose-800">
                       Risk if ignored: {timeframeRule?.common_product_failure_mode_if_ignored}
                     </div>
@@ -2642,7 +4590,7 @@ export function ReviewWorkspace({
                         `Source timeframe signal detected: ${hasTimeframeSignal(session?.sourceInput || '') ? 'Yes' : 'No'}`,
                       ]}
                     />
-                  </div>
+                  </ReviewItemDisclosure>
                 ))}
               </div>
             </div>
@@ -2650,19 +4598,30 @@ export function ReviewWorkspace({
 
           {diagnosisNonAutoMapTerms.length ? (
             <div className="mt-4 rounded-lg border border-rose-200 bg-white p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-rose-900">Alias or shorthand needing diagnosis review</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-rose-900">Alias or shorthand needing diagnosis review</div>
+                <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-900">
+                  {diagnosisNonAutoMapTerms.length} cue{diagnosisNonAutoMapTerms.length === 1 ? '' : 's'}
+                </span>
+              </div>
               <div className="mt-3 space-y-3">
                 {diagnosisNonAutoMapTerms.slice(0, 8).map(({ matchedText, entry }) => (
-                  <div key={`${entry.id}-${matchedText}`} className="rounded-lg border border-rose-100 bg-rose-50/40 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-medium text-rose-950">{matchedText}</div>
-                      <span className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-medium text-rose-950">
-                        {entry.formal_diagnosis}
-                      </span>
-                      <span className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-medium text-rose-950">
-                        {entry.ambiguity_level} ambiguity
-                      </span>
-                    </div>
+                  <ReviewItemDisclosure
+                    key={`${entry.id}-${matchedText}`}
+                    className="border-rose-100 bg-rose-50/40 text-rose-950"
+                    title={matchedText}
+                    meta={
+                      <>
+                        <span className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-medium text-rose-950">
+                          {entry.formal_diagnosis}
+                        </span>
+                        <span className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-medium text-rose-950">
+                          {entry.ambiguity_level} ambiguity
+                        </span>
+                      </>
+                    }
+                    summary={`Do not auto-map: ${entry.terms_that_should_not_auto_map.join(', ')}`}
+                  >
                     <div className="mt-2 text-xs text-rose-800">
                       Do not auto-map: {entry.terms_that_should_not_auto_map.join(', ')}
                     </div>
@@ -2685,7 +4644,7 @@ export function ReviewWorkspace({
                         Focus in draft
                       </button>
                     </div>
-                  </div>
+                  </ReviewItemDisclosure>
                 ))}
               </div>
             </div>
@@ -2693,17 +4652,21 @@ export function ReviewWorkspace({
 
           {draftDiagnosisAvoidTerms.length ? (
             <div className="mt-4 rounded-lg border border-rose-200 bg-white p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-rose-900">Diagnosis wording to review before export</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-rose-900">Diagnosis wording to review before export</div>
+                <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-900">
+                  {draftDiagnosisAvoidTerms.length} cue{draftDiagnosisAvoidTerms.length === 1 ? '' : 's'}
+                </span>
+              </div>
               <div className="mt-3 space-y-3">
                 {draftDiagnosisAvoidTerms.slice(0, 8).map(({ matchedText, entry }) => (
-                  <div key={entry.id} className="rounded-lg border border-rose-100 bg-rose-50/40 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-medium text-rose-950">{matchedText}</div>
-                      <span className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-medium text-rose-950">
-                        {formatDiagnosisAction(entry.product_action)}
-                      </span>
-                    </div>
-                    <div className="mt-2 text-xs text-rose-900">{entry.why_risky}</div>
+                  <ReviewItemDisclosure
+                    key={entry.id}
+                    className="border-rose-100 bg-rose-50/40 text-rose-950"
+                    title={matchedText}
+                    meta={<span className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-medium text-rose-950">{formatDiagnosisAction(entry.product_action)}</span>}
+                    summary={entry.why_risky}
+                  >
                     <div className="mt-2 text-xs text-rose-800">
                       Safer handling: {entry.safer_alternative_or_handling}
                     </div>
@@ -2732,7 +4695,7 @@ export function ReviewWorkspace({
                         Replace with safer wording
                       </button>
                     </div>
-                  </div>
+                  </ReviewItemDisclosure>
                 ))}
               </div>
             </div>
@@ -2740,7 +4703,7 @@ export function ReviewWorkspace({
         </CollapsibleReviewSection>
       ) : null}
 
-      {(reviewFirstAbbreviations.length || draftAvoidTerms.length || draftRiskTerms.length || draftMseTermsNeedingReview.length) ? (
+      {!embedded && (reviewFirstAbbreviations.length || draftAvoidTerms.length || draftRiskTerms.length || draftMseTermsNeedingReview.length) ? (
         <CollapsibleReviewSection
           id="terminology-warning-layer"
           title="Psych terminology review support"
@@ -2761,20 +4724,30 @@ export function ReviewWorkspace({
 
           {reviewFirstAbbreviations.length ? (
             <div className="mt-4 rounded-lg border border-fuchsia-200 bg-white p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-fuchsia-900">Ambiguous abbreviations in draft</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-fuchsia-900">Ambiguous abbreviations in draft</div>
+                <span className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2.5 py-1 text-[11px] font-medium text-fuchsia-900">
+                  {reviewFirstAbbreviations.length} cue{reviewFirstAbbreviations.length === 1 ? '' : 's'}
+                </span>
+              </div>
               <div className="mt-3 space-y-3">
                 {reviewFirstAbbreviations.slice(0, 8).map(({ entry }) => (
-                  <div key={entry.id} className="rounded-lg border border-fuchsia-100 bg-fuchsia-50/40 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-medium text-fuchsia-950">{entry.abbreviation}</div>
-                      <span className="rounded-full border border-fuchsia-300/40 bg-fuchsia-100/55 px-2 py-0.5 text-[11px] font-medium text-fuchsia-950 shadow-[0_2px_8px_rgba(79,22,46,0.05)]">
-                        {entry.expansion}
-                      </span>
-                      <span className="rounded-full border border-fuchsia-300/40 bg-fuchsia-100/55 px-2 py-0.5 text-[11px] font-medium text-fuchsia-950 shadow-[0_2px_8px_rgba(79,22,46,0.05)]">
-                        {entry.ambiguity_level} ambiguity
-                      </span>
-                    </div>
-                    <div className="mt-2 text-xs text-fuchsia-900">{entry.psych_context_meaning}</div>
+                  <ReviewItemDisclosure
+                    key={entry.id}
+                    className="border-fuchsia-100 bg-fuchsia-50/40 text-fuchsia-950"
+                    title={entry.abbreviation}
+                    meta={
+                      <>
+                        <span className="rounded-full border border-fuchsia-300/40 bg-fuchsia-100/55 px-2 py-0.5 text-[11px] font-medium text-fuchsia-950 shadow-[0_2px_8px_rgba(79,22,46,0.05)]">
+                          {entry.expansion}
+                        </span>
+                        <span className="rounded-full border border-fuchsia-300/40 bg-fuchsia-100/55 px-2 py-0.5 text-[11px] font-medium text-fuchsia-950 shadow-[0_2px_8px_rgba(79,22,46,0.05)]">
+                          {entry.ambiguity_level} ambiguity
+                        </span>
+                      </>
+                    }
+                    summary={entry.psych_context_meaning}
+                  >
                     {entry.alternate_meanings_if_ambiguous.length ? (
                       <div className="mt-2 text-xs text-fuchsia-800">
                         Alternate meanings: {entry.alternate_meanings_if_ambiguous.join(', ')}
@@ -2800,7 +4773,7 @@ export function ReviewWorkspace({
                         Focus in draft
                       </button>
                     </div>
-                  </div>
+                  </ReviewItemDisclosure>
                 ))}
               </div>
             </div>
@@ -2808,17 +4781,21 @@ export function ReviewWorkspace({
 
           {draftAvoidTerms.length ? (
             <div className="mt-4 rounded-lg border border-fuchsia-200 bg-white p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-fuchsia-900">Discouraged language in draft</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-fuchsia-900">Discouraged language in draft</div>
+                <span className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2.5 py-1 text-[11px] font-medium text-fuchsia-900">
+                  {draftAvoidTerms.length} cue{draftAvoidTerms.length === 1 ? '' : 's'}
+                </span>
+              </div>
               <div className="mt-3 space-y-3">
                 {draftAvoidTerms.slice(0, 8).map(({ entry, matchedText }) => (
-                  <div key={entry.id} className="rounded-lg border border-fuchsia-100 bg-fuchsia-50/40 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-medium text-fuchsia-950">{matchedText}</div>
-                      <span className="rounded-full border border-fuchsia-300/40 bg-fuchsia-100/55 px-2 py-0.5 text-[11px] font-medium text-fuchsia-950 shadow-[0_2px_8px_rgba(79,22,46,0.05)]">
-                        {entry.recommended_system_action.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                    <div className="mt-2 text-xs text-fuchsia-900">{entry.why_risky}</div>
+                  <ReviewItemDisclosure
+                    key={entry.id}
+                    className="border-fuchsia-100 bg-fuchsia-50/40 text-fuchsia-950"
+                    title={matchedText}
+                    meta={<span className="rounded-full border border-fuchsia-300/40 bg-fuchsia-100/55 px-2 py-0.5 text-[11px] font-medium text-fuchsia-950 shadow-[0_2px_8px_rgba(79,22,46,0.05)]">{entry.recommended_system_action.replace(/_/g, ' ')}</span>}
+                    summary={entry.why_risky}
+                  >
                     <div className="mt-2 text-xs text-fuchsia-800">
                       Safer alternative: {entry.safer_alternative}
                     </div>
@@ -2847,7 +4824,7 @@ export function ReviewWorkspace({
                         Replace with safer wording
                       </button>
                     </div>
-                  </div>
+                  </ReviewItemDisclosure>
                 ))}
               </div>
             </div>
@@ -2855,68 +4832,82 @@ export function ReviewWorkspace({
 
           {draftRiskTerms.length ? (
             <div className="mt-4 rounded-lg border border-fuchsia-200 bg-white p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-fuchsia-900">Risk-language terms in draft</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-fuchsia-900">Risk-language terms in draft</div>
+                <span className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2.5 py-1 text-[11px] font-medium text-fuchsia-900">
+                  {draftRiskTerms.length} cue{draftRiskTerms.length === 1 ? '' : 's'}
+                </span>
+              </div>
               <div className="mt-3 space-y-3">
                 {draftRiskTerms.slice(0, 8).map(({ entry }) => {
                   const draftOnly = draftOnlyRiskTerms.some((item) => item.entry.id === entry.id);
                   return (
-                    <div key={entry.id} className="rounded-lg border border-fuchsia-100 bg-fuchsia-50/40 p-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="font-medium text-fuchsia-950">{entry.term}</div>
-                        <span className="rounded-full border border-fuchsia-300/40 bg-fuchsia-100/55 px-2 py-0.5 text-[11px] font-medium text-fuchsia-950 shadow-[0_2px_8px_rgba(79,22,46,0.05)]">
-                          {formatRiskAction(entry.veranote_action)}
-                        </span>
-                        {draftOnly ? (
-                          <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-900">
-                            not clearly present in source
+                    <ReviewItemDisclosure
+                      key={entry.id}
+                      className="border-fuchsia-100 bg-fuchsia-50/40 text-fuchsia-950"
+                      title={entry.term}
+                      meta={
+                        <>
+                          <span className="rounded-full border border-fuchsia-300/40 bg-fuchsia-100/55 px-2 py-0.5 text-[11px] font-medium text-fuchsia-950 shadow-[0_2px_8px_rgba(79,22,46,0.05)]">
+                            {formatRiskAction(entry.veranote_action)}
                           </span>
-                        ) : null}
+                          {draftOnly ? (
+                            <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-900">
+                              not clearly present in source
+                            </span>
+                          ) : null}
+                        </>
+                      }
+                      summary={entry.meaning}
+                    >
+                      {entry.common_misuse_risks.length ? (
+                        <div className="mt-2 text-xs text-fuchsia-800">
+                          Misuse risks: {entry.common_misuse_risks.join('; ')}
+                        </div>
+                      ) : null}
+                      <WarningWhyThisAppeared
+                        summary="This cue is coming from the risk-language guide because the draft contains a term that may need review for strengthening, softening, or unsupported introduction."
+                        toneClassName="border-fuchsia-200 text-fuchsia-900"
+                        bullets={[
+                          `Risk term: ${entry.term}`,
+                          `Suggested Veranote action: ${formatRiskAction(entry.veranote_action)}`,
+                          draftOnly ? 'This risk term is not clearly detected in the source material.' : 'This risk term is also present in the source material.',
+                          ...(entry.common_misuse_risks.length ? [`Misuse risks: ${entry.common_misuse_risks.join('; ')}`] : []),
+                        ]}
+                      />
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => focusDraftMatch(entry.term)}
+                          className="rounded-full border border-fuchsia-300/40 bg-fuchsia-100/55 px-2.5 py-1 text-[11px] font-medium text-fuchsia-950 shadow-[0_2px_8px_rgba(79,22,46,0.05)]"
+                        >
+                          Focus in draft
+                        </button>
                       </div>
-                      <div className="mt-2 text-xs text-fuchsia-900">{entry.meaning}</div>
-                    {entry.common_misuse_risks.length ? (
-                      <div className="mt-2 text-xs text-fuchsia-800">
-                        Misuse risks: {entry.common_misuse_risks.join('; ')}
-                      </div>
-                    ) : null}
-                    <WarningWhyThisAppeared
-                      summary="This cue is coming from the risk-language guide because the draft contains a term that may need review for strengthening, softening, or unsupported introduction."
-                      toneClassName="border-fuchsia-200 text-fuchsia-900"
-                      bullets={[
-                        `Risk term: ${entry.term}`,
-                        `Suggested Veranote action: ${formatRiskAction(entry.veranote_action)}`,
-                        draftOnly ? 'This risk term is not clearly detected in the source material.' : 'This risk term is also present in the source material.',
-                        ...(entry.common_misuse_risks.length ? [`Misuse risks: ${entry.common_misuse_risks.join('; ')}`] : []),
-                      ]}
-                    />
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => focusDraftMatch(entry.term)}
-                        className="rounded-full border border-fuchsia-300/40 bg-fuchsia-100/55 px-2.5 py-1 text-[11px] font-medium text-fuchsia-950 shadow-[0_2px_8px_rgba(79,22,46,0.05)]"
-                      >
-                        Focus in draft
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+                    </ReviewItemDisclosure>
+                  );
+                })}
               </div>
             </div>
           ) : null}
 
           {draftMseTermsNeedingReview.length ? (
             <div className="mt-4 rounded-lg border border-fuchsia-200 bg-white p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-fuchsia-900">MSE descriptors needing extra review</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-fuchsia-900">MSE descriptors needing extra review</div>
+                <span className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2.5 py-1 text-[11px] font-medium text-fuchsia-900">
+                  {draftMseTermsNeedingReview.length} cue{draftMseTermsNeedingReview.length === 1 ? '' : 's'}
+                </span>
+              </div>
               <div className="mt-3 space-y-3">
                 {draftMseTermsNeedingReview.slice(0, 8).map(({ entry }) => (
-                  <div key={entry.id} className="rounded-lg border border-fuchsia-100 bg-fuchsia-50/40 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-medium text-fuchsia-950">{entry.term}</div>
-                      <span className="rounded-full border border-fuchsia-300/40 bg-fuchsia-100/55 px-2 py-0.5 text-[11px] font-medium text-fuchsia-950 shadow-[0_2px_8px_rgba(79,22,46,0.05)]">
-                        {entry.domain}
-                      </span>
-                    </div>
-                    <div className="mt-2 text-xs text-fuchsia-900">{entry.concise_definition}</div>
+                  <ReviewItemDisclosure
+                    key={entry.id}
+                    className="border-fuchsia-100 bg-fuchsia-50/40 text-fuchsia-950"
+                    title={entry.term}
+                    meta={<span className="rounded-full border border-fuchsia-300/40 bg-fuchsia-100/55 px-2 py-0.5 text-[11px] font-medium text-fuchsia-950 shadow-[0_2px_8px_rgba(79,22,46,0.05)]">{entry.domain}</span>}
+                    summary={entry.concise_definition}
+                  >
                     {entry.important_distinctions_from_similar_terms.length ? (
                       <div className="mt-2 text-xs text-fuchsia-800">
                         Distinguish from: {entry.important_distinctions_from_similar_terms.join('; ')}
@@ -2933,7 +4924,7 @@ export function ReviewWorkspace({
                           : []),
                       ]}
                     />
-                  </div>
+                  </ReviewItemDisclosure>
                 ))}
               </div>
             </div>
@@ -2941,7 +4932,7 @@ export function ReviewWorkspace({
         </CollapsibleReviewSection>
       ) : null}
 
-      {matchedMedicationEntries.length ? (
+      {!embedded && matchedMedicationEntries.length ? (
         <CollapsibleReviewSection
           id="medication-warning-layer"
           title="Medication review support"
@@ -2982,27 +4973,29 @@ export function ReviewWorkspace({
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             {matchedMedicationEntries.slice(0, 8).map((medication) => (
-              <div key={medication.id} className="rounded-lg border border-cyan-200 bg-white p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="font-medium text-cyan-950">{medication.displayName}</div>
-                  <span className="rounded-full border border-cyan-200 bg-cyan-100 px-2 py-0.5 text-[11px] font-medium text-cyan-950">
-                    {medication.subclass || medication.classFamily}
-                  </span>
-                  {medication.isLai ? (
+              <ReviewItemDisclosure
+                key={medication.id}
+                className="border-cyan-200 bg-white text-cyan-950"
+                title={medication.displayName}
+                meta={
+                  <>
                     <span className="rounded-full border border-cyan-200 bg-cyan-100 px-2 py-0.5 text-[11px] font-medium text-cyan-950">
-                      LAI
+                      {medication.subclass || medication.classFamily}
                     </span>
-                  ) : null}
-                </div>
+                    {medication.isLai ? (
+                      <span className="rounded-full border border-cyan-200 bg-cyan-100 px-2 py-0.5 text-[11px] font-medium text-cyan-950">
+                        LAI
+                      </span>
+                    ) : null}
+                  </>
+                }
+                summary={`Source status: ${formatMedicationSourceStatus(medication.sourceStatus)}${medication.normalization.unresolvedGap ? `; gap: ${medication.normalization.unresolvedGap}` : ''}`}
+              >
                 {medication.brandNames.length ? (
-                  <div className="mt-1 text-xs text-cyan-900">
+                  <div className="text-xs text-cyan-900">
                     Brands: {medication.brandNames.slice(0, 3).join(', ')}
                   </div>
                 ) : null}
-                <div className="mt-2 text-xs text-cyan-800">
-                  Source status: {formatMedicationSourceStatus(medication.sourceStatus)}
-                  {medication.normalization.unresolvedGap ? `; gap: ${medication.normalization.unresolvedGap}` : ''}
-                </div>
                 {medication.highRiskFlags.length ? (
                   <div className="mt-3">
                     <div className="text-[11px] font-semibold uppercase tracking-wide text-cyan-800">Medication caution tags</div>
@@ -3015,7 +5008,7 @@ export function ReviewWorkspace({
                     </div>
                   </div>
                 ) : null}
-              </div>
+              </ReviewItemDisclosure>
             ))}
           </div>
           {medicationReviewHighlights.highRiskFlags.length ? (
@@ -3086,17 +5079,22 @@ export function ReviewWorkspace({
               </p>
               <div className="mt-3 space-y-3">
                 {medicationScaffoldWarnings.map((warning) => (
-                  <div key={warning.code} className="rounded-lg border border-cyan-100 bg-cyan-50/40 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-medium text-cyan-950">{warning.title}</div>
-                      <span className="rounded-full border border-cyan-200 bg-white px-2 py-0.5 text-[11px] font-medium text-cyan-950">
-                        {formatWarningSeverity(warning.severity)}
-                      </span>
-                      <span className="rounded-full border border-cyan-200 bg-white px-2 py-0.5 text-[11px] font-medium text-cyan-950">
-                        {warning.evidenceBasis.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                    <div className="mt-2 text-sm text-cyan-900">{warning.summary}</div>
+                  <ReviewItemDisclosure
+                    key={warning.code}
+                    className="border-cyan-100 bg-cyan-50/40 text-cyan-950"
+                    title={warning.title}
+                    meta={
+                      <>
+                        <span className="rounded-full border border-cyan-200 bg-white px-2 py-0.5 text-[11px] font-medium text-cyan-950">
+                          {formatWarningSeverity(warning.severity)}
+                        </span>
+                        <span className="rounded-full border border-cyan-200 bg-white px-2 py-0.5 text-[11px] font-medium text-cyan-950">
+                          {warning.evidenceBasis.replace(/_/g, ' ')}
+                        </span>
+                      </>
+                    }
+                    summary={warning.summary}
+                  >
                     {warning.whyTriggered.length ? (
                       <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-cyan-900">
                         {warning.whyTriggered.map((item) => (
@@ -3124,7 +5122,7 @@ export function ReviewWorkspace({
                         ...(warning.sourceDocumentIds.length ? [`Source documents: ${warning.sourceDocumentIds.join(', ')}`] : []),
                       ]}
                     />
-                  </div>
+                  </ReviewItemDisclosure>
                 ))}
               </div>
             </div>
@@ -3133,7 +5131,12 @@ export function ReviewWorkspace({
       ) : null}
 
       {psychReviewGuidance ? (
-        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-950">
+        <CollapsibleReviewSection
+          id="psych-review-guidance-layer"
+          title={psychReviewGuidance.title}
+          subtitle="Open this for psychiatry-specific review emphasis and priority checks."
+          toneClassName="border-emerald-200 bg-emerald-50 text-emerald-950"
+        >
           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="font-semibold">{psychReviewGuidance.title}</div>
@@ -3143,35 +5146,60 @@ export function ReviewWorkspace({
               {psychReviewGuidance.careSetting}
             </div>
           </div>
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <div className="rounded-lg border border-emerald-200 bg-white p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-900">Priority checks</div>
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-emerald-900">
+          <div className="mt-4 space-y-3">
+            <ReviewItemDisclosure
+              className="border-emerald-200 bg-white text-emerald-950"
+              title="Priority checks"
+              summary={`${psychReviewGuidance.priorities.length} psychiatry-specific priority check${psychReviewGuidance.priorities.length === 1 ? '' : 's'}.`}
+            >
+              <ul className="list-disc space-y-1 pl-5 text-emerald-900">
                 {psychReviewGuidance.priorities.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>
-            </div>
-            <div className="rounded-lg border border-emerald-200 bg-white p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-900">Section review emphasis</div>
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-emerald-900">
+            </ReviewItemDisclosure>
+            <ReviewItemDisclosure
+              className="border-emerald-200 bg-white text-emerald-950"
+              title="Section review emphasis"
+              summary={`${psychReviewGuidance.sectionChecks.length} section emphasis cue${psychReviewGuidance.sectionChecks.length === 1 ? '' : 's'}.`}
+            >
+              <ul className="list-disc space-y-1 pl-5 text-emerald-900">
                 {psychReviewGuidance.sectionChecks.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>
-            </div>
+            </ReviewItemDisclosure>
           </div>
-        </div>
+        </CollapsibleReviewSection>
       ) : null}
 
       {isDischargeNote ? (
-        <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-950">
-          <div className="font-semibold">Discharge note review priorities</div>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-rose-900">
-            {dischargeReviewCues.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
+        <CollapsibleReviewSection
+          id="discharge-review-layer"
+          title="Discharge note review priorities"
+          subtitle="Open this when the draft needs extra timeline and discharge-status separation."
+          toneClassName="border-rose-200 bg-rose-50 text-rose-950"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-semibold">Discharge note review priorities</div>
+            <InlineMetric label="priority" value={dischargeReviewCues.length} />
+          </div>
+          <details className="group mt-3 rounded-lg border border-rose-200 bg-white p-3">
+            <summary className="cursor-pointer list-none">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-rose-900">Priority checks</div>
+                  <p className="mt-1 text-xs text-rose-800">Discharge-specific wording and status checks.</p>
+                </div>
+                <OptionalBadge className="border-rose-200 bg-rose-50 text-rose-900" />
+              </div>
+            </summary>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-rose-900">
+              {dischargeReviewCues.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </details>
           {medicationSignalSummary.mentionedChanges && (medicationSignalSummary.medicationNameCount === 0 || medicationSignalSummary.dosageSignalCount === 0) ? (
             <div className="mt-3 rounded-lg border border-rose-200 bg-white px-3 py-3 text-rose-900">
               The source mentions medication adjustment or optimization, but the discharge packet does not appear to include full regimen detail. Keep med wording conservative unless the exact discharge list is in source.
@@ -3201,18 +5229,37 @@ export function ReviewWorkspace({
               </div>
             </div>
           ) : null}
-        </div>
+        </CollapsibleReviewSection>
       ) : null}
 
       {destinationConstraintActive ? (
-        <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-950">
-          <div className="font-semibold">Destination / export constraint review</div>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-sky-900">
-            {destinationConstraintCues.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </div>
+        <CollapsibleReviewSection
+          id="destination-constraint-layer"
+          title="Destination / export constraint review"
+          subtitle="Open this when destination formatting rules could affect wording or certainty."
+          toneClassName="border-sky-200 bg-sky-50 text-sky-950"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-semibold">Destination / export constraint review</div>
+            <InlineMetric label="constraint" value={destinationConstraintCues.length} />
+          </div>
+          <details className="group mt-3 rounded-lg border border-sky-200 bg-white p-3">
+            <summary className="cursor-pointer list-none">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-sky-900">Constraint checks</div>
+                  <p className="mt-1 text-xs text-sky-800">Destination rules that could change wording, certainty, or formatting.</p>
+                </div>
+                <OptionalBadge className="border-sky-200 bg-sky-50 text-sky-900" />
+              </div>
+            </summary>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-sky-900">
+              {destinationConstraintCues.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </details>
+        </CollapsibleReviewSection>
       ) : null}
 
       <CollapsibleReviewSection
@@ -3258,23 +5305,44 @@ export function ReviewWorkspace({
         )}
         {encounterSupportWarnings.length ? (
           <div className="mt-4 rounded-lg border border-amber-200 bg-white p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Encounter review cues</div>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-900">
-              {encounterSupportWarnings.map((item) => (
-                <li key={item}>{item}</li>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Encounter review cues</div>
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-900">
+                {encounterSupportWarnings.length} cue{encounterSupportWarnings.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {encounterSupportWarnings.map((item, index) => (
+                <ReviewItemDisclosure
+                  key={`${item}-${index}`}
+                  className="border-amber-100 bg-amber-50/40 text-amber-950"
+                  title={`Encounter cue ${index + 1}`}
+                  summary={item}
+                >
+                  <div className="text-sm text-amber-900">{item}</div>
+                </ReviewItemDisclosure>
               ))}
-            </ul>
+            </div>
           </div>
         ) : null}
         {encounterDocumentationChecks.length ? (
           <div className="mt-4 rounded-lg border border-amber-200 bg-white p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Time-sensitive documentation checks</div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Time-sensitive documentation checks</div>
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-900">
+                {encounterDocumentationChecks.length} check{encounterDocumentationChecks.length === 1 ? '' : 's'}
+              </span>
+            </div>
             <div className="mt-3 space-y-2 text-sm text-amber-900">
               {encounterDocumentationChecks.map((item) => (
-                <div key={item.id} className="rounded-lg border border-amber-100 bg-amber-50/40 p-3">
-                  <div className="font-medium text-amber-950">{item.label}</div>
-                  <div className="mt-1">{item.detail}</div>
-                </div>
+                <ReviewItemDisclosure
+                  key={item.id}
+                  className="border-amber-100 bg-amber-50/40 text-amber-950"
+                  title={item.label}
+                  summary={item.detail}
+                >
+                  <div>{item.detail}</div>
+                </ReviewItemDisclosure>
               ))}
             </div>
           </div>
@@ -3341,6 +5409,7 @@ export function ReviewWorkspace({
       </CollapsibleReviewSection>
 
       <CollapsibleReviewSection
+        id="active-output-profile-layer"
         title="Active output profile"
         subtitle="Open this when you want to check destination formatting and export-shaping rules."
         toneClassName="border-sky-200 bg-sky-50 text-sky-950"
@@ -3352,75 +5421,139 @@ export function ReviewWorkspace({
               This draft is currently being shaped for a specific output target. Keep this visible while reviewing so formatting cleanup does not quietly become a content change.
             </p>
           </div>
-          <div className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-medium text-sky-900">
-            Export layer only
+          <div className="flex flex-wrap gap-2">
+            <div className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-medium text-sky-900">
+              Export layer only
+            </div>
+            <InlineMetric label="highlight" value={activeOutputProfileHighlights.length} />
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {activeOutputProfileHighlights.map((item) => (
-            <span key={item} className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-medium text-sky-900">
-              {item}
-            </span>
-          ))}
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <div className="rounded-lg border border-sky-200 bg-white p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-sky-900">Provider-facing rule</div>
-            <p className="mt-1 text-sm text-sky-900">
-              Destination cleanup can simplify punctuation, structure, and formatting. It should not upgrade certainty, erase timeline nuance, or fill missing regimen details.
-            </p>
+        <details className="group mt-4 rounded-[18px] border border-sky-200/20 bg-[rgba(255,255,255,0.08)] p-3">
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-sky-900">Profile highlights</div>
+                <p className="mt-1 text-xs text-sky-800">Active output profile details and cleanup guidance.</p>
+              </div>
+              <OptionalBadge className="border-sky-200 bg-sky-50 text-sky-900" />
+            </div>
+          </summary>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {activeOutputProfileHighlights.map((item) => (
+              <span key={item} className="rounded-full border border-sky-200/30 bg-white/70 px-3 py-1 text-xs font-medium text-sky-900">
+                {item}
+              </span>
+            ))}
           </div>
-          <div className="rounded-lg border border-sky-200 bg-white p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-sky-900">Current review emphasis</div>
-            <p className="mt-1 text-sm text-sky-900">
-              Check that the note still reads truthfully for the intended destination before trusting a clean export. If content feels more certain than source, fix the draft first and export second.
-            </p>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded-[18px] border border-sky-200/30 bg-white/60 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-sky-900">Provider-facing rule</div>
+              <p className="mt-1 text-sm text-sky-900">
+                Destination cleanup can simplify punctuation, structure, and formatting. It should not upgrade certainty, erase timeline nuance, or fill missing regimen details.
+              </p>
+            </div>
+            <div className="rounded-[18px] border border-sky-200/30 bg-white/60 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-sky-900">Current review emphasis</div>
+              <p className="mt-1 text-sm text-sky-900">
+                Check that the note still reads truthfully for the intended destination before trusting a clean export. If content feels more certain than source, fix the draft first and export second.
+              </p>
+            </div>
           </div>
-        </div>
+        </details>
       </CollapsibleReviewSection>
 
-      <div className="mb-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Template</div>
-          <div className="mt-2 text-sm font-medium text-ink">{session.template}</div>
+      <CollapsibleReviewSection
+        id="draft-snapshot-layer"
+        title="Draft snapshot"
+        subtitle="Open this for the setup details and review counts behind the current draft."
+        toneClassName="border-cyan-200/12 bg-[rgba(7,18,32,0.82)] text-cyan-50"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm font-semibold text-white">Draft snapshot</div>
+          <div className="flex flex-wrap gap-2">
+            <InlineMetric label="source words" value={sourceWordCount} />
+            <InlineMetric label="draft words" value={draftWordCount} />
+            <InlineMetric label="section" value={draftSections.length || 1} />
+          </div>
         </div>
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Preset</div>
-          <div className="mt-2 text-sm font-medium text-ink">{session.presetName || 'No saved preset'}</div>
-          {session.selectedPresetId ? <div className="mt-1 text-xs text-muted">{session.selectedPresetId}</div> : null}
-        </div>
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Output scope</div>
-          <div className="mt-2 text-sm font-medium text-ink">{session.outputScope || 'full-note'}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Output style</div>
-          <div className="mt-2 text-sm font-medium text-ink">{session.outputStyle}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Format</div>
-          <div className="mt-2 text-sm font-medium text-ink">{session.format}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm md:col-span-2 xl:col-span-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Planned sections</div>
-          <div className="mt-2 text-sm font-medium text-ink">{sectionPlan.sections.length ? sectionPlan.sections.map((section) => SECTION_LABELS[section]).join(', ') : 'No explicit section plan recorded'}</div>
-          <div className="mt-1 text-xs text-muted">Standalone MSE required for this scope: {sectionPlan.requiresStandaloneMse ? 'Yes' : 'No'}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm md:col-span-2 xl:col-span-2">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Source sections</div>
-          <div className="mt-2 text-sm font-medium text-ink">{sourceSectionLabels.length ? sourceSectionLabels.join(', ') : 'None recorded'}</div>
-        </div>
-      </div>
-
-      {session.customInstructions?.trim() ? (
-        <div className="mb-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900">
-          <div className="font-semibold">Provider-specific saved preferences used for this draft</div>
-          <div className="mt-1 whitespace-pre-wrap">{session.customInstructions.trim()}</div>
-        </div>
-      ) : null}
+        <details className="group mt-4 rounded-[20px] border border-white/10 bg-[rgba(255,255,255,0.04)] p-3">
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Setup details</div>
+                <p className="mt-1 text-xs text-cyan-50/62">Template, preset, output shape, and source-section setup.</p>
+              </div>
+              <OptionalBadge />
+            </div>
+          </summary>
+          <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <div className="workspace-subpanel rounded-[18px] p-4 shadow-[0_14px_34px_rgba(2,8,18,0.16)]">
+              <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Template</div>
+              <div className="mt-2 text-sm font-medium text-white">{session.template}</div>
+            </div>
+            <div className="workspace-subpanel rounded-[18px] p-4 shadow-[0_14px_34px_rgba(2,8,18,0.16)]">
+              <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Preset</div>
+              <div className="mt-2 text-sm font-medium text-white">{session.presetName || 'No saved preset'}</div>
+              {session.selectedPresetId ? <div className="mt-1 text-xs text-cyan-50/60">{session.selectedPresetId}</div> : null}
+            </div>
+            <div className="workspace-subpanel rounded-[18px] p-4 shadow-[0_14px_34px_rgba(2,8,18,0.16)]">
+              <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Output scope</div>
+              <div className="mt-2 text-sm font-medium text-white">{session.outputScope || 'full-note'}</div>
+            </div>
+            <div className="workspace-subpanel rounded-[18px] p-4 shadow-[0_14px_34px_rgba(2,8,18,0.16)]">
+              <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Output style</div>
+              <div className="mt-2 text-sm font-medium text-white">{session.outputStyle}</div>
+            </div>
+            <div className="workspace-subpanel rounded-[18px] p-4 shadow-[0_14px_34px_rgba(2,8,18,0.16)]">
+              <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Format</div>
+              <div className="mt-2 text-sm font-medium text-white">{session.format}</div>
+            </div>
+            <div className="workspace-subpanel rounded-[18px] p-4 shadow-[0_14px_34px_rgba(2,8,18,0.16)] md:col-span-2 xl:col-span-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Planned sections</div>
+              <div className="mt-2 text-sm font-medium text-white">{sectionPlan.sections.length ? sectionPlan.sections.map((section) => SECTION_LABELS[section]).join(', ') : 'No explicit section plan recorded'}</div>
+              <div className="mt-1 text-xs text-cyan-50/60">Standalone MSE required for this scope: {sectionPlan.requiresStandaloneMse ? 'Yes' : 'No'}</div>
+            </div>
+            <div className="workspace-subpanel rounded-[18px] p-4 shadow-[0_14px_34px_rgba(2,8,18,0.16)] md:col-span-2 xl:col-span-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Source sections</div>
+              <div className="mt-2 text-sm font-medium text-white">{sourceSectionLabels.length ? sourceSectionLabels.join(', ') : 'None recorded'}</div>
+            </div>
+          </div>
+          {session.customInstructions?.trim() ? (
+            <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900">
+              <div className="font-semibold">Provider-specific saved preferences used for this draft</div>
+              <div className="mt-1 whitespace-pre-wrap">{session.customInstructions.trim()}</div>
+            </div>
+          ) : null}
+        </details>
+        <details className="group mt-4 rounded-[20px] border border-white/10 bg-[rgba(255,255,255,0.04)] p-3">
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Review counts</div>
+                <p className="mt-1 text-xs text-cyan-50/62">Current review-status counts behind this draft.</p>
+              </div>
+              <OptionalBadge />
+            </div>
+          </summary>
+          <div className="mt-3 grid gap-4 md:grid-cols-4 xl:grid-cols-5">
+            <CompactMetric label="Source words" value={sourceWordCount} />
+            <CompactMetric label="Draft words" value={draftWordCount} />
+            <CompactMetric label="Draft sections" value={draftSections.length || 1} />
+            <CompactMetric label="Approved sections" value={reviewCounts.approved} />
+            <CompactMetric label="Needs review" value={reviewCounts.needsReview} />
+            <CompactMetric label="Confirmed evidence" value={reviewCounts.confirmedEvidence} />
+            <CompactMetric label="Reviewer notes" value={reviewCounts.reviewerComments} />
+          </div>
+        </details>
+      </CollapsibleReviewSection>
 
       {lanePreferenceSuggestion ? (
-        <div className="aurora-panel mb-4 rounded-[24px] p-4">
+        <CollapsibleReviewSection
+          id="lane-preference-layer"
+          title="Review insight"
+          subtitle="Open this if you want to turn a repeated finalized setup back into a compose preference."
+          toneClassName="border-cyan-200 bg-sky-950 text-cyan-50"
+        >
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="text-sm font-semibold text-white">Review insight</div>
@@ -3428,26 +5561,37 @@ export function ReviewWorkspace({
                 You have finalized this {session.noteType.toLowerCase()} lane with the same section setup {lanePreferenceSuggestion.count} times. If that is intentional, Veranote can send it back into compose as a reusable note preference instead of making you rebuild it each time.
               </p>
             </div>
-            <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium">
+            <div className="workspace-chip rounded-full px-3 py-1 text-xs font-medium text-cyan-50">
               Finalized pattern
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50">
-              Scope: {lanePreferenceSuggestion.outputScope.replace('-', ' ')}
-            </span>
-            <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50">
-              Style: {lanePreferenceSuggestion.outputStyle}
-            </span>
-            <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50">
-              Format: {lanePreferenceSuggestion.format}
-            </span>
-            {lanePreferenceSuggestion.requestedSections.length ? (
+          <details className="group mt-4 rounded-lg border border-cyan-200/20 bg-[rgba(13,30,50,0.74)] p-3">
+            <summary className="cursor-pointer list-none">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-cyan-50">Pattern details</div>
+                  <p className="mt-1 text-xs text-cyan-50/78">Repeated finalized pattern before sending it back to compose.</p>
+                </div>
+                <OptionalBadge className="border-cyan-200/20 bg-[rgba(13,30,50,0.88)] text-cyan-50" />
+              </div>
+            </summary>
+            <div className="mt-3 flex flex-wrap gap-2">
               <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50">
-                Sections: {lanePreferenceSuggestion.requestedSections.map((section) => SECTION_LABELS[section as NoteSectionKey]).join(', ')}
+                Scope: {lanePreferenceSuggestion.outputScope.replace('-', ' ')}
               </span>
-            ) : null}
-          </div>
+              <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50">
+                Style: {lanePreferenceSuggestion.outputStyle}
+              </span>
+              <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50">
+                Format: {lanePreferenceSuggestion.format}
+              </span>
+              {lanePreferenceSuggestion.requestedSections.length ? (
+                <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50">
+                  Sections: {lanePreferenceSuggestion.requestedSections.map((section) => SECTION_LABELS[section as NoteSectionKey]).join(', ')}
+                </span>
+              ) : null}
+            </div>
+          </details>
           <div className="mt-4 flex flex-wrap gap-3">
             <button
               type="button"
@@ -3459,7 +5603,7 @@ export function ReviewWorkspace({
             <button
               type="button"
               onClick={() => {
-                dismissLanePreferenceSuggestion(session.noteType, lanePreferenceSuggestion.key);
+                dismissLanePreferenceSuggestion(session.noteType, lanePreferenceSuggestion.key, resolvedProviderIdentityId);
                 setLanePreferenceSuggestion(null);
               }}
               className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
@@ -3467,77 +5611,117 @@ export function ReviewWorkspace({
               Dismiss
             </button>
           </div>
-        </div>
+        </CollapsibleReviewSection>
       ) : null}
 
-      <div className="mb-6 grid gap-4 md:grid-cols-4 xl:grid-cols-5">
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Source words</div>
-          <div className="mt-2 text-2xl font-semibold text-ink">{sourceWordCount}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Draft words</div>
-          <div className="mt-2 text-2xl font-semibold text-ink">{draftWordCount}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Draft sections</div>
-          <div className="mt-2 text-2xl font-semibold text-ink">{draftSections.length || 1}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Approved sections</div>
-          <div className="mt-2 text-2xl font-semibold text-ink">{reviewCounts.approved}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Needs review</div>
-          <div className="mt-2 text-2xl font-semibold text-ink">{reviewCounts.needsReview}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Confirmed evidence links</div>
-          <div className="mt-2 text-2xl font-semibold text-ink">{reviewCounts.confirmedEvidence}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Section reviewer notes</div>
-          <div className="mt-2 text-2xl font-semibold text-ink">{reviewCounts.reviewerComments}</div>
-        </div>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[1fr_1.3fr_0.9fr]">
-        <section id="source-evidence-layer" className="rounded-xl border border-border bg-white p-5 shadow-sm">
-          <div className="flex items-start justify-between gap-3">
+      <CollapsibleReviewSection
+        id="source-evidence-layer"
+        title="Source evidence and finishing tools"
+        subtitle="Open this when you want the source block browser, uncertainty tools, export preview, or snapshot panels."
+        toneClassName="border-cyan-200/12 bg-[rgba(7,18,32,0.82)] text-cyan-50"
+      >
+      <div className="grid gap-6 2xl:grid-cols-[1.2fr_0.8fr]">
+        <section className="workspace-subpanel rounded-[24px] p-5 shadow-[0_22px_54px_rgba(2,8,18,0.22)]">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <h2 className="text-lg font-semibold">Source Evidence</h2>
-              <p className="mt-1 text-sm text-muted">Suggested evidence only. The app highlights likely source blocks for the section you are reviewing; you still decide whether they truly support the draft and can mark reviewer-confirmed links.</p>
+              <h2 className="text-lg font-semibold text-white">Source evidence</h2>
+              <p className="mt-1 text-sm text-cyan-50/68">Suggested evidence only. Use this to inspect likely source blocks for the section you are reviewing.</p>
             </div>
-            <div className="rounded-full bg-paper px-3 py-1 text-xs font-medium text-muted">Reference only</div>
+            <div className="flex flex-wrap gap-2">
+              <div className="workspace-chip rounded-full px-3 py-1 text-xs font-medium text-cyan-50/72">Reference only</div>
+              <InlineMetric label="blocks" value={sourceBlocks.length} />
+              {focusedSectionEvidence ? <InlineMetric label="focused links" value={focusedSectionEvidence.links.length} /> : null}
+            </div>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button onClick={() => setActiveSourceKey('combined')} className={`rounded-full px-3 py-1.5 text-xs font-medium ${activeSourceKey === 'combined' ? 'bg-accent text-white' : 'bg-paper text-muted'}`}>Combined</button>
-            {sourcePanels.map((panel) => (
-              <button
-                key={panel.key}
-                onClick={() => setActiveSourceKey(panel.key)}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium ${activeSourceKey === panel.key ? 'bg-accent text-white' : 'bg-paper text-muted'}`}
-              >
-                {panel.label}
-              </button>
-            ))}
-          </div>
-          <div className="mt-4 rounded-lg border border-border bg-paper p-4">
-            <div className="flex items-start justify-between gap-3">
+          <div className="workspace-panel mt-4 rounded-[22px] p-4">
+            <div className="flex flex-col gap-3 border-b border-white/10 pb-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <div className="text-sm font-semibold text-ink">{activeSourcePanel.label}</div>
-                <p className="mt-1 text-xs text-muted">{activeSourcePanel.hint}</p>
+                <div className="text-sm font-semibold text-white">{activeSourcePanel.label}</div>
+                <p className="mt-1 text-xs text-cyan-50/62">{activeSourcePanel.hint}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button onClick={() => setActiveSourceKey('combined')} className={`rounded-full px-3 py-1.5 text-xs font-medium ${activeSourceKey === 'combined' ? 'bg-accent text-white shadow-[0_10px_24px_rgba(2,8,18,0.22)]' : 'workspace-chip text-cyan-50/74'}`}>Combined</button>
+                  {sourcePanels.map((panel) => (
+                    <button
+                      key={panel.key}
+                      onClick={() => setActiveSourceKey(panel.key)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium ${activeSourceKey === panel.key ? 'bg-accent text-white shadow-[0_10px_24px_rgba(2,8,18,0.22)]' : 'workspace-chip text-cyan-50/74'}`}
+                    >
+                      {panel.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               {focusedSectionEvidence ? (
-                <div className="max-w-[14rem] rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] text-sky-900">
+                <div className="max-w-[14rem] rounded-[18px] border border-sky-300/20 bg-[rgba(56,189,248,0.12)] px-3 py-2 text-[11px] text-sky-50">
                   <div className="font-semibold">Focused review section</div>
                   <div className="mt-1">{focusedSectionEvidence.sectionHeading}</div>
                 </div>
               ) : null}
             </div>
+            {(focusedSectionHeading || focusedEvidenceBlock) ? (
+              <div className="sticky top-2 z-10 mt-3 rounded-[18px] border border-sky-300/20 bg-[rgba(56,189,248,0.12)] px-3 py-2 backdrop-blur">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-50">Focused context</div>
+                  <div className="flex flex-wrap gap-2">
+                    {focusedSectionHeading ? (
+                      <span className="rounded-full border border-sky-200/20 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-sky-50">
+                        Section: {focusedSectionHeading}
+                      </span>
+                    ) : null}
+                    {focusedEvidenceBlock ? (
+                      <span className="rounded-full border border-sky-200/20 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-sky-50">
+                        Block: {focusedEvidenceBlock.sourceLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {totalDictationInsertionCount ? (
+              <div className="mt-3 rounded-[18px] border border-emerald-300/18 bg-[rgba(16,185,129,0.08)] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-100/78">Dictation provenance</div>
+                    <div className="mt-1 text-sm text-emerald-50">
+                      {activeSourceKey === 'combined'
+                        ? `${totalDictationInsertionCount} dictated source segment${totalDictationInsertionCount === 1 ? '' : 's'} carried into review.`
+                        : `${activeDictationInsertions.length} dictated segment${activeDictationInsertions.length === 1 ? '' : 's'} inserted into this source lane.`}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <ProvenanceChip label="Dictation insertions" />
+                    <InlineMetric label="dictated" value={activeSourceKey === 'combined' ? totalDictationInsertionCount : activeDictationInsertions.length} />
+                  </div>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {(activeSourceKey === 'combined' ? flattenDictationInsertions(dictationInsertions) : activeDictationInsertions).slice(0, 4).map((record) => (
+                    <div key={record.transactionId} className="rounded-[14px] border border-white/10 bg-white/5 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-emerald-50/74">
+                          {record.targetSection.replace(/([A-Z])/g, ' $1').trim()}
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/8 px-2 py-1 text-[11px] font-medium text-cyan-50/74">
+                          {record.provider}
+                        </span>
+                        {record.reviewFlags.map((flag) => (
+                          <span key={`${record.transactionId}-${flag.flagType}`} className="rounded-full border border-rose-300/18 bg-[rgba(244,63,94,0.12)] px-2 py-1 text-[11px] font-medium text-rose-50">
+                            {flag.flagType.replace(/_/g, ' ')}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-2 whitespace-pre-wrap text-sm text-white">{record.text}</div>
+                      <div className="mt-2 text-xs text-cyan-50/60">
+                        Inserted {new Date(record.insertedAt).toLocaleString()} • {record.transactionId}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             {activeSourceKey === 'combined' ? (
-              <div className="mt-4 space-y-3 max-h-[540px] overflow-auto">
+              <div className="mt-3 space-y-3 max-h-[540px] overflow-auto">
                 {sourceBlocks.length ? sourceBlocks.map((block) => {
                   const matchingLink = focusedSectionEvidence?.links.find((link) => link.blockId === block.id);
                   const isFocused = focusedEvidenceBlockId === block.id;
@@ -3546,7 +5730,7 @@ export function ReviewWorkspace({
                   return (
                     <div
                       key={block.id}
-                      className={`w-full rounded-lg border p-3 text-left ${isFocused ? 'border-sky-300 bg-sky-50' : 'border-border bg-white'}`}
+                      className={`w-full rounded-[18px] border p-3 text-left ${isFocused ? 'border-sky-300/30 bg-[rgba(56,189,248,0.1)]' : 'border-white/10 bg-[rgba(255,255,255,0.04)]'}`}
                     >
                       <button
                         type="button"
@@ -3557,37 +5741,37 @@ export function ReviewWorkspace({
                         className="w-full text-left"
                       >
                         <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-muted">{block.sourceLabel}</div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-cyan-50/62">{block.sourceLabel}</div>
                           {matchingLink ? (
                             <div className={`rounded-full border px-2 py-1 text-[11px] font-medium ${evidenceSignalClasses[matchingLink.signal]}`}>
                               {getSignalLabel(matchingLink.signal)}
                             </div>
                           ) : null}
                         </div>
-                        <div className="mt-2 text-sm text-ink whitespace-pre-wrap">
+                        <div className="mt-2 text-sm text-white whitespace-pre-wrap">
                           {highlightParts.map((part, index) => (
                             <span key={`${block.id}-${index}`} className={part.highlighted ? 'rounded bg-yellow-100 px-0.5' : ''}>{part.text}</span>
                           ))}
                         </div>
                         {matchingLink?.overlapTerms.length ? (
-                          <div className="mt-2 text-xs text-muted">Matched terms: {matchingLink.overlapTerms.join(', ')}</div>
+                          <div className="mt-2 text-xs text-cyan-50/60">Matched terms: {matchingLink.overlapTerms.join(', ')}</div>
                         ) : null}
                       </button>
                       {focusedSectionAnchor ? (
                         <button
                           type="button"
                           onClick={() => handleConfirmedEvidenceToggle(focusedSectionAnchor, block.id)}
-                          className={`mt-3 rounded-full border px-2 py-1 text-[11px] font-medium ${getConfirmedEvidenceBlockIds(session, focusedSectionAnchor).includes(block.id) ? 'border-violet-200 bg-violet-50 text-violet-800' : 'border-border bg-paper text-muted'}`}
+                          className={`mt-3 rounded-full border px-2 py-1 text-[11px] font-medium ${getConfirmedEvidenceBlockIds(session, focusedSectionAnchor).includes(block.id) ? 'border-violet-200 bg-violet-50 text-violet-800' : 'border-white/10 bg-white/6 text-cyan-50/72'}`}
                         >
                           {getConfirmedEvidenceBlockIds(session, focusedSectionAnchor).includes(block.id) ? 'Remove reviewer confirmation' : 'Mark reviewer-confirmed for focused section'}
                         </button>
                       ) : null}
                     </div>
                   );
-                }) : <div className="text-sm text-muted">No content in this source section.</div>}
+                }) : <div className="text-sm text-cyan-50/62">No content in this source section.</div>}
               </div>
             ) : (
-              <div className="mt-4 space-y-3 max-h-[540px] overflow-auto">
+              <div className="mt-3 space-y-3 max-h-[540px] overflow-auto">
                 {sourceBlocks.filter((block) => block.sourceKey === activeSourceKey).length ? sourceBlocks.filter((block) => block.sourceKey === activeSourceKey).map((block) => {
                   const matchingLink = focusedSectionEvidence?.links.find((link) => link.blockId === block.id);
                   const isFocused = focusedEvidenceBlockId === block.id;
@@ -3596,7 +5780,7 @@ export function ReviewWorkspace({
                   return (
                     <div
                       key={block.id}
-                      className={`w-full rounded-lg border p-3 text-left ${isFocused ? 'border-sky-300 bg-sky-50' : 'border-border bg-white'}`}
+                      className={`w-full rounded-[18px] border p-3 text-left ${isFocused ? 'border-sky-300/30 bg-[rgba(56,189,248,0.1)]' : 'border-white/10 bg-[rgba(255,255,255,0.04)]'}`}
                     >
                       <button
                         type="button"
@@ -3604,315 +5788,53 @@ export function ReviewWorkspace({
                         className="w-full text-left"
                       >
                         <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-muted">{block.sourceLabel}</div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-cyan-50/62">{block.sourceLabel}</div>
                           {matchingLink ? (
                             <div className={`rounded-full border px-2 py-1 text-[11px] font-medium ${evidenceSignalClasses[matchingLink.signal]}`}>
                               {getSignalLabel(matchingLink.signal)}
                             </div>
                           ) : null}
                         </div>
-                        <div className="mt-2 text-sm text-ink whitespace-pre-wrap">
+                        <div className="mt-2 text-sm text-white whitespace-pre-wrap">
                           {highlightParts.map((part, index) => (
                             <span key={`${block.id}-${index}`} className={part.highlighted ? 'rounded bg-yellow-100 px-0.5' : ''}>{part.text}</span>
                           ))}
                         </div>
                         {matchingLink?.overlapTerms.length ? (
-                          <div className="mt-2 text-xs text-muted">Matched terms: {matchingLink.overlapTerms.join(', ')}</div>
+                          <div className="mt-2 text-xs text-cyan-50/60">Matched terms: {matchingLink.overlapTerms.join(', ')}</div>
                         ) : null}
                       </button>
                       {focusedSectionAnchor ? (
                         <button
                           type="button"
                           onClick={() => handleConfirmedEvidenceToggle(focusedSectionAnchor, block.id)}
-                          className={`mt-3 rounded-full border px-2 py-1 text-[11px] font-medium ${getConfirmedEvidenceBlockIds(session, focusedSectionAnchor).includes(block.id) ? 'border-violet-200 bg-violet-50 text-violet-800' : 'border-border bg-paper text-muted'}`}
+                          className={`mt-3 rounded-full border px-2 py-1 text-[11px] font-medium ${getConfirmedEvidenceBlockIds(session, focusedSectionAnchor).includes(block.id) ? 'border-violet-200 bg-violet-50 text-violet-800' : 'border-white/10 bg-white/6 text-cyan-50/72'}`}
                         >
                           {getConfirmedEvidenceBlockIds(session, focusedSectionAnchor).includes(block.id) ? 'Remove reviewer confirmation' : 'Mark reviewer-confirmed for focused section'}
                         </button>
                       ) : null}
                     </div>
                   );
-                }) : <div className="text-sm text-muted">No content in this source section.</div>}
+                }) : <div className="text-sm text-cyan-50/62">No content in this source section.</div>}
               </div>
             )}
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold">Draft Note</h2>
-              <p className="mt-1 text-sm text-muted">Review carefully before use. Click a section to pull up likely supporting source blocks, then decide whether the support is real, partial, or missing.</p>
-            </div>
-            <div className="rounded-full bg-paper px-3 py-1 text-xs font-medium text-muted">
-              {session.mode === 'live' ? 'Live generation' : 'Draft output. Clinician review required before use.'}
-            </div>
-          </div>
-          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            Do not let polished wording trick you into trusting unsupported content. If a detail is absent, uncertain, or contradictory in source, the draft should stay absent, uncertain, or clearly flagged.
-          </div>
-          <div className="mt-4 rounded-lg border border-border bg-paper p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted">Draft section navigator</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {draftSections.length ? draftSections.map((section) => {
-                const reviewState = reconciledSectionReviewState[section.anchor];
-                return (
-                  <a
-                    key={section.anchor}
-                    href={`#${section.anchor}`}
-                    onClick={() => setFocusedSectionAnchor(section.anchor)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-medium ${reviewStatusClasses[reviewState?.status || 'unreviewed']} ${focusedSectionAnchor === section.anchor ? 'ring-2 ring-sky-200' : ''}`}
-                  >
-                    {section.heading}
-                  </a>
-                );
-              }) : (
-                <div className="text-sm text-muted">No section headings detected yet. The note is still fully editable below.</div>
-              )}
-            </div>
-          </div>
-          <textarea ref={draftTextareaRef} value={draftText} onChange={(event) => setDraftText(event.target.value)} className="mt-4 min-h-[520px] w-full rounded-lg border border-border p-4" />
-          <div className="mt-4 rounded-lg border border-border bg-paper p-4">
-            <div className="text-sm font-semibold text-ink">Section review cues</div>
-            <div className="mt-3 space-y-3">
-              {draftSections.length ? draftSections.map((section) => {
-                const reviewState = reconciledSectionReviewState[section.anchor];
-                const evidence = sectionEvidenceMap[section.anchor];
-                const sectionClaimSupportCues = buildSectionClaimSupportCues({
-                  sectionHeading: section.heading,
-                  sectionBody: section.body,
-                  evidenceLinks: evidence?.links || [],
-                  sourceBlocks,
-                });
-                return (
-                  <div key={section.anchor} id={section.anchor} className={`rounded-lg border bg-white p-3 ${focusedSectionAnchor === section.anchor ? 'border-sky-300 shadow-sm' : 'border-border'}`}>
-                    <div className="flex items-center justify-between gap-3">
-                      <button type="button" onClick={() => setFocusedSectionAnchor(section.anchor)} className="text-left font-medium text-ink">{section.heading}</button>
-                      <div className="flex items-center gap-2">
-                        <div className={`rounded-full border px-2 py-1 text-[11px] font-medium ${reviewStatusClasses[reviewState?.status || 'unreviewed']}`}>
-                          {(reviewState?.status || 'unreviewed').replace('-', ' ')}
-                        </div>
-                        <div className="text-xs text-muted">{countWords(section.body)} words</div>
-                      </div>
-                    </div>
-                    <p className="mt-2 text-sm text-muted">
-                      Verify this section against source before finalizing. Keep only facts, uncertainty, and timing the source actually supports.
-                    </p>
-                    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">Suggested evidence links</div>
-                      <p className="mt-1 text-xs text-muted">Heuristic suggestions only. Use these to review faster, then explicitly confirm the links you actually checked.</p>
-                      {evidence?.links.length ? (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {evidence.links.map((link) => {
-                            const block = sourceBlocks.find((item) => item.id === link.blockId);
-                            if (!block) {
-                              return null;
-                            }
-
-                            return (
-                              <div
-                                key={link.blockId}
-                                className={`rounded-lg border px-3 py-2 text-left text-xs ${evidenceSignalClasses[link.signal]} ${focusedEvidenceBlockId === link.blockId ? 'ring-2 ring-sky-200' : ''}`}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setFocusedSectionAnchor(section.anchor);
-                                    setFocusedEvidenceBlockId(link.blockId);
-                                    setActiveSourceKey(block.sourceKey);
-                                  }}
-                                  className="w-full text-left"
-                                >
-                                  <div className="font-semibold">{block.sourceLabel}</div>
-                                  <div className="mt-1">{getSignalLabel(link.signal)}</div>
-                                  {link.overlapTerms.length ? <div className="mt-1 opacity-80">Matches: {link.overlapTerms.join(', ')}</div> : null}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleConfirmedEvidenceToggle(section.anchor, link.blockId)}
-                                  className={`mt-2 rounded-full border px-2 py-1 font-medium ${getConfirmedEvidenceBlockIds(session, section.anchor).includes(link.blockId) ? 'border-violet-200 bg-violet-50 text-violet-800' : 'border-white/70 bg-white/70 text-slate-700'}`}
-                                >
-                                  {getConfirmedEvidenceBlockIds(session, section.anchor).includes(link.blockId) ? 'Remove reviewer confirmation' : 'Mark reviewer-confirmed'}
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="mt-2 text-sm text-muted">No obvious lexical support found yet. Treat this as a prompt to inspect the source manually, not proof that the section is unsupported.</div>
-                      )}
-                    </div>
-                    {sectionClaimSupportCues.length ? (
-                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Claim support snapshot</div>
-                          <ProvenanceChip label="Section evidence map" />
-                        </div>
-                        <p className="mt-1 text-xs text-muted">
-                          This is a quick source-backing read for the strongest sentences in this section, not a proof engine.
-                        </p>
-                        <div className="mt-2 grid gap-2">
-                          {sectionClaimSupportCues.map((cue) => (
-                            <div key={cue.id} className={`rounded-lg border px-3 py-2 text-xs ${cue.toneClassName}`}>
-                              <div className="font-semibold">{cue.statusLabel}</div>
-                              <div className="mt-1 text-sm">{cue.claimText}</div>
-                              <div className="mt-1">{cue.detail}</div>
-                              <div className="mt-2 rounded-lg border border-white/70 bg-white/70 px-2.5 py-2 text-xs">
-                                <div className="font-semibold">Revision help</div>
-                                <div className="mt-1">{cue.revisionHint}</div>
-                              </div>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => focusDraftSentence(cue.claimText)}
-                                  className="rounded-full border border-current/20 bg-white/80 px-2.5 py-1 font-medium"
-                                >
-                                  Focus sentence in draft
-                                </button>
-                                {cue.statusLabel !== 'Better visible support' ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => replaceDraftSentence(cue.claimText, buildCautiousClaimReplacement(section.heading, cue))}
-                                    className="rounded-full border border-current/20 bg-white/80 px-2.5 py-1 font-medium"
-                                  >
-                                    Replace with cautious wording
-                                  </button>
-                                ) : null}
-                              {cue.topSourceBlockId && cue.topSourceKey ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setFocusedSectionAnchor(section.anchor);
-                                    setFocusedEvidenceBlockId(cue.topSourceBlockId);
-                                    setActiveSourceKey(cue.topSourceKey);
-                                  }}
-                                  className="rounded-full border border-current/20 bg-white/80 px-2.5 py-1 font-medium"
-                                >
-                                  Focus best supporting source block
-                                </button>
-                              ) : null}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {(() => {
-                      const topSourceBlock = evidence?.links[0]
-                        ? sourceBlocks.find((item) => item.id === evidence.links[0]?.blockId)
-                        : null;
-                      const sectionPressureCues = buildSectionPressureCues({
-                        sectionHeading: section.heading,
-                        objectiveCount: objectiveReview.sourceSignals.length + objectiveReview.conflictBullets.length,
-                        highRiskCount: highRiskWarnings.length,
-                        diagnosisCount: draftOnlyDiagnoses.length + diagnosisTimeframeGaps.length + diagnosisNonAutoMapTerms.length + draftDiagnosisAvoidTerms.length,
-                        terminologyCount: reviewFirstAbbreviations.length + draftAvoidTerms.length + draftRiskTerms.length + draftMseTermsNeedingReview.length,
-                        medicationCount: matchedMedicationEntries.length + medicationScaffoldWarnings.length,
-                        encounterCount: encounterSupportWarnings.length + encounterDocumentationChecks.length + medicalNecessitySupport.nationalCues.length + medicalNecessitySupport.louisianaCues.length,
-                        topSourceLabel: topSourceBlock ? `${topSourceBlock.sourceLabel} (${topSourceBlock.id})` : undefined,
-                      });
-
-                      if (!sectionPressureCues.length) {
-                        return null;
-                      }
-
-                      return (
-                        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Warning pressure for this section</div>
-                          <div className="mt-2 grid gap-2">
-                            {sectionPressureCues.map((cue) => (
-                              <button
-                                key={`${section.anchor}-${cue.id}`}
-                                type="button"
-                                onClick={() => handleSectionPressureNavigate({
-                                  sectionAnchor: section.anchor,
-                                  warningFamily: cue.warningFamily,
-                                  sourceBlockId: topSourceBlock?.id,
-                                  sourceKey: topSourceBlock?.sourceKey,
-                                })}
-                                className={`rounded-lg border px-3 py-2 text-left text-xs transition hover:shadow-sm ${cue.toneClassName}`}
-                              >
-                                <div className="font-semibold">{cue.label}</div>
-                                <div className="mt-1">{cue.detail}</div>
-                                <div className="mt-2 font-medium underline underline-offset-2">Jump to related warning layer</div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                    <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50 p-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-violet-900">Reviewer-confirmed evidence</div>
-                      <p className="mt-1 text-xs text-violet-800">This records which source blocks the reviewer chose as relevant support for this section. It documents review work; it does not prove the section is medically correct.</p>
-                      {getConfirmedEvidenceBlockIds(session, section.anchor).length ? (
-                        <div className="mt-2 space-y-2">
-                          {getConfirmedEvidenceBlockIds(session, section.anchor).map((blockId) => {
-                            const block = sourceBlocks.find((item) => item.id === blockId);
-                            if (!block) {
-                              return null;
-                            }
-
-                            return (
-                              <div key={blockId} className="rounded-lg border border-violet-200 bg-white px-3 py-2">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <div className="text-xs font-semibold uppercase tracking-wide text-violet-900">{block.sourceLabel}</div>
-                                    <div className="mt-1 text-sm text-ink whitespace-pre-wrap">{block.text}</div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleConfirmedEvidenceToggle(section.anchor, blockId)}
-                                    className="rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-800"
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="mt-2 text-sm text-violet-900">No reviewer-confirmed evidence recorded for this section yet.</div>
-                      )}
-                    </div>
-                    <div className="mt-3 rounded-lg border border-border bg-paper p-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">Reviewer note / comment</div>
-                      <p className="mt-1 text-xs text-muted">Use this for section-specific concerns, rationale, or what still needs manual confirmation.</p>
-                      <textarea
-                        value={reviewState?.reviewerComment || ''}
-                        onChange={(event) => handleReviewerCommentChange(section.anchor, event.target.value)}
-                        className="mt-2 min-h-[90px] w-full rounded-lg border border-border p-3 text-sm"
-                        placeholder="Example: wording okay, but med-list conflict still needs explicit mention in final note."
-                      />
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button onClick={() => handleSectionStatusChange(section.anchor, 'unreviewed')} className="rounded-full border border-border bg-white px-3 py-1.5 text-xs font-medium text-ink">Mark unreviewed</button>
-                      <button onClick={() => handleSectionStatusChange(section.anchor, 'approved')} className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800">Approve section</button>
-                      <button onClick={() => handleSectionStatusChange(section.anchor, 'needs-review')} className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900">Needs review</button>
-                    </div>
-                    {reviewState?.updatedAt ? (
-                      <div className="mt-2 text-xs text-muted">Updated {new Date(reviewState.updatedAt).toLocaleString()}</div>
-                    ) : null}
-                  </div>
-                );
-              }) : (
-                <div className="rounded-lg bg-white p-3 text-sm text-muted">Add labeled headings if you want section-by-section review anchors here.</div>
-              )}
-            </div>
-          </div>
-        </section>
-
         <section className="grid gap-6">
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-amber-950">Missing / Unclear Items</h2>
-            <p className="mt-1 text-sm text-amber-900">These are review prompts, not completed documentation. They are here to keep uncertainty visible instead of letting polished wording hide what the source never actually said.</p>
-            <ul className="mt-4 space-y-3 text-sm text-ink">
+          <CollapsibleReviewSection
+            title="Missing or unclear items"
+            subtitle="Open this only when you need uncertainty prompts or rewrite tools."
+            toneClassName="border-amber-200 bg-amber-50 text-amber-950"
+          >
+            <ul className="space-y-3 text-sm text-ink">
               {missingInfoFlags.length ? missingInfoFlags.map((flag) => (
                 <li key={flag} className="rounded-lg border border-amber-200 bg-white p-3">{flag}</li>
-              )) : <li className="rounded-lg border border-amber-200 bg-white p-3 text-muted">No missing/unclear prompts were generated from this source set.</li>}
+              )) : <li className="rounded-lg border border-amber-200 bg-white p-3 text-muted">No missing or unclear prompts were generated from this source set.</li>}
             </ul>
             <div id="rewrite-tools-layer" className="mt-6 border-t border-amber-200 pt-4">
-              <h3 className="font-medium text-amber-950">Rewrite Tools</h3>
-              <p className="mt-1 text-sm text-amber-900">Use rewrite tools to reduce wording drift, not to make the note sound more complete, certain, or clinically tidy than the source supports.</p>
+              <h3 className="font-medium text-amber-950">Rewrite tools</h3>
+              <p className="mt-1 text-sm text-amber-900">Use these to reduce wording drift, not to make the note sound more complete than the source.</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button onClick={() => handleRewrite('more-concise')} disabled={isRewriting !== null} className="rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:opacity-60">{isRewriting === 'more-concise' ? 'Rewriting...' : 'More concise'}</button>
                 <button onClick={() => handleRewrite('more-formal')} disabled={isRewriting !== null} className="rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:opacity-60">{isRewriting === 'more-formal' ? 'Rewriting...' : 'More formal'}</button>
@@ -3920,11 +5842,11 @@ export function ReviewWorkspace({
                 <button onClick={() => handleRewrite('regenerate-full-note')} disabled={isRewriting !== null} className="rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:opacity-60">{isRewriting === 'regenerate-full-note' ? 'Rewriting...' : 'Regenerate full note'}</button>
               </div>
             </div>
-          </div>
+          </CollapsibleReviewSection>
 
           <CollapsibleReviewSection
             title="Review checklist"
-            subtitle="Use this as a final manual check before finishing the note."
+            subtitle="Open this for a final manual check before finishing the note."
             toneClassName="border-border bg-white text-ink"
           >
             <h2 className="text-lg font-semibold">Review Checklist</h2>
@@ -3942,98 +5864,12 @@ export function ReviewWorkspace({
             </div>
           </CollapsibleReviewSection>
 
-          <div className="rounded-xl border border-border bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Finish Review and Export</h2>
-            <div className="mt-4 flex items-center gap-3">
-              <span className={`rounded-full border px-3 py-1 text-xs font-medium ${exportReadiness.ready ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-                {exportReadiness.ready ? 'ready to export' : 'review still open'}
-              </span>
-              <span className="small-muted">
-                Final note copy/export stays locked until detected sections are either approved or intentionally sent back for more review.
-              </span>
-            </div>
-            <div className="mt-4 space-y-3 text-sm text-ink">
-              {exportReadiness.blockers.length ? (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <div className="font-medium text-amber-950">Blockers</div>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-900">
-                    {exportReadiness.blockers.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">
-                  All detected sections have been reviewed. Final note copy/export is available.
-                </div>
-              )}
-
-              {exportReadiness.warnings.length ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="font-medium text-slate-900">Still worth checking</div>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-800">
-                    {exportReadiness.warnings.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="mt-5 grid gap-4">
-              <div className="rounded-lg border border-border bg-paper p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted">Finish actions</div>
-                <p className="mt-1 text-sm text-muted">
-                  Use these only after the section review work feels complete and the note still reads truthfully against source.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-3">
-                  <button onClick={handleCopy} disabled={!exportReadiness.ready} className="rounded-lg bg-accent px-5 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">Copy Note</button>
-                  <button onClick={handleExportNote} disabled={!exportReadiness.ready} className="rounded-lg border border-border bg-white px-5 py-3 font-medium disabled:cursor-not-allowed disabled:opacity-60">Export .txt</button>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-border bg-paper p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted">Secondary actions</div>
-                <p className="mt-1 text-sm text-muted">
-                  These help you preserve work or move between views, but they are not the main finish path.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-3">
-                  <button onClick={handleSaveDraft} className="rounded-lg border border-border bg-white px-5 py-3 font-medium">Save Draft</button>
-                  <button onClick={handleExportReviewBundle} className="rounded-lg border border-border bg-white px-5 py-3 font-medium">Export Review Bundle</button>
-                  {embedded ? (
-                    <>
-                      <button onClick={onBackToEdit} className="rounded-lg border border-border bg-white px-5 py-3 font-medium">Back to Edit</button>
-                      <Link href="/dashboard/review" className="rounded-lg border border-border bg-white px-5 py-3 font-medium">Open Full Review Page</Link>
-                    </>
-                  ) : (
-                    <>
-                      <Link href="/dashboard/new-note" className="rounded-lg border border-border bg-white px-5 py-3 font-medium">Back to Edit</Link>
-                      <Link href="/dashboard/new-note" className="rounded-lg border border-border bg-white px-5 py-3 font-medium">Start New Note</Link>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {(copyMessage || exportMessage || rewriteMessage || saveMessage) ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted">Recent actions</div>
-                  <div className="mt-2 space-y-1">
-                    {copyMessage ? <div>{copyMessage}</div> : null}
-                    {exportMessage ? <div>{exportMessage}</div> : null}
-                    {rewriteMessage ? <div>{rewriteMessage}</div> : null}
-                    {saveMessage ? <div>{saveMessage}</div> : null}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-sky-950">Export Profile Preview</h2>
-            <p className="mt-1 text-sm text-sky-900">
-              This is the export layer, not the clinical-truth layer. Review how destination cleanup will shape the note before you copy or export it.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
+          <CollapsibleReviewSection
+            title="Export profile preview"
+            subtitle="Open this only if you want to inspect destination cleanup before export."
+            toneClassName="border-sky-200 bg-sky-50 text-sky-950"
+          >
+            <div className="flex flex-wrap gap-2">
               {exportConstraintList.map((item) => (
                 <span key={item} className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-medium text-sky-900">
                   {item}
@@ -4049,12 +5885,14 @@ export function ReviewWorkspace({
                 {exportPreviewText || 'No draft text available yet.'}
               </pre>
             </div>
-          </div>
+          </CollapsibleReviewSection>
 
-          <div className="rounded-xl border border-border bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Copilot / Reminder Panel</h2>
-            <p className="mt-1 text-sm text-muted">Documentation nudges based on the current source material. They are intentionally suggestive, not authoritative.</p>
-            <div className="mt-4 space-y-3">
+          <CollapsibleReviewSection
+            title="Copilot nudges"
+            subtitle="Open this for optional documentation reminders from the current source material."
+            toneClassName="border-border bg-white text-ink"
+          >
+            <div className="space-y-3">
               {copilotSuggestions.length ? (
                 copilotSuggestions.map((suggestion) => (
                   <div key={`${suggestion.title}-${suggestion.detail}`} className={`rounded-lg border p-3 text-sm ${severityClasses[suggestion.severity]}`}>
@@ -4067,9 +5905,11 @@ export function ReviewWorkspace({
                 <div className="rounded-lg bg-paper p-3 text-sm text-muted">No extra copilot nudges were triggered from the current source material.</div>
               )}
             </div>
-          </div>
+          </CollapsibleReviewSection>
         </section>
       </div>
+      </CollapsibleReviewSection>
+      </CollapsibleReviewSection>
     </>
   );
 }

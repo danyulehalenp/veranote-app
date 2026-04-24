@@ -51,6 +51,29 @@ Prototype use only. Use fake or de-identified data unless running in an approved
 4. Run `npm run dev`
 5. Open `http://localhost:3000`
 
+## Beta provider sign-in setup
+For controlled beta access, configure the sign-in layer before sharing the app outside internal testing.
+
+Required environment variables:
+- `AUTH_SECRET` — long random secret for session signing
+- `VERANOTE_BETA_ACCESS_CODE` — shared fallback beta access code
+
+Optional environment variable:
+- `VERANOTE_BETA_ACCOUNT_CODES` — JSON object mapping seeded provider account ids or emails to provider-specific access codes
+
+Example:
+
+```env
+AUTH_SECRET=replace-with-a-long-random-secret
+VERANOTE_BETA_ACCESS_CODE=replace-with-a-shared-beta-code
+VERANOTE_BETA_ACCOUNT_CODES={"account-brandy-norris-beta":"replace-with-brandy-code","stacey.creel@veranote-beta.local":"replace-with-stacey-code"}
+```
+
+Behavior:
+- invited beta providers sign in at `/sign-in`
+- external beta mode scopes provider data to the signed-in account
+- internal provider switching remains hidden unless internal mode is enabled
+
 ## Current behavior
 - If `OPENAI_API_KEY` is present, the app uses prompt-based model generation.
 - If no key is present, the app falls back to local mock generation so the workflow still works.

@@ -118,6 +118,19 @@ export function getDefaultPresetCatalog(): NotePreset[] {
     },
     {
       ...buildDefaultPresetForNoteType('Outpatient Psych Follow-Up'),
+      id: 'preset-psychiatry-follow-up-hpi-only',
+      name: 'Psychiatry Follow-Up - HPI Only',
+      noteType: 'Psychiatry follow-up',
+      outputScope: 'hpi-only',
+      requestedSections: ['intervalUpdate'],
+      outputStyle: 'Concise',
+      format: 'Paragraph Style',
+      customInstructions: 'Only draft the interval update or HPI portion. Stay close to the source and do not invent a full assessment or plan.',
+      isDefault: true,
+      locked: true,
+    },
+    {
+      ...buildDefaultPresetForNoteType('Outpatient Psych Follow-Up'),
       id: 'preset-outpatient-follow-up-longitudinal',
       name: 'Outpatient Follow-Up - Longitudinal',
       outputStyle: 'Standard',
@@ -147,5 +160,18 @@ export function mergePresetCatalog(saved: NotePreset[] | null | undefined): Note
 }
 
 export function findPresetForNoteType(presets: NotePreset[], noteType: string) {
-  return presets.find((preset) => preset.noteType === noteType && preset.isDefault) ?? presets.find((preset) => preset.noteType === noteType) ?? null;
+  const normalizedNoteType = noteType.trim().toLowerCase();
+  const matchedPreset =
+    presets.find((preset) => preset.noteType.trim().toLowerCase() === normalizedNoteType && preset.isDefault)
+    ?? presets.find((preset) => preset.noteType.trim().toLowerCase() === normalizedNoteType)
+    ?? null;
+
+  if (!matchedPreset) {
+    return null;
+  }
+
+  return {
+    ...matchedPreset,
+    noteType: noteType.trim(),
+  };
 }

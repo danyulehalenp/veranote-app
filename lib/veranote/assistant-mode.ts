@@ -1,5 +1,14 @@
 import type { AssistantMode, AssistantModeMeta, AssistantStage } from '@/types/assistant';
 
+export type AssistantThreadResponseStyle = 'full' | 'tight' | 'one-line';
+
+export type AssistantFollowupDirective = {
+  preserveClinicalState: boolean;
+  responseStyle: AssistantThreadResponseStyle;
+  direct: boolean;
+  binaryShortcut: boolean;
+};
+
 export const ASSISTANT_ENABLED = process.env.NEXT_PUBLIC_VERANOTE_ASSISTANT_ENABLED !== 'false';
 
 type AssistantModeDefinition = {
@@ -15,30 +24,30 @@ const ASSISTANT_MODE_DEFINITIONS: Record<AssistantMode, AssistantModeDefinition>
     mode: 'workflow-help',
     label: 'Workflow help',
     shortLabel: 'Workflow',
-    detail: 'Note-grounded guidance inside the current Veranote workflow.',
+    detail: 'Calm, source-first guidance inside the current Veranote workflow.',
     stagePrompt: {
-      compose: 'Note-grounded help for setup, drafting, and section work.',
-      review: 'Note-grounded help for warning review, revision, and provenance.',
+      compose: 'Direct, psych-first help for setup, drafting, and section work.',
+      review: 'Direct, source-faithful help for warning review, revision, and provenance.',
     },
   },
   'prompt-builder': {
     mode: 'prompt-builder',
     label: 'Prompt builder',
     shortLabel: 'Preferences',
-    detail: 'Reusable note-lane and preset guidance rather than patient-specific drafting.',
+    detail: 'Reusable note-lane and preset guidance without drifting into patient-specific drafting.',
     stagePrompt: {
-      compose: 'Reusable note-lane guidance for presets and preferences.',
-      review: 'Reusable review patterns and preference drafting from repeat edits.',
+      compose: 'Reusable note-lane guidance for presets and provider preferences.',
+      review: 'Reusable review patterns and provider-approved preference drafting from repeat edits.',
     },
   },
   'reference-lookup': {
     mode: 'reference-lookup',
     label: 'Reference lookup',
     shortLabel: 'Reference',
-    detail: 'Trusted reference help kept separate from note-grounded drafting.',
+    detail: 'Trusted reference help with answer-first, minimal-caveat responses kept separate from note drafting.',
     stagePrompt: {
-      compose: 'Trusted reference help using approved external sources when available.',
-      review: 'Trusted reference help kept separate from the draft and review evidence.',
+      compose: 'Trusted reference help using approved sources when available.',
+      review: 'Trusted reference help kept separate from draft evidence and note revision decisions.',
     },
   },
 };
@@ -59,5 +68,58 @@ export function buildAssistantModeMeta(mode: AssistantMode, stage: AssistantStag
     label: definition.label,
     shortLabel: definition.shortLabel,
     detail: definition.stagePrompt[stage] || definition.detail,
+  };
+}
+
+export function classifyClinicalFollowupDirective(message: string): AssistantFollowupDirective {
+  const normalized = message.trim().toLowerCase();
+
+  const oneLine = [
+    /\bone line\b/,
+    /\bshort version only\b/,
+    /\bjust give me the sentence\b/,
+    /\bjust the sentence\b/,
+    /\bjust give me one line\b/,
+  ].some((pattern) => pattern.test(normalized));
+
+  const tight = oneLine || [
+    /\bshorter\b/,
+    /\btighter\b/,
+    /\bmake that tighter\b/,
+    /\bmake it tighter\b/,
+    /\bno, tighter than that\b/,
+    /\bmake that usable\b/,
+    /\bmake it usable\b/,
+    /\bmake it chart-?ready\b/,
+    /\bmake that legally safer wording\b/,
+    /\bmake it legally safer wording\b/,
+    /\blegally safer wording\b/,
+    /\bgive me the warning language\b/,
+    /\bmake that chart-?ready\b/,
+  ].some((pattern) => pattern.test(normalized));
+
+  const direct = [
+    /\bbe direct\b/,
+    /\bjust say\b/,
+    /\bcan i just write\b/,
+    /\bcan i just say\b/,
+    /\bjust call it\b/,
+    /\bpick one\b/,
+  ].some((pattern) => pattern.test(normalized));
+
+  const binaryShortcut = [
+    /\bjust say yes or no\b/,
+    /\bdoes he have capacity or not\b/,
+    /\bdoes this meet hold\b/,
+    /\bpick one\b/,
+  ].some((pattern) => pattern.test(normalized));
+
+  const preserveClinicalState = tight || direct || binaryShortcut;
+
+  return {
+    preserveClinicalState,
+    responseStyle: oneLine ? 'one-line' : tight ? 'tight' : 'full',
+    direct,
+    binaryShortcut,
   };
 }

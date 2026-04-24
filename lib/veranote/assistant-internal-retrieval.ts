@@ -69,11 +69,14 @@ export function buildRetrievedInternalKnowledgeHelp(normalizedMessage: string, _
 }
 
 function looksLikeInternalProductQuestion(normalizedMessage: string, matches: RetrievedDocument[]) {
-  if (/(veranote|vera|provider profile|prompt preferences|preset|review|required|outpatient|medical notes|psych-first|source fidelity|memory)/i.test(normalizedMessage)) {
+  const hasStrongProductIntent = /(veranote|provider profile|prompt preferences|preset|review required|source fidelity|vera memory|what does vera mean|how does vera|how does veranote|what can veranote do|why is review required|outpatient psych support|medical notes support)/i.test(normalizedMessage);
+  const looksClinicalTask = /(patient|draft|source only gives|source gives|assessment language|documentation language|objective|discharge|warning|unsafe|risk|si\b|hi\b|suicid|homicid|psychosis|schizophrenia|mania|telehealth|camera off|meth|cocaine|thc|withdrawal|delirium|capacity|ama|lithium|postpartum|catatonia|orthostasis|bradycardia|potassium)/i.test(normalizedMessage);
+
+  if (hasStrongProductIntent && !looksClinicalTask) {
     return true;
   }
 
-  return matches[0]?.score >= 3;
+  return Boolean(matches[0]?.score >= 5 && !looksClinicalTask && /(veranote|vera|workflow|product|profile|memory|preset|preferences|review)/i.test(normalizedMessage));
 }
 
 function scoreDocument(document: VeranoteDocument, normalizedQuery: string, queryTokens: string[]) {

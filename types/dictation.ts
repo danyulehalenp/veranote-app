@@ -16,6 +16,16 @@ export type DictationUiState =
   | 'error'
   | 'stopped';
 
+export type DictationCaptureState =
+  | 'unsupported'
+  | 'idle'
+  | 'requesting_permission'
+  | 'ready'
+  | 'capturing'
+  | 'paused'
+  | 'stopped'
+  | 'error';
+
 export type DictationReviewStatus = 'not_required' | 'needs_review' | 'reviewed' | 'rejected';
 export type DictationReviewSeverity = 'info' | 'moderate' | 'high' | 'critical';
 
@@ -46,9 +56,11 @@ export type DictationTranscriptRetention = 'same_as_note' | 'audit_only' | 'none
 export type DictationEventDomain = 'session' | 'frontend' | 'transcript' | 'editor' | 'safety';
 export type DictationRetentionClass = 'transient' | 'clinical_record' | 'audit_only' | 'qa_sample';
 export type DictationSourceMode = 'realtime' | 'batch' | 'local' | 'manual';
+export type DictationTargetSection = 'clinicianNotes' | 'intakeCollateral' | 'patientTranscript' | 'objectiveData';
 
 export type DictationEventName =
   | 'dictation_session_started'
+  | 'dictation_draft_resumed'
   | 'dictation_permission_denied'
   | 'dictation_audio_stream_started'
   | 'dictation_interim_segment'
@@ -143,6 +155,18 @@ export type TranscriptSegment = {
   createdAt: string;
 };
 
+export type LocalDictationSessionState = {
+  sessionId: string;
+  targetSection?: DictationTargetSection;
+  uiState: DictationUiState;
+  startedAt?: string;
+  stoppedAt?: string;
+  interimSegment?: TranscriptSegment;
+  pendingSegments: TranscriptSegment[];
+  insertedSegments: TranscriptSegment[];
+  lastError?: string;
+};
+
 export type AudioChunk = {
   sessionId: string;
   sequence: number;
@@ -156,6 +180,15 @@ export type DictationSessionHandle = {
   sessionId: string;
   provider: string;
   expiresAt?: string;
+};
+
+export type DictationAudioChunkUpload = {
+  sessionId: string;
+  sequence: number;
+  base64Audio: string;
+  mimeType: string;
+  sizeBytes: number;
+  capturedAt: string;
 };
 
 export type DictationProviderError = {

@@ -1,0 +1,302 @@
+[
+  {
+    "pattern_id": "p001_discharge_summary_generation",
+    "category": "chart_ready_wording",
+    "common_user_phrasing": [
+      "Please create a discharge summary",
+      "Write a psychiatric discharge summary",
+      "Please make this a discharge summary in paragraph format"
+    ],
+    "safe_generalized_description": "Provider frequently requested complete inpatient psychiatric discharge summaries with structured sections, symptom-status updates, disposition framing, and follow-up instructions.",
+    "recommended_answer_mode": "chart wording",
+    "vera_response_shape": "Generate sectioned discharge-ready prose, highlight unsupported claims, and optionally note any missing discharge status elements.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Do not auto-assert safety for discharge unless the source material clearly supports it."
+  },
+  {
+    "pattern_id": "p002_acute_inpatient_hpi_generation",
+    "category": "chart_ready_wording",
+    "common_user_phrasing": [
+      "Write an acute adult inpatient psychiatric HPI",
+      "Write an acute adolescent inpatient psychiatric HPI",
+      "Create an admission assessment from the following"
+    ],
+    "safe_generalized_description": "Provider often asked for acute inpatient HPI/admission assessments from mixed clinical facts, collateral, history, and objective data.",
+    "recommended_answer_mode": "chart wording",
+    "vera_response_shape": "Return a concise paragraph-style HPI with reason for admission, key symptoms, history, MSE anchors, and plan cues.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Keep the output source-faithful and avoid inventing chronology or severity."
+  },
+  {
+    "pattern_id": "p003_progress_note_refinement",
+    "category": "workflow_help",
+    "common_user_phrasing": [
+      "Please improve the following acute inpatient progress note",
+      "Improve this psych progress note",
+      "Rewrite this inpatient note and keep it concise"
+    ],
+    "safe_generalized_description": "Provider repeatedly used ChatGPT to tighten existing progress notes, improve flow, and reduce redundancy while keeping them clinically dense.",
+    "recommended_answer_mode": "chart wording",
+    "vera_response_shape": "Produce a cleaned paragraph note plus a short warning if the source lacks enough support for a stronger statement.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Avoid polishing vague source material into unsupported certainty."
+  },
+  {
+    "pattern_id": "p004_risk_wording_and_precautions",
+    "category": "risk_wording",
+    "common_user_phrasing": [
+      "How do I word this risk more clearly?",
+      "What should I include for SI/HI wording?",
+      "Can I say the patient needs safety precautions?"
+    ],
+    "safe_generalized_description": "Provider frequently needed defensible risk language around suicidal ideation, homicidal ideation, precautions, and contradiction between self-report and collateral.",
+    "recommended_answer_mode": "chart wording",
+    "vera_response_shape": "Lead with an objective risk summary, then suggest wording that separates observed facts, self-report, and collateral.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Do not erase contradictions or imply a level of certainty unsupported by the source."
+  },
+  {
+    "pattern_id": "p005_mse_completion",
+    "category": "mse_completion",
+    "common_user_phrasing": [
+      "Complete the MSE",
+      "Help with the mental status exam",
+      "Make the MSE sound better"
+    ],
+    "safe_generalized_description": "Provider commonly needed help completing or tightening MSE sections from sparse behavior and symptom clues.",
+    "recommended_answer_mode": "chart wording",
+    "vera_response_shape": "Return a compact MSE paragraph or field-ready prose with appearance, behavior, speech, thought process, thought content, insight, and judgment.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Only include domains that are actually supported by the source material."
+  },
+  {
+    "pattern_id": "p006_medication_plan_and_consent",
+    "category": "medication_reference",
+    "common_user_phrasing": [
+      "Document the medication plan",
+      "Please include guardian consent",
+      "Rewrite the med plan and past trials"
+    ],
+    "safe_generalized_description": "Provider often asked for medication-plan wording including start/continue/adjust language, past medication trials, adherence issues, and patient or guardian consent.",
+    "recommended_answer_mode": "chart wording",
+    "vera_response_shape": "Provide a concise medication paragraph with current regimen, rationale, prior response, and consent status if supplied.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Do not recommend medication changes unless the request is clearly framed as wording help versus prescribing advice."
+  },
+  {
+    "pattern_id": "p007_substance_withdrawal_documentation",
+    "category": "substance_withdrawal_intox",
+    "common_user_phrasing": [
+      "Write this as withdrawal management",
+      "How should I document detox?",
+      "Chart-ready wording for substance withdrawal"
+    ],
+    "safe_generalized_description": "Substance use, detox, intoxication, and withdrawal were recurring inpatient and overlap themes, especially when disposition and diagnosis were unclear.",
+    "recommended_answer_mode": "chart wording",
+    "vera_response_shape": "Summarize substance history, recent use, withdrawal/intoxication context, objective findings, and current treatment stance.",
+    "should_use_reference_lookup": true,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Keep symptom timing explicit and do not overstate withdrawal severity without support."
+  },
+  {
+    "pattern_id": "p008_psychosis_vs_substance_differential",
+    "category": "diagnosis_differential",
+    "common_user_phrasing": [
+      "Psychosis versus substance induced?",
+      "What are the differentials here?",
+      "Could this still be substance related?"
+    ],
+    "safe_generalized_description": "Provider repeatedly faced psychosis, paranoia, hallucinations, or mania-like symptoms in cases with active substance confounds.",
+    "recommended_answer_mode": "factual knowledge",
+    "vera_response_shape": "Answer the differential directly, then summarize timeline, exposure, abstinence, and persistence factors that matter most.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Do not collapse substance-induced and primary psychotic disorders into a single explanation."
+  },
+  {
+    "pattern_id": "p009_collateral_integration",
+    "category": "workflow_help",
+    "common_user_phrasing": [
+      "Include collateral from mother",
+      "Integrate guardian observations",
+      "Add collateral into the assessment"
+    ],
+    "safe_generalized_description": "Provider often wanted collateral merged cleanly into the note without creating duplication or losing the distinction between patient report and third-party report.",
+    "recommended_answer_mode": "chart wording",
+    "vera_response_shape": "Create a clear collateral section or integrated paragraph that labels source, observations, and differences from patient self-report.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Keep source attribution explicit and avoid laundering collateral into unqualified fact."
+  },
+  {
+    "pattern_id": "p010_social_history_compression",
+    "category": "workflow_help",
+    "common_user_phrasing": [
+      "Summarize the social history",
+      "Please make the social history concise",
+      "Reorganize this family and school history"
+    ],
+    "safe_generalized_description": "Provider repeatedly compressed social, school, work, family, and support information into short usable inpatient documentation.",
+    "recommended_answer_mode": "chart wording",
+    "vera_response_shape": "Return one short paragraph that preserves living situation, supports, school/work, legal issues, and goals.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Do not preserve unnecessary identifying detail when shorter generalized wording is sufficient."
+  },
+  {
+    "pattern_id": "p011_objective_data_integration",
+    "category": "medical_vs_psych_overlap",
+    "common_user_phrasing": [
+      "Include UDS and UPT",
+      "Use the objective data in the assessment",
+      "Add labs and abnormalities if relevant"
+    ],
+    "safe_generalized_description": "Provider often wanted laboratory and screening data integrated into psychiatric documentation without breaking note flow.",
+    "recommended_answer_mode": "chart wording",
+    "vera_response_shape": "Blend objective findings into the assessment and plan with a brief statement of clinical relevance.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Do not over-interpret normal or negative tests, especially toxicology."
+  },
+  {
+    "pattern_id": "p012_discharge_readiness_rationale",
+    "category": "discharge_readiness",
+    "common_user_phrasing": [
+      "Does this support discharge?",
+      "Please document that inpatient is no longer needed",
+      "Write a same-day discharge summary"
+    ],
+    "safe_generalized_description": "Provider frequently needed discharge-readiness language, including cases where current presentation no longer supported inpatient level of care.",
+    "recommended_answer_mode": "workflow help",
+    "vera_response_shape": "Summarize the likely discharge rationale, current reassessment findings, and any obvious missing support.",
+    "should_use_reference_lookup": true,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Avoid simply endorsing discharge; highlight when documentation remains thin."
+  },
+  {
+    "pattern_id": "p013_agitation_violence_documentation",
+    "category": "risk_wording",
+    "common_user_phrasing": [
+      "Document threatening behavior",
+      "How do I word aggression?",
+      "Please improve this behavioral incident note"
+    ],
+    "safe_generalized_description": "Provider often documented belligerence, threatening statements, aggression, and behavioral escalation that affected safety and disposition.",
+    "recommended_answer_mode": "chart wording",
+    "vera_response_shape": "Use direct observed-behavior language, quote risk-relevant behavior when supplied, and separate behavior from interpretation.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Avoid broad labels such as violent or dangerous unless tied to specific described behavior."
+  },
+  {
+    "pattern_id": "p014_adolescent_inpatient_psych",
+    "category": "workflow_help",
+    "common_user_phrasing": [
+      "Write an acute adolescent inpatient psychiatric HPI",
+      "Create an adolescent psych assessment",
+      "Include guardian collateral and school issues"
+    ],
+    "safe_generalized_description": "A strong subset of prompts focused on adolescent inpatient psychiatric admissions with guardian collateral, school functioning, running away, and safety concerns.",
+    "recommended_answer_mode": "chart wording",
+    "vera_response_shape": "Return an adolescent-focused assessment that highlights guardian input, school/social context, safety history, and developmentally appropriate plan framing.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Be careful with trauma, abuse, and guardian statements; preserve attribution and uncertainty where needed."
+  },
+  {
+    "pattern_id": "p015_consult_and_medical_psych_overlap",
+    "category": "medical_vs_psych_overlap",
+    "common_user_phrasing": [
+      "Create a concise medical H&P",
+      "Summarize the consult issue",
+      "Help with medical versus psych overlap"
+    ],
+    "safe_generalized_description": "Provider often needed note support at the boundary between psychiatry and medical evaluation, including consult-style wording and overlap conditions.",
+    "recommended_answer_mode": "workflow help",
+    "vera_response_shape": "Summarize the overlap issue, key objective data, and whether the note needs a clearer medical-versus-psychiatric rationale.",
+    "should_use_reference_lookup": true,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Keep medical causes and consult triggers explicit rather than assuming a purely psychiatric explanation."
+  },
+  {
+    "pattern_id": "p016_diagnosis_and_differential_clarification",
+    "category": "diagnosis_differential",
+    "common_user_phrasing": [
+      "What would the most likely diagnosis be?",
+      "What are the differentials?",
+      "How should I frame diagnostic uncertainty?"
+    ],
+    "safe_generalized_description": "Provider regularly sought help identifying likely diagnoses, rule-outs, and language for uncertainty in complex inpatient presentations.",
+    "recommended_answer_mode": "factual knowledge",
+    "vera_response_shape": "Give a direct differential first, then brief reasoning and key rule-out considerations.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Preserve uncertainty and avoid definitive diagnosis when the prompt does not support it."
+  },
+  {
+    "pattern_id": "p017_formatting_and_prompt_control",
+    "category": "note_format_prompting",
+    "common_user_phrasing": [
+      "Keep it in sentence and paragraph format",
+      "Use psych abbreviations",
+      "Be succinct and do not use bullets"
+    ],
+    "safe_generalized_description": "The provider showed repeated stable formatting preferences: concise paragraph output, psych abbreviations, and minimal fluff.",
+    "recommended_answer_mode": "provider preference memory",
+    "vera_response_shape": "Apply formatting preferences silently and return concise paragraph-style output by default.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": false,
+    "safety_notes": "This belongs in preference memory, not clinical memory."
+  },
+  {
+    "pattern_id": "p018_capacity_legal_hold_language",
+    "category": "capacity_legal",
+    "common_user_phrasing": [
+      "How do I document PEC/CEC?",
+      "What should I say about consent and guardian involvement?",
+      "Help with legal hold wording"
+    ],
+    "safe_generalized_description": "There was a smaller but meaningful cluster of questions around legal hold status, consent, guardianship, and related documentation language.",
+    "recommended_answer_mode": "trusted reference lookup",
+    "vera_response_shape": "Provide a concise workflow-oriented answer, state the documentation focus, and offer reference-backed follow-up if needed.",
+    "should_use_reference_lookup": true,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Do not imply that legal status alone answers continued inpatient necessity or capacity."
+  },
+  {
+    "pattern_id": "p019_coding_billing_medical_necessity",
+    "category": "coding_billing_requirements",
+    "common_user_phrasing": [
+      "ICD 10 for above",
+      "What code would fit this?",
+      "Does this support medical necessity?"
+    ],
+    "safe_generalized_description": "A recurring subset of prompts asked for diagnosis codes, billing families, and support for documentation requirements.",
+    "recommended_answer_mode": "trusted reference lookup",
+    "vera_response_shape": "Answer conservatively, state uncertainty when documentation-dependent, and point to trusted coding/reference guidance.",
+    "should_use_reference_lookup": true,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Coding help should remain bounded and reference-aware rather than presenting false billing certainty."
+  },
+  {
+    "pattern_id": "p020_incomplete_note_rescue",
+    "category": "workflow_help",
+    "common_user_phrasing": [
+      "Please improve and organize the following",
+      "Take this intake and make it into a note",
+      "Rewrite this sparse note so it flows"
+    ],
+    "safe_generalized_description": "Many prompts involved sparse, contradictory, or partially organized clinical input that needed to be turned into a coherent note without losing key risk or history information.",
+    "recommended_answer_mode": "workflow help",
+    "vera_response_shape": "Return a cleaned note plus a short list of what still looks missing or under-supported.",
+    "should_use_reference_lookup": false,
+    "should_be_vera_lab_case": true,
+    "safety_notes": "Vera should flag uncertainty instead of filling narrative gaps with unsupported details."
+  }
+]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assemblePrompt } from '@/lib/ai/assemble-prompt';
+import { assembleAssistantKnowledgePrompt, assemblePrompt } from '@/lib/ai/assemble-prompt';
 
 describe('assemblePrompt', () => {
   const baseInput = {
@@ -153,4 +153,181 @@ describe('assemblePrompt', () => {
     expect(prompt).toContain('Do not promote historical, rule-out, differential, or symptom-level formulations into current confirmed diagnoses unless the source explicitly supports that promotion.');
   });
 
+  it('adds emerging drug guardrails when the source names a gas-station drug', () => {
+    const prompt = assemblePrompt({
+      ...baseInput,
+      sourceInput: `### Clinician note
+- Patient reports using Neptune's Fix from a gas station.
+- Now has confusion, sweats, and withdrawal-like symptoms.
+- Routine UDS negative.`,
+    });
+
+    expect(prompt).toContain('Emerging drug / NPS guardrails:');
+    expect(prompt).toContain('tianeptine or gas-station heroin products may be clinically relevant');
+    expect(prompt).toContain('do not reframe it as a harmless supplement');
+  });
+
+});
+
+describe('assembleAssistantKnowledgePrompt', () => {
+  it('labels provider preferences separately from clinical knowledge', () => {
+    const prompt = assembleAssistantKnowledgePrompt({
+      task: 'Help me phrase this note.',
+      sourceNote: 'Patient reports anxiety and denies SI.',
+      knowledgeBundle: {
+        query: {
+          text: 'Help me phrase this note.',
+          intent: 'draft_support',
+        },
+        matchedIntents: ['draft_support'],
+        diagnosisConcepts: [],
+        codingEntries: [],
+        medicationConcepts: [],
+        emergingDrugConcepts: [],
+        workflowGuidance: [],
+        trustedReferences: [],
+        memoryItems: [],
+      },
+      providerMemory: [
+        {
+          id: 'memory-1',
+          providerId: 'provider-daniel-hale-beta',
+          category: 'phrasing',
+          content: 'Use "Patient reports ..." phrasing when summarizing subjective content supported by source.',
+          tags: ['draft_support', 'Outpatient Psych Follow-Up'],
+          confidence: 'high',
+          source: 'manual',
+          createdAt: '2026-04-21T00:00:00.000Z',
+          updatedAt: '2026-04-21T00:00:00.000Z',
+        },
+      ],
+    });
+
+    expect(prompt).toContain('[PROVIDER PREFERENCES]');
+    expect(prompt).toContain('Provider style preferences (NOT clinical facts)');
+    expect(prompt).toContain('Use "Patient reports ..." phrasing');
+  });
+
+  it('adds defensibility sections separately from clinical facts', () => {
+    const prompt = assembleAssistantKnowledgePrompt({
+      task: 'Does this justify continued inpatient care?',
+      sourceNote: 'Patient has suicidal ideation with a plan to overdose and no safe discharge environment.',
+      knowledgeBundle: {
+        query: {
+          text: 'Does this justify continued inpatient care?',
+          intent: 'workflow_help',
+        },
+        matchedIntents: ['workflow_help'],
+        diagnosisConcepts: [],
+        codingEntries: [],
+        medicationConcepts: [],
+        emergingDrugConcepts: [],
+        workflowGuidance: [],
+        trustedReferences: [],
+        memoryItems: [],
+      },
+      medicalNecessity: {
+        signals: [
+          {
+            category: 'risk',
+            evidence: ['Suicidal ideation or self-harm language documented.'],
+            strength: 'strong',
+          },
+        ],
+        missingElements: ['Failure of lower level of care is not clearly documented.'],
+      },
+      levelOfCare: {
+        suggestedLevel: 'inpatient',
+        justification: ['Plan or intent language documented.'],
+        missingJustification: ['Level-of-care boundary is not fully supported by failed lower-level care history.'],
+      },
+      cptSupport: {
+        summary: 'Documentation is too thin to support confident CPT-family guidance.',
+        documentationElements: ['Psychotherapy content is not clearly distinct yet.'],
+        timeHints: ['Time-based documentation is not clearly visible; avoid implying time-dependent billing support.'],
+        riskComplexityIndicators: ['Risk-sensitive content may support higher documentation complexity if clearly described.'],
+        cautions: ['Do not present CPT or billing family selection as definitive based on partial source alone.'],
+      },
+      losAssessment: {
+        reasonsForContinuedStay: ['Ongoing safety risk remains documented.'],
+        barriersToDischarge: ['Safe discharge environment is not clearly established.'],
+        stabilityIndicators: [],
+        missingDischargeCriteria: ['Discharge criteria or disposition readiness are not clearly documented.'],
+      },
+      auditFlags: [
+        {
+          type: 'insufficient_justification',
+          severity: 'high',
+          message: 'Level-of-care support may be vulnerable because documentation is missing around failure of lower level of care.',
+        },
+      ],
+      nextActions: [
+        {
+          suggestion: 'Consider clarifying suicide risk directly in the note.',
+          rationale: 'Plan-level language is not fully separated from current denial language.',
+          confidence: 'high',
+        },
+      ],
+      triageSuggestion: {
+        level: 'urgent',
+        reasoning: ['Documented instability may warrant urgent reassessment or closer follow-up.'],
+        confidence: 'moderate',
+      },
+      dischargeStatus: {
+        readiness: 'possibly_ready',
+        supportingFactors: ['Some stabilization language is documented in the source.'],
+        barriers: ['Safe discharge environment is not clearly established.'],
+      },
+      workflowTasks: [
+        {
+          task: 'Clarify discharge supports and disposition plan',
+          reason: 'Discharge readiness appears limited by support or environment gaps.',
+          priority: 'medium',
+        },
+      ],
+      longitudinalSummary: {
+        symptomTrends: ['Anxiety-related symptoms recur across multiple recent notes.'],
+        riskTrends: ['Risk documentation varies across recent notes and may need temporal clarification.'],
+        responseToTreatment: [],
+        recurringIssues: [],
+      },
+    });
+
+    expect(prompt).toContain('[MEDICAL NECESSITY]');
+    expect(prompt).toContain('[LEVEL OF CARE]');
+    expect(prompt).toContain('[NEXT STEPS]');
+    expect(prompt).toContain('[TRIAGE CONSIDERATION]');
+    expect(prompt).toContain('[DISCHARGE STATUS]');
+    expect(prompt).toContain('[WORKFLOW TASKS]');
+    expect(prompt).toContain('[BILLING / CPT SUPPORT]');
+    expect(prompt).toContain('[LOS CONSIDERATIONS]');
+    expect(prompt).toContain('[LONGITUDINAL CONTEXT]');
+    expect(prompt).toContain('[AUDIT FLAGS]');
+  });
+
+  it('keeps PHI out of assistant prompts', () => {
+    const prompt = assembleAssistantKnowledgePrompt({
+      task: 'Help rewrite John Smith DOB 01/01/1980 note.',
+      sourceNote: 'John Smith DOB 01/01/1980 reports suicidal ideation.',
+      knowledgeBundle: {
+        query: {
+          text: 'Help rewrite John Smith DOB 01/01/1980 note.',
+          intent: 'draft_support',
+        },
+        matchedIntents: ['draft_support'],
+        diagnosisConcepts: [],
+        codingEntries: [],
+        medicationConcepts: [],
+        emergingDrugConcepts: [],
+        workflowGuidance: [],
+        trustedReferences: [],
+        memoryItems: [],
+      },
+    });
+
+    expect(prompt).not.toContain('John Smith');
+    expect(prompt).not.toContain('01/01/1980');
+    expect(prompt).toContain('[NAME_1]');
+    expect(prompt).toContain('[DOB_1]');
+  });
 });

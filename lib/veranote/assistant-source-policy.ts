@@ -1,11 +1,16 @@
 import type { AssistantReferenceSource } from '@/types/assistant';
+import { getEmergingDrugReferenceLinks } from '@/lib/veranote/assistant-emerging-drug-intelligence';
+import { filterMemoryForPrompt } from '@/lib/veranote/memory/memory-policy';
+import type { ProviderMemoryItem as AssistantProviderMemoryItem } from '@/lib/veranote/memory/memory-types';
+import type { BaseKnowledgeItem, KnowledgeBundle } from '@/lib/veranote/knowledge/types';
 
 export type AssistantReferencePolicyCategory =
   | 'coding-reference'
   | 'documentation-structure'
   | 'lab-reference'
   | 'psych-reference'
-  | 'psych-med-reference';
+  | 'psych-med-reference'
+  | 'emerging-drug-reference';
 
 type AssistantReferencePolicyRule = {
   category: AssistantReferencePolicyCategory;
@@ -28,6 +33,47 @@ export type AssistantReferencePolicyPreview = {
   categoryLabels: string[];
   domainLabels: string[];
 };
+
+export function isProviderMemory(item: BaseKnowledgeItem) {
+  return item.useMode === 'provider-memory' || item.authority === 'provider-memory';
+}
+
+export function isReferenceOnly(item: BaseKnowledgeItem) {
+  return item.useMode === 'reference-only' || item.authority === 'trusted-external';
+}
+
+export function requiresCitation(item: BaseKnowledgeItem) {
+  return isReferenceOnly(item) || item.sourceAttribution.some((source) => source.kind === 'external');
+}
+
+export function canUseInPrompt(item: BaseKnowledgeItem) {
+  if (isProviderMemory(item) || isReferenceOnly(item)) {
+    return false;
+  }
+
+  if (item.reviewStatus === 'internal-only') {
+    return false;
+  }
+
+  return item.evidenceConfidence !== 'low';
+}
+
+export function filterKnowledgeByPolicy(bundle: KnowledgeBundle): KnowledgeBundle {
+  return {
+    ...bundle,
+    diagnosisConcepts: bundle.diagnosisConcepts.filter(canUseInPrompt),
+    codingEntries: bundle.codingEntries.filter(canUseInPrompt),
+    medicationConcepts: bundle.medicationConcepts.filter(canUseInPrompt),
+    emergingDrugConcepts: bundle.emergingDrugConcepts.filter(canUseInPrompt),
+    workflowGuidance: bundle.workflowGuidance.filter(canUseInPrompt),
+    trustedReferences: bundle.trustedReferences.filter((item) => isReferenceOnly(item) && item.evidenceConfidence !== 'low'),
+    memoryItems: [],
+  };
+}
+
+export function filterProviderMemoryByPolicy(memoryItems: AssistantProviderMemoryItem[]) {
+  return filterMemoryForPrompt(memoryItems);
+}
 
 const POLICY_RULES: AssistantReferencePolicyRule[] = [
   {
@@ -74,8 +120,13 @@ const POLICY_RULES: AssistantReferencePolicyRule[] = [
     allowedDomains: ['nimh.nih.gov'],
   },
   {
+    category: 'emerging-drug-reference',
+    matches: [/(tianeptine|neptune'?s fix|zaza|tianaa|pegasus|td red|xylazine|tranq|medetomidine|nitazene|m30|pressed pill|fake oxy|fake xanax|delta-8|delta 8|hhc|thc-o|thcp|bath salts|flakka|alpha-pvp|phenibut|bromazolam|etizolam|synthetic cannabinoid|k2|spice|mojo|7-oh|7oh|kratom extract|kratom shot)/i],
+    allowedDomains: ['cdc.gov', 'dea.gov', 'deadiversion.usdoj.gov', 'fda.gov', 'unodc.org'],
+  },
+  {
     category: 'psych-med-reference',
-    matches: [/(sertraline|zoloft|escitalopram|lexapro|bupropion|wellbutrin|zyban|venlafaxine|effexor|duloxetine|cymbalta|trazodone|lithium|lamotrigine|lamictal|valproic acid|divalproex|depakote|quetiapine|seroquel|olanzapine|zyprexa|aripiprazole|abilify|risperidone|risperdal|clozapine|clozaril|lorazepam|ativan|psych medication|psych med|medication profile|side effects|boxed warning|black box warning)/i],
+    matches: [/(sertraline|zoloft|escitalopram|lexapro|bupropion|wellbutrin|zyban|venlafaxine|effexor|desvenlafaxine|pristiq|duloxetine|cymbalta|doxepin|trazodone|oxcarbazepine|trileptal|lithium|lamotrigine|lamictal|valproic acid|divalproex|depakote|quetiapine|seroquel|olanzapine|zyprexa|aripiprazole|abilify|risperidone|risperdal|clozapine|clozaril|lorazepam|ativan|psych medication|psych med|medication profile|side effects|boxed warning|black box warning|starting dose|dose of)/i],
     allowedDomains: ['medlineplus.gov'],
   },
 ];
@@ -83,10 +134,14 @@ const POLICY_RULES: AssistantReferencePolicyRule[] = [
 export function getAssistantReferencePolicy(query: string): AssistantReferencePolicy {
   const normalized = query.trim().toLowerCase();
   const matchedRules = POLICY_RULES.filter((rule) => rule.matches.some((pattern) => pattern.test(normalized)));
+  const emergingDrugReferences = getEmergingDrugReferenceLinks(normalized);
 
   return {
     categories: matchedRules.map((rule) => rule.category),
-    directReferences: dedupeReferences(filterReferencesByQuery(normalized, matchedRules.flatMap((rule) => rule.directReferences || []))),
+    directReferences: dedupeReferences(filterReferencesByQuery(normalized, [
+      ...matchedRules.flatMap((rule) => rule.directReferences || []),
+      ...emergingDrugReferences,
+    ])),
     searchReferences: dedupeReferences(buildSearchReferences(normalized, matchedRules.flatMap((rule) => rule.searchReferences || []))),
     allowedDomains: [...new Set(matchedRules.flatMap((rule) => rule.allowedDomains))],
   };
@@ -97,8 +152,8 @@ export function describeAssistantReferencePolicy(query?: string): AssistantRefer
     return {
       title: 'Trusted lookup only',
       detail: 'Vera only uses approved external sources in this mode. Ask a coding, documentation, lab, or psych-reference question to see the active lookup policy.',
-      categoryLabels: ['Coding / reference', 'Documentation structure', 'Lab reference', 'Psych reference', 'Psych medication reference'],
-      domainLabels: ['CDC', 'CMS', 'MedlinePlus', 'NIMH'],
+      categoryLabels: ['Coding / reference', 'Documentation structure', 'Lab reference', 'Psych reference', 'Psych medication reference', 'Emerging drug reference'],
+      domainLabels: ['CDC', 'CMS', 'MedlinePlus', 'NIMH', 'DEA', 'FDA', 'UNODC'],
     };
   }
 
@@ -129,13 +184,18 @@ const categoryLabelMap: Record<AssistantReferencePolicyCategory, string> = {
   'lab-reference': 'Lab reference',
   'psych-reference': 'Psych reference',
   'psych-med-reference': 'Psych medication reference',
+  'emerging-drug-reference': 'Emerging drug reference',
 };
 
 const domainLabelMap: Record<string, string> = {
   'cdc.gov': 'CDC',
   'cms.gov': 'CMS',
+  'dea.gov': 'DEA',
+  'deadiversion.usdoj.gov': 'DEA Diversion',
+  'fda.gov': 'FDA',
   'medlineplus.gov': 'MedlinePlus',
   'nimh.nih.gov': 'NIMH',
+  'unodc.org': 'UNODC',
 };
 
 function buildSearchReferences(query: string, references: AssistantReferenceSource[]) {
@@ -174,6 +234,30 @@ function filterReferencesByQuery(query: string, references: AssistantReferenceSo
     }
 
     if (reference.url.includes('major-depression') && !/(mdd|major depressive disorder|major depression|depression)/i.test(query)) {
+      return false;
+    }
+
+    if (reference.url.includes('tianeptine') && !/(tianeptine|neptune'?s fix|zaza|tianaa|pegasus|td red)/i.test(query)) {
+      return false;
+    }
+
+    if (reference.url.includes('xylazine') && !/(xylazine|tranq)/i.test(query)) {
+      return false;
+    }
+
+    if (reference.url.includes('medetomidine') && !/(medetomidine|dexmedetomidine|prolonged sedation after naloxone)/i.test(query)) {
+      return false;
+    }
+
+    if (reference.url.includes('delta-8') && !/(delta-8|delta 8|hhc|thc-o|thcp)/i.test(query)) {
+      return false;
+    }
+
+    if (reference.url.includes('bath-salts') && !/(bath salts|flakka|alpha-pvp|synthetic cathinone)/i.test(query)) {
+      return false;
+    }
+
+    if (reference.url.includes('benzimidazole-opioids') && !/(nitazene|m30|pressed pill|fake oxy|fake xanax|isotonitazene|metonitazene|protonitazene)/i.test(query)) {
       return false;
     }
 
