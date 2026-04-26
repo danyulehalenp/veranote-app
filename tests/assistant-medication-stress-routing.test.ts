@@ -173,6 +173,16 @@ describe('assistant medication stress routing', () => {
     expect(payload.message).toContain(DOSE_CAVEAT);
   });
 
+  it('routes lithium dosage-form questions through medication reference instead of fallback', async () => {
+    const response = await ask('what forms does lithium come in?');
+
+    expect(response.answerMode).toBe('medication_reference_answer');
+    expect(response.message).toContain('capsule');
+    expect(response.message).toContain('oral solution');
+    expect(response.message).toContain('verify with a current prescribing reference');
+    expect(response.message).not.toContain('Unable to process request');
+  });
+
   it('keeps adjustment-style timing-uncertain eval prompts out of medication fallback and preserves uncertainty', async () => {
     const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
       method: 'POST',

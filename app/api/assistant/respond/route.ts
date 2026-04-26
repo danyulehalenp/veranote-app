@@ -24,6 +24,7 @@ import { enforceFidelity } from '@/lib/veranote/assistant-fidelity-guard';
 import { buildInternalKnowledgeHelp } from '@/lib/veranote/assistant-internal-knowledge';
 import { buildClinicalTaskPriorityPayload, classifyClinicalTaskOverride } from '@/lib/veranote/assistant-clinical-task';
 import { buildGeneralKnowledgeHelp, buildReferenceLookupHelp, buildStructuredKnowledgeReminder } from '@/lib/veranote/assistant-knowledge';
+import { detectMedicationQuestionIntent, findPsychMedication } from '@/lib/veranote/meds/psych-med-answering';
 import { extractMemoryFromOutput } from '@/lib/veranote/memory/memory-extractor';
 import { resolveProviderMemory } from '@/lib/veranote/memory/memory-resolver';
 import { runAssistantPipeline } from '@/lib/veranote/pipeline/assistant-pipeline';
@@ -2629,6 +2630,58 @@ export async function POST(request: Request) {
     const [sanitizedMessage, sanitizedSourceText, sanitizedDraftText] = sanitizedTexts;
     const providerId = resolveAssistantProviderId(body.context, authenticatedProviderId);
     const clinicalOverride = classifyClinicalTaskOverride(rawMessage);
+    const earlyMedicationReferenceIntent = detectMedicationQuestionIntent(sanitizedMessage);
+    const hasEarlyMedicationAnchor = Boolean(findPsychMedication(sanitizedMessage))
+      || /\b(ssri|snri|maoi|tca|benzodiazepine|benzo|opioid|nsaid|stimulant|antipsychotic|antidepressant|mood stabilizer)\b/i.test(sanitizedMessage);
+    const looksLikeClinicalMedicationNarrative = /\b(pt|patient|source|draft|note|chart|vera|unsafe|settle on|calling this|what should vera keep explicit)\b/i.test(sanitizedMessage);
+    const earlyMedicationReferencePayload = buildGeneralKnowledgeHelp(sanitizedMessage, body.context);
+    if (
+      earlyMedicationReferencePayload?.answerMode === 'medication_reference_answer'
+      && !clinicalOverride
+      && !standaloneMedicationDocumentationPrompt
+      && hasEarlyMedicationAnchor
+      && !looksLikeClinicalMedicationNarrative
+      && earlyMedicationReferenceIntent !== 'unknown'
+      && earlyMedicationReferenceIntent !== 'med_class_lookup'
+    ) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'medication_help',
+          answerMode: earlyMedicationReferencePayload.answerMode,
+          routePriority: 'medication-reference-direct',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...earlyMedicationReferencePayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: earlyMedicationReferencePayload.message,
+            warnings: [],
+            knowledgeIntent: 'medication_help',
+            answerMode: earlyMedicationReferencePayload.answerMode,
+            routePriority: 'medication-reference-direct',
+          },
+        } : {}),
+      });
+    }
     const followupDirective = classifyClinicalFollowupDirective(rawMessage);
     const priorClinicalState = extractPriorClinicalState(body.recentMessages);
     const knowledgeIntent = body.mode === 'reference-lookup'
