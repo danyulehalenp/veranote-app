@@ -119,6 +119,12 @@ type UtilityQuestionPayload = {
     | 'utility-weekend';
 };
 
+function shouldSuppressGlobalAssistantSuggestions(answerMode?: string) {
+  return answerMode === 'medication_reference_answer'
+    || answerMode === 'general_health_reference'
+    || answerMode === 'direct_reference_answer';
+}
+
 const WEEKDAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
 const MONTH_NAMES = [
   'january',
@@ -2196,7 +2202,19 @@ function referencesCurrentNote(message: string) {
 }
 
 function shouldIgnoreStaleClinicalContext(message: string) {
-  return isDirectReferenceStyleQuestion(message) && !referencesCurrentNote(message);
+  const normalized = message.trim().toLowerCase();
+  const medicationDocumentationWithoutExplicitCurrentNote = isStandaloneMedicationDocumentationPrompt(message);
+
+  return (isDirectReferenceStyleQuestion(message) && !referencesCurrentNote(message))
+    || medicationDocumentationWithoutExplicitCurrentNote;
+}
+
+function isStandaloneMedicationDocumentationPrompt(message: string) {
+  const normalized = message.trim().toLowerCase();
+  return /\b(chart wording|wording|document|documentation|note)\b/.test(normalized)
+    && /\b(refused|declined|stopped|nonadherence|non adherence|punitive|without sounding punitive|because of tremor)\b/.test(normalized)
+    && /\b(abilify|aripiprazole|lithium|zoloft|sertraline|depakote|divalproex|lamotrigine|trileptal|oxcarbazepine|med)\b/.test(normalized)
+    && !/\b(in this note|for this note|current note|current draft|this patient|the patient|source)\b/.test(normalized);
 }
 
 function buildSourceTextForReasoning(rawMessage: string, context?: AssistantApiContext, recentMessages?: AssistantThreadTurn[]) {
@@ -2600,11 +2618,13 @@ export async function POST(request: Request) {
       });
     }
 
+    const standaloneMedicationDocumentationPrompt = isStandaloneMedicationDocumentationPrompt(rawMessage);
+    const ignoreStaleClinicalContext = shouldIgnoreStaleClinicalContext(rawMessage);
     const sourceText = buildSourceTextForReasoning(rawMessage, body.context, body.recentMessages);
     const { sanitizedTexts, entities: phiEntities } = sanitizePHITexts([
       rawMessage,
       sourceText,
-      body.context?.currentDraftText || '',
+      ignoreStaleClinicalContext ? '' : body.context?.currentDraftText || '',
     ]);
     const [sanitizedMessage, sanitizedSourceText, sanitizedDraftText] = sanitizedTexts;
     const providerId = resolveAssistantProviderId(body.context, authenticatedProviderId);
@@ -2685,23 +2705,27 @@ export async function POST(request: Request) {
       selectedModel = CHEAP_ASSISTANT_MODEL;
     }
     const routeLevelKnowledgeReferences = filteredKnowledgeBundle.trustedReferences.map(trustedReferenceToAssistantSource);
-    const clinicalTaskPayload = buildClinicalTaskPriorityPayload({
-      message: sanitizedMessage,
-      sourceText: sanitizedSourceText,
-      currentDraftText: sanitizedDraftText,
-      mseAnalysis,
-      riskAnalysis,
-      contradictionAnalysis,
-      medicalNecessity,
-      levelOfCare,
-      losAssessment,
-      dischargeStatus,
-      triageSuggestion,
-      override: clinicalOverride,
-      previousAnswerMode: priorClinicalState?.answerMode,
-      previousBuilderFamily: priorClinicalState?.builderFamily,
-      followupDirective,
-    });
+    const clinicalTaskPayload = standaloneMedicationDocumentationPrompt
+      ? null
+      : buildClinicalTaskPriorityPayload({
+          message: sanitizedMessage,
+          sourceText: sanitizedSourceText,
+          currentDraftText: sanitizedDraftText,
+          stage: body.stage === 'review' ? 'review' : 'compose',
+          noteType: body.context?.noteType,
+          mseAnalysis,
+          riskAnalysis,
+          contradictionAnalysis,
+          medicalNecessity,
+          levelOfCare,
+          losAssessment,
+          dischargeStatus,
+          triageSuggestion,
+          override: clinicalOverride,
+          previousAnswerMode: priorClinicalState?.answerMode,
+          previousBuilderFamily: priorClinicalState?.builderFamily,
+          followupDirective,
+        });
 
     if (clinicalTaskPayload) {
       const rehydratedClinicalTaskPayload = rehydrateAssistantPayload(clinicalTaskPayload, phiEntities);
@@ -2874,39 +2898,42 @@ export async function POST(request: Request) {
     });
     const knowledgeSupportPayload = buildKnowledgeSupportPayload(knowledgeIntent, filteredKnowledgeBundle);
     let knowledgeAwarePayload = learnedPayload;
+    const suppressGlobalSuggestions = shouldSuppressGlobalAssistantSuggestions(learnedPayload.answerMode);
 
     if (isUnknownFallbackPayload(learnedPayload) && knowledgeSupportPayload) {
       knowledgeAwarePayload = knowledgeSupportPayload;
-    } else if (!bundleHasKnowledge(filteredKnowledgeBundle) && knowledgeIntent !== 'draft_support') {
+    } else if (!suppressGlobalSuggestions && !bundleHasKnowledge(filteredKnowledgeBundle) && knowledgeIntent !== 'draft_support') {
       knowledgeAwarePayload = appendUniqueSuggestions(learnedPayload, [
         'No structured psychiatry knowledge match was found here, so Vera should stay source-only and avoid guessing.',
       ]);
-    } else if (knowledgeIntent === 'diagnosis_help' && filteredKnowledgeBundle.diagnosisConcepts.length) {
+    } else if (!suppressGlobalSuggestions && knowledgeIntent === 'diagnosis_help' && filteredKnowledgeBundle.diagnosisConcepts.length) {
       knowledgeAwarePayload = appendUniqueSuggestions(learnedPayload, [
         'Keep any diagnosis wording proposed based on available information rather than fully settled.',
       ]);
     }
-    knowledgeAwarePayload = appendUniqueSuggestions(knowledgeAwarePayload, [
-      buildStructuredKnowledgeReminder(filteredKnowledgeBundle),
-      ...buildDefensibilitySuggestions({
-        medicalNecessity,
-        levelOfCare,
-        cptSupport,
-        losAssessment,
-        auditFlags,
-      }),
-      ...buildWorkflowSuggestions({
-        nextActions,
-        triage: triageSuggestion,
-        discharge: dischargeStatus,
-        tasks: workflowTasks,
-      }),
-      ...mseAnalysis.unsupportedNormals.slice(0, 2),
-      ...(contradictionAnalysis.contradictions.length ? [contradictionAnalysis.contradictions[0].detail] : []),
-      ...((!riskAnalysis.suicide.length && !riskAnalysis.violence.length && !riskAnalysis.graveDisability.length)
-        ? ['Risk remains insufficiently described in the available source; do not infer absence of risk.']
-        : []),
-    ]);
+    if (!suppressGlobalSuggestions) {
+      knowledgeAwarePayload = appendUniqueSuggestions(knowledgeAwarePayload, [
+        buildStructuredKnowledgeReminder(filteredKnowledgeBundle),
+        ...buildDefensibilitySuggestions({
+          medicalNecessity,
+          levelOfCare,
+          cptSupport,
+          losAssessment,
+          auditFlags,
+        }),
+        ...buildWorkflowSuggestions({
+          nextActions,
+          triage: triageSuggestion,
+          discharge: dischargeStatus,
+          tasks: workflowTasks,
+        }),
+        ...mseAnalysis.unsupportedNormals.slice(0, 2),
+        ...(contradictionAnalysis.contradictions.length ? [contradictionAnalysis.contradictions[0].detail] : []),
+        ...((!riskAnalysis.suicide.length && !riskAnalysis.violence.length && !riskAnalysis.graveDisability.length)
+          ? ['Risk remains insufficiently described in the available source; do not infer absence of risk.']
+          : []),
+      ]);
+    }
     const fidelitySafePayload = enforceFidelity({
       output: knowledgeAwarePayload,
       source: sanitizedSourceText,

@@ -1,4 +1,4 @@
-import type { AssistantApiContext, AssistantReferenceSource, AssistantResponsePayload } from '@/types/assistant';
+import type { AssistantApiContext, AssistantReferenceSource, AssistantResponsePayload, AssistantThreadTurn } from '@/types/assistant';
 import { buildMedicalNecessityHelp } from '@/lib/veranote/assistant-medical-necessity-help';
 import { buildKnowledgeRegistry, queryKnowledgeRegistry, type KnowledgeBundle, type KnowledgeQuery } from '@/lib/veranote/knowledge';
 import { buildPsychCptHelp } from '@/lib/veranote/assistant-psych-cpt-knowledge';
@@ -49,7 +49,11 @@ export function buildStructuredKnowledgeReminder(bundle: KnowledgeBundle) {
   return 'If structured psychiatry knowledge is thin, stay source-only and keep uncertainty visible.';
 }
 
-export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: AssistantApiContext): AssistantResponsePayload | null {
+export function buildGeneralKnowledgeHelp(
+  normalizedMessage: string,
+  context?: AssistantApiContext,
+  recentMessages?: AssistantThreadTurn[],
+): AssistantResponsePayload | null {
   const normalized = normalizedMessage.toLowerCase();
   const providerName = shortProviderName(context?.providerAddressingName);
   const directLead = providerName ? `${providerName}, ` : '';
@@ -71,7 +75,7 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
     return psychCptHelp;
   }
 
-  const psychMedicationHelp = buildPsychMedicationReferenceHelp(normalized);
+  const psychMedicationHelp = buildPsychMedicationReferenceHelp(normalized, recentMessages);
 
   if (psychMedicationHelp) {
     return psychMedicationHelp;
@@ -228,8 +232,12 @@ export function buildGeneralKnowledgeHelp(normalizedMessage: string, context?: A
   return null;
 }
 
-export function buildReferenceLookupHelp(normalizedMessage: string, context?: AssistantApiContext): AssistantResponsePayload | null {
-  const knowledge = buildGeneralKnowledgeHelp(normalizedMessage.toLowerCase(), context);
+export function buildReferenceLookupHelp(
+  normalizedMessage: string,
+  context?: AssistantApiContext,
+  recentMessages?: AssistantThreadTurn[],
+): AssistantResponsePayload | null {
+  const knowledge = buildGeneralKnowledgeHelp(normalizedMessage.toLowerCase(), context, recentMessages);
   if (knowledge) {
     return {
       ...knowledge,
