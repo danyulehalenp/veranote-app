@@ -84,6 +84,7 @@ export interface DraftSession {
   diagnosisProfile?: StructuredPsychDiagnosisProfileEntry[];
   sourceInput: string;
   sourceSections?: unknown;
+  ambientTranscriptHandoff?: AmbientTranscriptHandoff;
   dictationInsertions?: Partial<Record<DictationTargetSection, DictationInsertionRecord[]>>;
   note: string;
   flags: string[];
@@ -171,6 +172,17 @@ export type StructuredPsychDiagnosisProfileEntry = {
 
 export type SourceSections = Record<string, string>;
 
+export interface AmbientTranscriptHandoff {
+  sourceSection: 'patientTranscript';
+  sourceMode: 'ambient_transcript';
+  committedAt: string;
+  sessionState: string;
+  transcriptEventCount: number;
+  reviewFlagCount: number;
+  unresolvedSpeakerTurnCount: number;
+  transcriptReadyForSource: boolean;
+}
+
 export interface DictationInsertionRecord {
   segmentId: string;
   dictationSessionId: string;
@@ -182,6 +194,9 @@ export interface DictationInsertionRecord {
   sourceMode: string;
   confidence?: number;
   reviewFlags: TranscriptReviewFlag[];
+  destinationMode?: 'floating-source-box' | 'floating-field-box';
+  destinationFieldId?: string;
+  destinationFieldLabel?: string;
 }
 
 export interface SectionReviewEntry {

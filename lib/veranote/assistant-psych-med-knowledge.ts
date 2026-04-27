@@ -40,7 +40,7 @@ const MEDICATION_CLASS_HELP: MedicationClassHelp[] = [
       'Antidepressants for depression commonly include SSRIs, SNRIs, bupropion, mirtazapine, trazodone, TCAs, and MAOIs. The exact choice depends on indication, patient factors, interactions, and current prescribing references.',
     suggestions: [
       'If you want, I can break that down by class such as SSRI versus SNRI.',
-      'Vera can explain general medication references, but not choose a medication for a patient.',
+      'Atlas can explain general medication references, but not choose a medication for a patient.',
     ],
     references: [{ label: 'Mental Health Medications: NIMH', url: 'https://www.nimh.nih.gov/health/topics/mental-health-medications' }],
   },

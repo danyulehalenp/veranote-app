@@ -38,7 +38,7 @@ describe('assistant clinical routing regressions', () => {
 
     const payload = await response.json();
     expect(payload.message).not.toBe("No, but I'll find out how I can learn how to.");
-    expect(payload.message).toContain('Vera should document the contradiction side by side');
+    expect(payload.message).toContain('Atlas should document the contradiction side by side');
     expect(payload.message).toContain('keep explicit the denial alongside observed agitation and collateral threat history');
     expect(payload.message).toContain('Violence risk remains conflicted');
   });
@@ -91,7 +91,7 @@ describe('assistant clinical routing regressions', () => {
           },
           {
             role: 'assistant',
-            content: 'Vera should document the contradiction side by side: keep explicit the denial alongside observed agitation and collateral threat history.',
+            content: 'Atlas should document the contradiction side by side: keep explicit the denial alongside observed agitation and collateral threat history.',
           },
           {
             role: 'provider',
@@ -159,7 +159,7 @@ describe('assistant clinical routing regressions', () => {
     const payload = await response.json();
     expect(payload.message).not.toBe("No, but I'll find out how I can learn how to.");
     expect(payload.message).not.toContain('Start with the highest-signal trust issue');
-    expect(payload.message).toContain('Vera should not lean toward discharge here because');
+    expect(payload.message).toContain('Atlas should not lean toward discharge here because');
     expect(payload.message).toContain('safe discharge planning is not established');
     expect(payload.message).toContain('treatment engagement and medication adherence remain unstable');
   });

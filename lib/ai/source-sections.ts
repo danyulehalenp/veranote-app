@@ -18,10 +18,10 @@ export function normalizeSourceSections(input?: Partial<SourceSections> | null):
 
 export function buildSourceInputFromSections(sections: SourceSections) {
   const parts = [
-    sections.clinicianNotes.trim() ? `Clinician Notes:\n${sections.clinicianNotes.trim()}` : '',
-    sections.intakeCollateral.trim() ? `Intake / Collateral:\n${sections.intakeCollateral.trim()}` : '',
-    sections.patientTranscript.trim() ? `Patient Conversation / Transcript:\n${sections.patientTranscript.trim()}` : '',
-    sections.objectiveData.trim() ? `Objective Data / Labs / Vitals / Medications:\n${sections.objectiveData.trim()}` : '',
+    sections.intakeCollateral.trim() ? `Pre-Visit Data:\n${sections.intakeCollateral.trim()}` : '',
+    sections.clinicianNotes.trim() ? `Live Visit Notes:\n${sections.clinicianNotes.trim()}` : '',
+    sections.patientTranscript.trim() ? `Ambient Transcript:\n${sections.patientTranscript.trim()}` : '',
+    sections.objectiveData.trim() ? `Provider Add-On:\n${sections.objectiveData.trim()}` : '',
   ].filter(Boolean);
 
   return parts.join('\n\n');
@@ -29,9 +29,9 @@ export function buildSourceInputFromSections(sections: SourceSections) {
 
 export function describePopulatedSourceSections(sections: SourceSections) {
   return [
-    sections.clinicianNotes.trim() ? 'Clinician notes' : '',
-    sections.intakeCollateral.trim() ? 'Intake / collateral' : '',
-    sections.patientTranscript.trim() ? 'Conversation / transcript' : '',
-    sections.objectiveData.trim() ? 'Objective data' : '',
+    sections.intakeCollateral.trim() ? 'Pre-visit data' : '',
+    sections.clinicianNotes.trim() ? 'Live visit notes' : '',
+    sections.patientTranscript.trim() ? 'Ambient transcript' : '',
+    sections.objectiveData.trim() ? 'Provider add-on' : '',
   ].filter(Boolean);
 }

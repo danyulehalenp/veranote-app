@@ -29,7 +29,7 @@ const ASSISTANT_TOOL_REGISTRY: Record<AssistantAction['type'], AssistantToolDefi
     type: 'create-preset-draft',
     title: 'Create preset draft',
     riskLevel: 'draft',
-    summary: 'Builds a reusable preset draft from the current Vera suggestion.',
+    summary: 'Builds a reusable preset draft from the current Atlas suggestion.',
     allowedStages: ['compose', 'review'],
   },
   'jump-to-source-evidence': {
@@ -64,7 +64,7 @@ const ASSISTANT_TOOL_REGISTRY: Record<AssistantAction['type'], AssistantToolDefi
     type: 'send-beta-feedback',
     title: 'Send beta feedback',
     riskLevel: 'draft',
-    summary: 'Creates a structured Vera-gap feedback item for the beta inbox.',
+    summary: 'Creates a structured Atlas-gap feedback item for the beta inbox.',
     allowedStages: ['compose', 'review'],
   },
 };

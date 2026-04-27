@@ -40,6 +40,14 @@ export function getDraftRecoveryStorageKey(providerId: string) {
   return `clinical-documentation-transformer:draft-recovery:${providerId}`;
 }
 
+export function getAmbientSessionResumeStorageKey(providerId: string) {
+  return `veranote:ambient-session-resume:${providerId}`;
+}
+
+export function getAmbientWorkspaceChromeStorageKey(providerId: string) {
+  return `veranote:ambient-workspace-chrome:${providerId}`;
+}
+
 export function getAssistantPendingActionStorageKey(providerId: string) {
   return `veranote:assistant-pending-action:${providerId}`;
 }

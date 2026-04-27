@@ -303,24 +303,24 @@ function recentMemoryChangeDetail(item: RecentMemoryActivityItem) {
   if (item.kind === 'rewrite') {
     return item.activityKind === 'used'
       ? 'You revisited this review habit recently.'
-      : 'Vera saw this rewrite style show up again in review behavior.';
+      : 'Atlas saw this rewrite style show up again in review behavior.';
   }
 
   if (item.kind === 'lane') {
     return item.activityKind === 'used'
       ? 'You reopened this lane setup to work from it again.'
-      : 'Vera noticed this output lane pattern repeating again.';
+      : 'Atlas noticed this output lane pattern repeating again.';
   }
 
   if (item.kind === 'prompt') {
     return item.activityKind === 'used'
       ? 'You reused this prompt pattern again in the workspace.'
-      : 'Vera noticed this prompt-builder pattern repeating again.';
+      : 'Atlas noticed this prompt-builder pattern repeating again.';
   }
 
   return item.activityKind === 'used'
     ? 'You reopened this provider-level pattern to work from it again.'
-    : 'Vera noticed this provider-level preference pattern surfacing again.';
+    : 'Atlas noticed this provider-level preference pattern surfacing again.';
 }
 
 function readAcknowledgedMemoryTokens(providerId?: string) {
@@ -492,7 +492,7 @@ export function ProviderSettingsPanel() {
           refreshWorkflowInsights();
         }
       } catch {
-        // Keep local provider-scoped Vera memory available if server hydration fails.
+        // Keep local provider-scoped Atlas memory available if server hydration fails.
       }
     }
 
@@ -996,7 +996,7 @@ export function ProviderSettingsPanel() {
       return (
         <div className="mt-4 rounded-[14px] border border-violet-200 bg-violet-50/70 p-3">
           <label className="grid gap-2 text-xs font-medium text-violet-900">
-            <span>Long-term Vera memory note</span>
+            <span>Long-term Atlas memory note</span>
             <textarea
               value={settings.veraMemoryNotes}
               onChange={(event) => updateSetting('veraMemoryNotes', event.target.value)}
@@ -1025,7 +1025,7 @@ export function ProviderSettingsPanel() {
               checked={settings.closerToSourceDefault}
               onChange={(event) => updateSetting('closerToSourceDefault', event.target.checked)}
             />
-            Keep Vera closer to source by default when uncertainty is present.
+            Keep Atlas closer to source by default when uncertainty is present.
           </label>
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={() => void handleSave()} className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium">
@@ -1278,9 +1278,9 @@ export function ProviderSettingsPanel() {
 
       <div id="vera-relationship-settings" className="aurora-soft-panel mt-5 grid gap-4 rounded-[22px] border border-violet-200 p-4">
         <div>
-          <h3 className="text-sm font-semibold text-ink">Vera relationship settings</h3>
+          <h3 className="text-sm font-semibold text-ink">Atlas relationship settings</h3>
           <p className="mt-1 text-sm text-muted">
-            This is where the provider teaches Vera how to address them, how warm or formal to feel, and how proactive to be. These settings persist with provider settings so Vera does not feel like she forgot who she is helping.
+            This is where the provider teaches Atlas how to address them, how warm or formal to feel, and how proactive to be. These settings persist with provider settings so Atlas does not feel like it forgot who it is helping.
           </p>
         </div>
 
@@ -1307,7 +1307,7 @@ export function ProviderSettingsPanel() {
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm font-medium">
-            <span>Vera should address me as</span>
+            <span>Atlas should address me as</span>
             <select
               value={settings.veraAddressPreference}
               onChange={(event) => updateSetting('veraAddressPreference', event.target.value as ProviderSettings['veraAddressPreference'])}
@@ -1358,18 +1358,18 @@ export function ProviderSettingsPanel() {
         </div>
 
         <label className="grid gap-2 text-sm font-medium">
-          <span>Long-term Vera memory note</span>
+          <span>Long-term Atlas memory note</span>
           <textarea
             value={settings.veraMemoryNotes}
             onChange={(event) => updateSetting('veraMemoryNotes', event.target.value)}
-            placeholder="Example: Prefers to be addressed as Dr. Folarin. Likes concise but warm help. Wants Vera to anticipate missing risk and medication details."
+            placeholder="Example: Prefers to be addressed as Dr. Folarin. Likes concise but warm help. Wants Atlas to anticipate missing risk and medication details."
             rows={4}
             className="rounded-xl border border-border bg-white p-3"
           />
         </label>
 
         <div className="aurora-panel rounded-[18px] p-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Vera relationship preview</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Atlas relationship preview</div>
           <div className="mt-2 text-sm text-cyan-50/86">
             Addressing: <span className="font-semibold text-white">{veraAddress || 'Not set yet'}</span>
             {' '}• {veraInteractionStyleLabel(settings.veraInteractionStyle)}
@@ -1394,9 +1394,9 @@ export function ProviderSettingsPanel() {
       <div className="aurora-soft-panel mt-5 rounded-[22px] border border-violet-200 p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-ink">Vera workflow insights</h3>
+            <h3 className="text-sm font-semibold text-ink">Atlas workflow insights</h3>
             <p className="mt-1 text-sm text-muted">
-              This is the provider-facing memory summary for what Vera has noticed about your workflow. It is reviewable here first and still requires explicit action in the workspace or assistant flow before anything becomes a reusable preference.
+              This is the provider-facing memory summary for what Atlas has noticed about your workflow. It is reviewable here first and still requires explicit action in the workspace or assistant flow before anything becomes a reusable preference.
             </p>
           </div>
           <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium">
@@ -1409,7 +1409,7 @@ export function ProviderSettingsPanel() {
             onClick={() => setIsVeraMemoryOpen(true)}
             className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
           >
-            Open Vera memory
+            Open Atlas memory
           </button>
           <button
             type="button"
@@ -1419,18 +1419,18 @@ export function ProviderSettingsPanel() {
                 noteTypes: activeProfile?.defaults.noteTypePriority || [],
               }, resolvedProviderIdentityId);
               refreshWorkflowInsights();
-              setMessage('Vera memory reset for this provider profile.');
+              setMessage('Atlas memory reset for this provider profile.');
               window.setTimeout(() => setMessage(''), 2200);
             }}
             className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
           >
-            Reset Vera memory
+            Reset Atlas memory
           </button>
         </div>
 
         {veraMemoryLedger ? (
           <div className="mt-4 rounded-[18px] border border-violet-200 bg-white p-4 text-sm text-violet-900">
-            <div className="font-semibold text-violet-950">Server-side Vera memory ledger</div>
+            <div className="font-semibold text-violet-950">Server-side Atlas memory ledger</div>
             <div className="mt-1 text-xs text-violet-800">
               Generated {memoryTimestampLine('Last seen', veraMemoryLedger.generatedAt).replace('Last seen: ', '')}
             </div>
@@ -1469,7 +1469,7 @@ export function ProviderSettingsPanel() {
               ) : null}
             </div>
             <p className="mt-2 text-sm text-cyan-50/78">
-              Vera has noticed a repeated provider-level pattern:
+              Atlas has noticed a repeated provider-level pattern:
               {' '}
               <span className="font-semibold text-white">{workflowInsights.profilePromptSuggestion.label}</span>.
             </p>
@@ -1480,7 +1480,7 @@ export function ProviderSettingsPanel() {
               Status: {workflowInsights.profilePromptSuggestion.status}
             </div>
             <div className="mt-2 text-xs leading-6 text-cyan-50/72">
-              Why Vera inferred this: {workflowInsights.profilePromptSuggestion.reason}
+              Why Atlas inferred this: {workflowInsights.profilePromptSuggestion.reason}
             </div>
             <div className="mt-2 text-xs text-cyan-50/70">
               {memoryTimestampLine('Last seen', workflowInsights.profilePromptSuggestion.lastSeenAt)}
@@ -1532,8 +1532,8 @@ export function ProviderSettingsPanel() {
                 <div className="mt-3 space-y-2 text-xs leading-6 text-violet-900">
                   {insight.rewriteSuggestion ? (
                     <div>
-                      Vera has seen the <span className="font-semibold">{rewriteToneLabel(insight.rewriteSuggestion.optionTone)}</span> review rewrite style {insight.rewriteSuggestion.count} times for this note type.
-                      <div>Why Vera inferred this: {insight.rewriteSuggestion.reason}</div>
+                      Atlas has seen the <span className="font-semibold">{rewriteToneLabel(insight.rewriteSuggestion.optionTone)}</span> review rewrite style {insight.rewriteSuggestion.count} times for this note type.
+                      <div>Why Atlas inferred this: {insight.rewriteSuggestion.reason}</div>
                       <div>{memoryTimestampLine('Last seen', insight.rewriteSuggestion.lastSeenAt)}</div>
                       <div>{memoryTimestampLine('Last used', insight.rewriteSuggestion.lastUsedAt)}</div>
                       <div>{recommendedNextActionText('rewrite')}</div>
@@ -1541,8 +1541,8 @@ export function ProviderSettingsPanel() {
                   ) : null}
                   {insight.laneSuggestion ? (
                     <div>
-                      Vera has seen the same scope/style/format lane setup {insight.laneSuggestion.count} times for this note type.
-                      <div>Why Vera inferred this: {insight.laneSuggestion.reason}</div>
+                      Atlas has seen the same scope/style/format lane setup {insight.laneSuggestion.count} times for this note type.
+                      <div>Why Atlas inferred this: {insight.laneSuggestion.reason}</div>
                       <div>{memoryTimestampLine('Last seen', insight.laneSuggestion.lastSeenAt)}</div>
                       <div>{memoryTimestampLine('Last used', insight.laneSuggestion.lastUsedAt)}</div>
                       <div>{recommendedNextActionText('lane')}</div>
@@ -1550,8 +1550,8 @@ export function ProviderSettingsPanel() {
                   ) : null}
                   {insight.promptSuggestion ? (
                     <div>
-                      Vera has seen this prompt-builder pattern {insight.promptSuggestion.count} times for this note type.
-                      <div>Why Vera inferred this: {insight.promptSuggestion.reason}</div>
+                      Atlas has seen this prompt-builder pattern {insight.promptSuggestion.count} times for this note type.
+                      <div>Why Atlas inferred this: {insight.promptSuggestion.reason}</div>
                       <div>{memoryTimestampLine('Last seen', insight.promptSuggestion.lastSeenAt)}</div>
                       <div>{memoryTimestampLine('Last used', insight.promptSuggestion.lastUsedAt)}</div>
                       <div>{recommendedNextActionText('prompt')}</div>
@@ -1563,12 +1563,12 @@ export function ProviderSettingsPanel() {
           </div>
         ) : (
           <div className="mt-4 rounded-[18px] border border-violet-200 bg-white p-4 text-sm text-violet-900">
-            Vera has not accumulated enough repeat behavior to summarize yet. As providers keep using the workspace, review flow, and Vera quick builder, this area will start reflecting reusable patterns.
+            Atlas has not accumulated enough repeat behavior to summarize yet. As providers keep using the workspace, review flow, and Atlas quick builder, this area will start reflecting reusable patterns.
           </div>
         )}
 
         <div className="mt-4 text-xs text-violet-900">
-          These insights are intentionally descriptive, not automatic. Use the workspace or Vera drawer when you want to turn one of these patterns into a saved reusable preference.
+          These insights are intentionally descriptive, not automatic. Use the workspace or Atlas drawer when you want to turn one of these patterns into a saved reusable preference.
         </div>
       </div>
 
@@ -1592,9 +1592,9 @@ export function ProviderSettingsPanel() {
           <div className="aurora-panel max-h-[min(760px,90vh)] w-full max-w-4xl overflow-y-auto rounded-[28px] p-6">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
-                <h3 className="text-lg font-semibold">Vera memory</h3>
+                <h3 className="text-lg font-semibold">Atlas memory</h3>
                 <p className="mt-1 text-sm text-muted">
-                  Review what Vera has learned about this provider profile. Accept keeps the pattern as an intentional reviewed preference candidate, dismiss hides the suggestion, and reset clears the profile memory entirely.
+                  Review what Atlas has learned about this provider profile. Accept keeps the pattern as an intentional reviewed preference candidate, dismiss hides the suggestion, and reset clears the profile memory entirely.
                 </p>
               </div>
               <button
@@ -1630,7 +1630,7 @@ export function ProviderSettingsPanel() {
                   Status: {workflowInsights.profilePromptSuggestion.status}
                 </div>
                 <div className="mt-2 text-xs leading-6 text-cyan-50/72">
-                  Why Vera inferred this: {workflowInsights.profilePromptSuggestion.reason}
+                  Why Atlas inferred this: {workflowInsights.profilePromptSuggestion.reason}
                 </div>
                 <div className="mt-2 text-xs text-cyan-50/70">
                   {memoryTimestampLine('Last seen', workflowInsights.profilePromptSuggestion.lastSeenAt)}
@@ -1705,7 +1705,7 @@ export function ProviderSettingsPanel() {
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="text-sm font-semibold text-white">Needs your attention</div>
                   <span className="rounded-full border border-amber-200/40 bg-amber-300/12 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-50">
-                    Most current Vera cue
+                    Most current Atlas cue
                   </span>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1727,7 +1727,7 @@ export function ProviderSettingsPanel() {
                   {featuredRecentMemoryItem.noteType ? ` • ${featuredRecentMemoryItem.noteType}` : ' • Provider profile'}
                 </div>
                 <div className="mt-2 text-xs text-cyan-50/70">
-                  If Vera sees this pattern again later, this nudge can return even after you clear it here.
+                  If Atlas sees this pattern again later, this nudge can return even after you clear it here.
                 </div>
                 <div className="mt-4">
                   <div className="flex flex-wrap gap-2">
@@ -1761,9 +1761,9 @@ export function ProviderSettingsPanel() {
               <div className="aurora-soft-panel mt-5 rounded-[20px] border border-violet-200 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-violet-950">Snoozed Vera nudges</div>
+                    <div className="text-sm font-semibold text-violet-950">Snoozed Atlas nudges</div>
                     <div className="mt-1 text-xs text-violet-800">
-                      {acknowledgedMemoryTokens.length} recent cue{acknowledgedMemoryTokens.length === 1 ? '' : 's'} cleared for now. They can return if Vera sees fresh activity.
+                      {acknowledgedMemoryTokens.length} recent cue{acknowledgedMemoryTokens.length === 1 ? '' : 's'} cleared for now. They can return if Atlas sees fresh activity.
                     </div>
                   </div>
                   <button
@@ -1782,11 +1782,11 @@ export function ProviderSettingsPanel() {
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="text-sm font-semibold text-violet-950">What changed recently</div>
                   <span className="rounded-full border border-violet-300 bg-violet-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-800">
-                    Latest Vera signals
+                    Latest Atlas signals
                   </span>
                 </div>
                 <div className="mt-2 text-xs text-violet-800">
-                  `Not now` or `Got it` clears the current nudge only. If Vera detects the pattern again later, it can reappear here with a fresh timestamp.
+                  `Not now` or `Got it` clears the current nudge only. If Atlas detects the pattern again later, it can reappear here with a fresh timestamp.
                 </div>
                 <div className="mt-3 grid gap-2">
                   {visibleRecentMemoryActivity.map((item) => (
@@ -1850,7 +1850,7 @@ export function ProviderSettingsPanel() {
               <div className="aurora-soft-panel mt-5 rounded-[20px] border border-violet-200 p-4">
                 <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <div className="text-sm font-semibold text-violet-950">Server-side Vera memory ledger</div>
+                    <div className="text-sm font-semibold text-violet-950">Server-side Atlas memory ledger</div>
                     <div className="mt-1 text-xs text-violet-800">
                       Inspect exactly what is being held at the provider-memory layer and act on it directly when that memory maps to workspace, review, or settings behavior.
                     </div>
@@ -1967,7 +1967,7 @@ export function ProviderSettingsPanel() {
                                 <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-700">Confidence</div>
                                 <div className="mt-1 font-medium text-violet-950">{veraMemoryConfidenceLabel(item.confidence)}</div>
                                 <div className="mt-1 text-xs leading-6 text-violet-800">
-                                  This reflects how firmly Vera should treat this memory right now based on direct provider input or repeated behavior.
+                                  This reflects how firmly Atlas should treat this memory right now based on direct provider input or repeated behavior.
                                 </div>
                               </div>
                               <div>
@@ -1977,7 +1977,7 @@ export function ProviderSettingsPanel() {
                               <div>
                                 <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-700">Reinforcement</div>
                                 <div className="mt-1 text-xs leading-6 text-violet-800">
-                                  {item.reinforcementSummary || 'This memory is present, but Vera does not have extra reinforcement detail for it yet.'}
+                                  {item.reinforcementSummary || 'This memory is present, but Atlas does not have extra reinforcement detail for it yet.'}
                                 </div>
                               </div>
                             </div>
@@ -2038,7 +2038,7 @@ export function ProviderSettingsPanel() {
                           {memoryTimestampLine('Last used', insight.rewriteSuggestion.lastUsedAt)}
                         </div>
                         <div className="mt-2 text-xs leading-6 text-violet-800">
-                          Why Vera inferred this: {insight.rewriteSuggestion.reason}
+                          Why Atlas inferred this: {insight.rewriteSuggestion.reason}
                         </div>
                         <div className="mt-2 text-xs leading-6 text-violet-800">
                           {recommendedNextActionText('rewrite')}
@@ -2119,7 +2119,7 @@ export function ProviderSettingsPanel() {
                           {memoryTimestampLine('Last used', insight.laneSuggestion.lastUsedAt)}
                         </div>
                         <div className="mt-2 text-xs leading-6 text-violet-800">
-                          Why Vera inferred this: {insight.laneSuggestion.reason}
+                          Why Atlas inferred this: {insight.laneSuggestion.reason}
                         </div>
                         <div className="mt-2 text-xs leading-6 text-violet-800">
                           {recommendedNextActionText('lane')}
@@ -2205,7 +2205,7 @@ export function ProviderSettingsPanel() {
                           {memoryTimestampLine('Last used', insight.promptSuggestion.lastUsedAt)}
                         </div>
                         <div className="mt-2 text-xs leading-6 text-violet-800">
-                          Why Vera inferred this: {insight.promptSuggestion.reason}
+                          Why Atlas inferred this: {insight.promptSuggestion.reason}
                         </div>
                         <div className="mt-2 text-xs leading-6 text-violet-800">
                           {recommendedNextActionText('prompt')}

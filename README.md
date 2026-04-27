@@ -48,8 +48,22 @@ Prototype use only. Use fake or de-identified data unless running in an approved
 1. Copy `.env.example` to `.env.local`
 2. Add `OPENAI_API_KEY` if you want live model generation
 3. Run `npm install`
-4. Run `npm run dev`
-5. Open `http://localhost:3000`
+4. Run `npm run dev:test`
+5. Open `http://localhost:3001`
+
+If you prefer a different local port, set both `NEXTAUTH_URL` and `NEXT_PUBLIC_APP_URL` to that exact origin in `.env.local`.
+Veranote's beta sign-in flow is origin-sensitive, so the browser URL, `NEXTAUTH_URL`, and the running dev port should all match.
+
+## If the local site seems down
+
+If the app appears broken, stuck on sign-in, or keeps redirecting incorrectly, it is often an origin mismatch.
+
+Check the following:
+
+1. Confirm the dev server is running:
+   ```bash
+   npm run dev:test
+   ```
 
 ## Beta provider sign-in setup
 For controlled beta access, configure the sign-in layer before sharing the app outside internal testing.

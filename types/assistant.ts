@@ -58,6 +58,7 @@ export type AssistantBuilderFamily =
   | 'acute-hpi'
   | 'progress-note'
   | 'discharge-summary'
+  | 'crisis-note'
   | 'workflow';
 
 export type AssistantThreadTurn = {

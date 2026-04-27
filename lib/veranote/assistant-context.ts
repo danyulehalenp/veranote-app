@@ -2,6 +2,7 @@ import type { AssistantStage } from '@/types/assistant';
 
 export type AssistantContextSnapshot = {
   stage: AssistantStage;
+  activeSourceMode?: 'manual' | 'dictation' | 'transcript' | 'objective';
   noteType?: string;
   specialty?: string;
   currentDraftText?: string;
@@ -28,6 +29,11 @@ export type AssistantContextSnapshot = {
   needsReviewCount?: number;
   unreviewedCount?: number;
   destinationConstraintActive?: boolean;
+  ambientSessionState?: string;
+  ambientTranscriptEventCount?: number;
+  ambientReviewFlagCount?: number;
+  ambientUnresolvedSpeakerTurnCount?: number;
+  ambientTranscriptReadyForSource?: boolean;
 };
 
 export const ASSISTANT_CONTEXT_EVENT = 'veranote-assistant-context';

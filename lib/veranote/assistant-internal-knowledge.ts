@@ -16,7 +16,7 @@ const INTERNAL_REFS = {
   inpatientMedicalNecessity: makeInternalReference('inpatient-psych-medical-necessity-national', 'Inpatient Psych Medical Necessity Documentation Standards'),
   louisianaInpatientPsych: makeInternalReference('louisiana-inpatient-psych-documentation', 'Louisiana Inpatient Psych Documentation Phrasing'),
   louisianaPecCec: makeInternalReference('louisiana-pec-cec-workflow', 'Louisiana PEC and CEC Workflow Boundaries'),
-  veraPlan: makeInternalReference('vera-implementation-plan', 'Vera Implementation Action Plan'),
+  veraPlan: makeInternalReference('vera-implementation-plan', 'Atlas Implementation Action Plan'),
 } satisfies Record<string, AssistantReferenceSource>;
 
 const INTERNAL_KNOWLEDGE_ENTRIES: InternalKnowledgeEntry[] = [
@@ -144,10 +144,10 @@ const INTERNAL_KNOWLEDGE_ENTRIES: InternalKnowledgeEntry[] = [
       || hasKeyword(normalizedMessage, ['already pecd', 'already pec\'d', 'already on pec', 'what should i document if the patient is already pecd', 'what should i document if the patient is already on a pec'])
     ),
     build: () => ({
-      message: 'For Vera, PEC and CEC should be handled as Louisiana workflow-reference support, not automatic disposition advice. If the provider asks, the safer answer is to focus on the current risk picture, reassessment findings, monitoring rationale, and the concrete facts supporting continued hold workflow or any change in status.',
+      message: 'For Atlas, PEC and CEC should be handled as Louisiana workflow-reference support, not automatic disposition advice. If the provider asks, the safer answer is to focus on the current risk picture, reassessment findings, monitoring rationale, and the concrete facts supporting continued hold workflow or any change in status.',
       suggestions: [
         'If the patient is already under PEC or CEC workflow, keep the documentation focused on current risk, why-now reassessment, and why continued monitoring or transition is being considered.',
-        'Vera should not volunteer keep-versus-discharge advice on her own. She should stay in documentation and workflow-support mode unless the provider asks directly.',
+        'Atlas should not volunteer keep-versus-discharge advice on its own. It should stay in documentation and workflow-support mode unless the provider asks directly.',
       ],
       references: [INTERNAL_REFS.louisianaPecCec, INTERNAL_REFS.louisianaInpatientPsych],
     }),
@@ -170,13 +170,13 @@ const INTERNAL_KNOWLEDGE_ENTRIES: InternalKnowledgeEntry[] = [
   },
   {
     id: 'vera-memory-model',
-    title: 'Vera memory and learning',
+    title: 'Atlas memory and learning',
     match: (normalizedMessage) => (
       hasKeyword(normalizedMessage, ['how does vera remember me', 'does vera learn my preferences', 'how does vera memory work'])
       || (hasKeyword(normalizedMessage, ['vera']) && hasKeyword(normalizedMessage, ['memory', 'preferences', 'remember']))
     ),
     build: () => ({
-      message: 'The Vera direction is provider-specific memory that stays transparent and reviewable. That means relationship memory, accepted preferences, observed workflow patterns, and safety memory should be visible to the provider instead of becoming hidden behavior drift.',
+      message: 'The Atlas direction is provider-specific memory that stays transparent and reviewable. That means relationship memory, accepted preferences, observed workflow patterns, and safety memory should be visible to the provider instead of becoming hidden behavior drift.',
       suggestions: [
         'Observed patterns should still be inspectable, editable, and resettable.',
         'The goal is durable provider memory without silent unsafe adaptation.',

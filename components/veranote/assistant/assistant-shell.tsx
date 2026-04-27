@@ -101,9 +101,11 @@ export function AssistantShell() {
     }
 
     try {
-      setIsMinimized(window.localStorage.getItem(PANEL_MINIMIZED_STORAGE_KEY) === 'true');
+      const storedValue = window.localStorage.getItem(PANEL_MINIMIZED_STORAGE_KEY);
+      setIsMinimized(storedValue === null ? true : storedValue === 'true');
     } catch {
-      // Ignore storage access issues and keep the panel expanded by default.
+      // Ignore storage access issues and keep the panel minimized by default.
+      setIsMinimized(true);
     }
   }, []);
 
@@ -172,6 +174,10 @@ export function AssistantShell() {
       console.info('[veranote-assistant] panel-toggle', { pathname, open: next });
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(PANEL_OPEN_STORAGE_KEY, String(next));
+        if (next) {
+          setIsMinimized(true);
+          window.localStorage.setItem(PANEL_MINIMIZED_STORAGE_KEY, 'true');
+        }
       }
       return next;
     });
@@ -240,7 +246,7 @@ export function AssistantShell() {
           onClick={toggleOpen}
           className="fixed bottom-20 right-4 z-40 rounded-full border border-cyan-200/20 bg-[rgba(4,12,24,0.92)] px-4 py-3 text-sm font-semibold text-cyan-50 shadow-[0_20px_50px_rgba(4,12,24,0.42)] backdrop-blur-xl transition hover:border-cyan-200/30 hover:bg-[rgba(18,181,208,0.18)] sm:bottom-10 sm:right-6 sm:px-5"
         >
-          Open Vera
+          Open Atlas
         </button>
       ) : null}
 
@@ -248,7 +254,7 @@ export function AssistantShell() {
         <>
           <button
             type="button"
-            aria-label="Close Vera"
+            aria-label="Close Atlas"
             onClick={toggleOpen}
             className="fixed inset-0 z-30 bg-[rgba(4,12,24,0.48)] backdrop-blur-[2px]"
           />

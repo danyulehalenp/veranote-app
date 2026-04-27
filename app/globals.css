@@ -43,6 +43,14 @@ button, input, select, textarea {
   font: inherit;
 }
 
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
 body::before {
   content: '';
   position: fixed;
@@ -138,6 +146,12 @@ h1, h2, h3, h4 {
   backdrop-filter: blur(18px);
 }
 
+.workspace-command-bar button,
+.workspace-panel button,
+.workspace-subpanel button {
+  scroll-margin-top: 7rem;
+}
+
 .workspace-chip {
   border: 1px solid rgba(150, 215, 255, 0.14);
   background: rgba(255, 255, 255, 0.05);
@@ -151,6 +165,19 @@ h1, h2, h3, h4 {
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.05),
     0 18px 40px rgba(2, 8, 18, 0.24);
+}
+
+.workspace-badge-static {
+  border: 1px solid rgba(150, 215, 255, 0.1);
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.workspace-card-static {
+  border: 1px solid rgba(138, 207, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(10, 24, 39, 0.76), rgba(7, 18, 30, 0.72));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
 }
 
 .workspace-panel {

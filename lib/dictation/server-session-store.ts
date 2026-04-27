@@ -1,11 +1,12 @@
 import { listDictationAuditEvents, recordDictationAuditEvent, resetDictationEventLedger } from '@/lib/dictation/event-ledger';
-import { resolveServerSTTAdapter } from '@/lib/dictation/server-stt-adapters';
+import { resolveServerSTTAdapter, type ServerSTTProviderSelection } from '@/lib/dictation/server-stt-adapters';
 import type { DictationAudioChunkUpload, DictationSessionConfig, DictationStopReason, TranscriptSegment } from '@/types/dictation';
 
 type ServerDictationSessionRecord = {
   sessionId: string;
   providerIdentityId: string;
   config: DictationSessionConfig;
+  providerSelection: ServerSTTProviderSelection;
   status: 'active' | 'stopped';
   createdAt: string;
   stoppedAt?: string;
@@ -21,6 +22,18 @@ type ServerDictationSessionListener = (record: ServerDictationSessionRecord) => 
 
 const serverDictationSessions = new Map<string, ServerDictationSessionRecord>();
 const serverDictationSessionListeners = new Map<string, Set<ServerDictationSessionListener>>();
+const MIN_SERVER_AUDIO_CHUNK_BYTES = 512;
+const SUPPORTED_SERVER_AUDIO_MIME_PREFIXES = [
+  'audio/webm',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/ogg',
+  'audio/flac',
+];
 
 function createId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
@@ -35,6 +48,51 @@ function createHandle(sessionId: string, provider: string) {
 
 function normalizeComparableText(text: string) {
   return text.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function decodeBase64AudioChunk(base64Audio: string) {
+  try {
+    return Buffer.from(base64Audio, 'base64');
+  } catch {
+    return Buffer.alloc(0);
+  }
+}
+
+function hasEbmlHeader(bytes: Buffer) {
+  return bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3;
+}
+
+function hasMp4FileTypeHeader(bytes: Buffer) {
+  return bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70;
+}
+
+export function getServerAudioChunkSkipReason(chunk: DictationAudioChunkUpload) {
+  const normalizedMimeType = (chunk.mimeType || '').toLowerCase();
+  const bytes = decodeBase64AudioChunk(chunk.base64Audio || '');
+  const declaredSize = Math.max(0, chunk.sizeBytes || 0);
+  const effectiveSize = Math.min(declaredSize || bytes.length, bytes.length);
+
+  if (!chunk.base64Audio || !bytes.length || !declaredSize) {
+    return 'empty_audio_chunk';
+  }
+
+  if (effectiveSize < MIN_SERVER_AUDIO_CHUNK_BYTES) {
+    return 'audio_chunk_too_small';
+  }
+
+  if (!SUPPORTED_SERVER_AUDIO_MIME_PREFIXES.some((prefix) => normalizedMimeType.startsWith(prefix))) {
+    return 'unsupported_audio_mime_type';
+  }
+
+  if (normalizedMimeType.startsWith('audio/webm') && !hasEbmlHeader(bytes)) {
+    return 'non_standalone_webm_chunk';
+  }
+
+  if ((normalizedMimeType.startsWith('audio/mp4') || normalizedMimeType.startsWith('audio/m4a')) && !hasMp4FileTypeHeader(bytes)) {
+    return 'non_standalone_mp4_chunk';
+  }
+
+  return '';
 }
 
 function mergeTranscriptEvents(
@@ -152,12 +210,14 @@ export function subscribeToServerDictationSession(input: {
 export function createServerDictationSession(input: {
   providerIdentityId: string;
   config: DictationSessionConfig;
+  providerSelection: ServerSTTProviderSelection;
 }) {
   const sessionId = createId('server-dictation');
   const record: ServerDictationSessionRecord = {
     sessionId,
     providerIdentityId: input.providerIdentityId,
     config: input.config,
+    providerSelection: input.providerSelection,
     status: 'active',
     createdAt: new Date().toISOString(),
     receivedAudioChunkCount: 0,
@@ -180,11 +240,24 @@ export function createServerDictationSession(input: {
       targetSection: input.config.targetSection,
       commitMode: input.config.commitMode,
       language: input.config.language,
+      requestedProvider: input.providerSelection.requestedProvider,
+      activeProvider: input.providerSelection.activeProvider,
+      adapterId: input.providerSelection.adapterId,
+      engineLabel: input.providerSelection.engineLabel,
+      fallbackApplied: input.providerSelection.fallbackApplied,
+      fallbackReason: input.providerSelection.fallbackReason,
     },
   });
   return {
     sessionId,
     provider: input.config.sttProvider,
+    requestedProvider: input.providerSelection.requestedProvider,
+    activeProvider: input.providerSelection.activeProvider,
+    activeProviderLabel: input.providerSelection.activeProviderLabel,
+    adapterId: input.providerSelection.adapterId,
+    engineLabel: input.providerSelection.engineLabel,
+    fallbackApplied: input.providerSelection.fallbackApplied,
+    fallbackReason: input.providerSelection.fallbackReason,
     createdAt: record.createdAt,
     receivedAudioChunkCount: record.receivedAudioChunkCount,
     receivedAudioBytes: record.receivedAudioBytes,
@@ -279,6 +352,21 @@ export async function appendServerDictationAudioChunk(input: {
     throw new Error('Active dictation session not found.');
   }
 
+  const skipReason = getServerAudioChunkSkipReason(input.chunk);
+  if (skipReason) {
+    return {
+      sessionId: record.sessionId,
+      receivedAudioChunkCount: record.receivedAudioChunkCount,
+      receivedAudioBytes: record.receivedAudioBytes,
+      lastChunkAt: record.lastChunkAt,
+      lastChunkSequence: record.lastChunkSequence,
+      lastChunkMimeType: record.lastChunkMimeType,
+      queuedEventCount: record.pendingTranscriptEvents.length,
+      skipped: true,
+      skipReason,
+    };
+  }
+
   const nextRecord: ServerDictationSessionRecord = {
     ...record,
     receivedAudioChunkCount: record.receivedAudioChunkCount + 1,
@@ -300,6 +388,8 @@ export async function appendServerDictationAudioChunk(input: {
       eventDomain: 'session',
       payload: {
         mimeType: input.chunk.mimeType,
+        adapterId: record.providerSelection.adapterId,
+        engineLabel: record.providerSelection.engineLabel,
       },
     });
   }
@@ -326,6 +416,8 @@ export async function appendServerDictationAudioChunk(input: {
       payload: {
         stage: 'append_audio_chunk',
         message: error instanceof Error ? error.message : 'Unknown provider error',
+        adapterId: record.providerSelection.adapterId,
+        engineLabel: record.providerSelection.engineLabel,
       },
     });
     adapterEvents = [];

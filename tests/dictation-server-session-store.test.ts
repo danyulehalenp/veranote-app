@@ -4,12 +4,35 @@ import {
   createServerDictationSession,
   drainServerDictationTranscriptEvents,
   getRecentServerDictationAuditEvents,
+  getServerAudioChunkSkipReason,
   getServerDictationSession,
   resetServerDictationSessions,
   stopServerDictationSession,
   subscribeToServerDictationSession,
   submitServerDictationMockUtterance,
 } from '@/lib/dictation/server-session-store';
+import { resolveServerSTTProviderSelection } from '@/lib/dictation/server-stt-adapters';
+
+function createProviderSelection(requestedProvider = 'mock-stt') {
+  return resolveServerSTTProviderSelection({
+    requestedProvider,
+    allowMockFallback: true,
+  });
+}
+
+function createStandaloneWebmBase64(size = 1280) {
+  const bytes = Buffer.alloc(size, 0);
+  bytes[0] = 0x1a;
+  bytes[1] = 0x45;
+  bytes[2] = 0xdf;
+  bytes[3] = 0xa3;
+  return bytes.toString('base64');
+}
+
+function createHeaderlessWebmBase64(size = 1280) {
+  const bytes = Buffer.alloc(size, 1);
+  return bytes.toString('base64');
+}
 
 describe('server dictation session store', () => {
   beforeEach(() => {
@@ -19,6 +42,7 @@ describe('server dictation session store', () => {
   it('creates provider-scoped sessions and returns mock transcript segments', async () => {
     const created = createServerDictationSession({
       providerIdentityId: 'provider-1',
+      providerSelection: createProviderSelection(),
       config: {
         tenantId: 'local-prototype',
         encounterId: 'encounter-1',
@@ -60,6 +84,7 @@ describe('server dictation session store', () => {
   it('stops sessions and rejects later utterances', async () => {
     const created = createServerDictationSession({
       providerIdentityId: 'provider-1',
+      providerSelection: createProviderSelection(),
       config: {
         tenantId: 'local-prototype',
         encounterId: 'encounter-1',
@@ -93,6 +118,7 @@ describe('server dictation session store', () => {
   it('tracks uploaded audio chunk stats per session', async () => {
     const created = createServerDictationSession({
       providerIdentityId: 'provider-1',
+      providerSelection: createProviderSelection(),
       config: {
         tenantId: 'local-prototype',
         encounterId: 'encounter-1',
@@ -116,7 +142,7 @@ describe('server dictation session store', () => {
       chunk: {
         sessionId: created.sessionId,
         sequence: 1,
-        base64Audio: 'aGVsbG8=',
+        base64Audio: createStandaloneWebmBase64(),
         mimeType: 'audio/webm',
         sizeBytes: 1280,
         capturedAt: '2026-04-23T00:00:00.000Z',
@@ -129,9 +155,69 @@ describe('server dictation session store', () => {
     expect(ingestion.queuedEventCount).toBe(0);
   });
 
+  it('skips empty and headerless audio chunks before adapter transcription', async () => {
+    const created = createServerDictationSession({
+      providerIdentityId: 'provider-1',
+      providerSelection: createProviderSelection(),
+      config: {
+        tenantId: 'local-prototype',
+        encounterId: 'encounter-1',
+        providerUserId: 'provider-1',
+        targetSection: 'clinicianNotes',
+        mode: 'provider_dictation',
+        sttProvider: 'mock-stt',
+        language: 'en',
+        commitMode: 'manual_accept',
+        retention: {
+          storeAudio: false,
+          audioRetentionDays: 0,
+          storeInterimTranscripts: false,
+        },
+      },
+    });
+
+    expect(getServerAudioChunkSkipReason({
+      sessionId: created.sessionId,
+      sequence: 1,
+      base64Audio: '',
+      mimeType: 'audio/webm',
+      sizeBytes: 0,
+      capturedAt: '2026-04-23T00:00:00.000Z',
+    })).toBe('empty_audio_chunk');
+
+    const ingestion = await appendServerDictationAudioChunk({
+      sessionId: created.sessionId,
+      providerIdentityId: 'provider-1',
+      chunk: {
+        sessionId: created.sessionId,
+        sequence: 2,
+        base64Audio: createHeaderlessWebmBase64(),
+        mimeType: 'audio/webm;codecs=opus',
+        sizeBytes: 1280,
+        capturedAt: '2026-04-23T00:00:01.000Z',
+      },
+    });
+
+    expect(ingestion).toMatchObject({
+      receivedAudioChunkCount: 0,
+      receivedAudioBytes: 0,
+      queuedEventCount: 0,
+      skipped: true,
+      skipReason: 'non_standalone_webm_chunk',
+    });
+
+    const events = getRecentServerDictationAuditEvents({
+      sessionId: created.sessionId,
+      providerIdentityId: 'provider-1',
+      limit: 10,
+    });
+    expect(events.some((event) => event.eventName === 'dictation_session_error')).toBe(false);
+  });
+
   it('merges adjacent duplicate or continued final transcript events', async () => {
     const created = createServerDictationSession({
       providerIdentityId: 'provider-1',
+      providerSelection: createProviderSelection(),
       config: {
         tenantId: 'local-prototype',
         encounterId: 'encounter-1',
@@ -173,6 +259,7 @@ describe('server dictation session store', () => {
   it('notifies session subscribers when transcript state changes', async () => {
     const created = createServerDictationSession({
       providerIdentityId: 'provider-1',
+      providerSelection: createProviderSelection(),
       config: {
         tenantId: 'local-prototype',
         encounterId: 'encounter-1',
@@ -217,6 +304,7 @@ describe('server dictation session store', () => {
   it('keeps a recent event ledger for session activity', async () => {
     const created = createServerDictationSession({
       providerIdentityId: 'provider-1',
+      providerSelection: createProviderSelection(),
       config: {
         tenantId: 'local-prototype',
         encounterId: 'encounter-1',

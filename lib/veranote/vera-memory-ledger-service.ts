@@ -242,18 +242,18 @@ export function resolveAcceptedLedgerReopenTarget(
 
 export function describeAcceptedLedgerReopenTarget(target: AcceptedLedgerReopenTarget) {
   if (target.kind === 'rewrite') {
-    return 'This accepted rewrite preference can be reopened as an active suggestion if you want Vera to stop treating it as a reviewed preference.';
+    return 'This accepted rewrite preference can be reopened as an active suggestion if you want Atlas to stop treating it as a reviewed preference.';
   }
 
   if (target.kind === 'lane') {
-    return 'This accepted lane setup can be reopened as an active suggestion if you want Vera to stop treating it as a reviewed preference.';
+    return 'This accepted lane setup can be reopened as an active suggestion if you want Atlas to stop treating it as a reviewed preference.';
   }
 
   if (target.kind === 'prompt') {
-    return 'This accepted prompt pattern can be reopened as an active suggestion if you want Vera to treat it as reviewable again.';
+    return 'This accepted prompt pattern can be reopened as an active suggestion if you want Atlas to treat it as reviewable again.';
   }
 
-  return 'This accepted provider-level pattern can be reopened as an active suggestion if you want Vera to treat it as reviewable again.';
+  return 'This accepted provider-level pattern can be reopened as an active suggestion if you want Atlas to treat it as reviewable again.';
 }
 
 function buildLanePrompt(

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   browserDictationSupported,
+  getBrowserDictationErrorMessage,
   getBrowserDictationCaptureState,
+  requestBrowserDictationStream,
   setBrowserDictationStreamPaused,
   stopBrowserDictationStream,
 } from '@/lib/dictation/browser-mic';
@@ -69,5 +71,19 @@ describe('browser mic helpers', () => {
       paused: true,
       requestingPermission: false,
     })).toBe('paused');
+  });
+
+  it('maps browser microphone failures to clearer user-facing guidance', async () => {
+    expect(getBrowserDictationErrorMessage(new DOMException('', 'NotAllowedError'))).toContain('denied');
+    expect(getBrowserDictationErrorMessage(new DOMException('', 'NotFoundError'))).toContain('No microphone');
+    expect(getBrowserDictationErrorMessage(new DOMException('', 'NotReadableError'))).toContain('unavailable');
+    expect(getBrowserDictationErrorMessage(new Error('custom failure'))).toBe('custom failure');
+    expect(getBrowserDictationErrorMessage(new Error(''), { secureContext: false })).toContain('secure browser context');
+
+    await expect(requestBrowserDictationStream({
+      getUserMedia: async () => {
+        throw new DOMException('', 'NotAllowedError');
+      },
+    })).rejects.toThrow('Microphone access was denied');
   });
 });

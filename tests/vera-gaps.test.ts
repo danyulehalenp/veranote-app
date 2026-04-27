@@ -7,14 +7,14 @@ describe('vera gaps', () => {
     expect(inferVeraGapType('Do you know the diagnosis ICD 10 for MDD?')).toBe('coding-reference');
   });
 
-  it('groups repeated Vera gaps by original question', () => {
+  it('groups repeated Atlas gaps by original question', () => {
     const feedback: BetaFeedbackItem[] = [
       {
         id: '1',
         createdAt: '2026-04-19T10:00:00.000Z',
-        pageContext: 'Vera assistant gap',
+        pageContext: 'Atlas assistant gap',
         category: 'feature-request',
-        message: 'Vera could not answer this provider question: Do you know the diagnosis ICD 10 for MDD?',
+        message: 'Atlas could not answer this provider question: Do you know the diagnosis ICD 10 for MDD?',
         status: 'new',
         metadata: {
           source: 'vera-gap',
@@ -25,9 +25,9 @@ describe('vera gaps', () => {
       {
         id: '2',
         createdAt: '2026-04-19T12:00:00.000Z',
-        pageContext: 'Vera assistant gap',
+        pageContext: 'Atlas assistant gap',
         category: 'feature-request',
-        message: 'Vera could not answer this provider question: Do you know the diagnosis ICD 10 for MDD?',
+        message: 'Atlas could not answer this provider question: Do you know the diagnosis ICD 10 for MDD?',
         status: 'planned',
         metadata: {
           source: 'vera-gap',
@@ -48,7 +48,7 @@ describe('vera gaps', () => {
       {
         id: '1',
         createdAt: '2026-04-19T10:00:00.000Z',
-        pageContext: 'Vera assistant gap',
+        pageContext: 'Atlas assistant gap',
         category: 'feature-request',
         message: 'Missing coding answer',
         status: 'new',
@@ -72,7 +72,7 @@ describe('vera gaps', () => {
       {
         id: '3',
         createdAt: '2026-04-19T13:00:00.000Z',
-        pageContext: 'Vera assistant gap',
+        pageContext: 'Atlas assistant gap',
         category: 'feature-request',
         message: 'Missing draft answer',
         status: 'planned',

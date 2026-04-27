@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { AppShell } from '@/components/layout/app-shell';
 import { InternalSurfaceNotice } from '@/components/layout/internal-surface-notice';
+import { AmbientInternalWorkbench } from '@/components/settings/ambient-internal-workbench';
 import { AmbientCapabilityPanel } from '@/components/settings/ambient-capability-panel';
 import { DictationCapabilityPanel } from '@/components/settings/dictation-capability-panel';
 import { ProviderBetaOperationsPanel } from '@/components/settings/provider-beta-operations-panel';
@@ -174,6 +175,10 @@ export default function TemplatesPage() {
               <div className="mt-5 grid gap-6 xl:grid-cols-2">
                 <DictationCapabilityPanel />
                 <AmbientCapabilityPanel />
+              </div>
+
+              <div className="mt-6">
+                <AmbientInternalWorkbench />
               </div>
             </section>
           </div>

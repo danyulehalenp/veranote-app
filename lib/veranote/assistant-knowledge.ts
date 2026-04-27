@@ -253,7 +253,7 @@ export function buildReferenceLookupHelp(
       message: 'I do not have a trusted direct answer for that yet. Use the approved references below to verify it directly.',
       suggestions: [
         'Open one of the approved references below to verify the answer directly.',
-        'If this is a recurring need, use Teach Vera this so it can become a first-class answer later.',
+        'If this is a recurring need, use Teach Atlas this so it can become a first-class answer later.',
       ],
       references,
     };
@@ -262,7 +262,7 @@ export function buildReferenceLookupHelp(
   return {
     message: "I don't have a trusted reference answer for that yet.",
     suggestions: [
-      'Reference lookup is limited to approved source topics Vera can verify safely.',
+      'Reference lookup is limited to approved source topics Atlas can verify safely.',
     ],
     references,
   };

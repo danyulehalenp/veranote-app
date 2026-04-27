@@ -9,8 +9,10 @@ import {
   submitServerDictationMockUtterance,
   subscribeToServerDictationSession,
 } from '@/lib/dictation/server-session-store';
-import { getAuthorizedProviderContext, resolveScopedProviderIdentityId } from '@/lib/veranote/provider-session';
-import type { DictationAudioChunkUpload, DictationStopReason } from '@/types/dictation';
+import { appendOverlaySegmentToDraft } from '@/lib/dictation/overlay-draft-router';
+import { getAuthorizedDesktopBridgeContext } from '@/lib/veranote/desktop-bridge-auth';
+import { resolveScopedProviderIdentityId } from '@/lib/veranote/provider-session';
+import type { DictationAudioChunkUpload, DictationStopReason, DictationTargetSection, TranscriptSegment } from '@/types/dictation';
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
@@ -27,6 +29,13 @@ function serializeSessionState(session: NonNullable<ReturnType<typeof getServerD
     createdAt: session.createdAt,
     stoppedAt: session.stoppedAt,
     sttProvider: session.config.sttProvider,
+    requestedSttProvider: session.providerSelection.requestedProvider,
+    activeProviderLabel: session.providerSelection.activeProviderLabel,
+    adapterId: session.providerSelection.adapterId,
+    engineLabel: session.providerSelection.engineLabel,
+    fallbackApplied: session.providerSelection.fallbackApplied,
+    fallbackReason: session.providerSelection.fallbackReason,
+    providerReason: session.providerSelection.reason,
     receivedAudioChunkCount: session.receivedAudioChunkCount,
     receivedAudioBytes: session.receivedAudioBytes,
     lastChunkAt: session.lastChunkAt,
@@ -42,12 +51,15 @@ function serializeSessionState(session: NonNullable<ReturnType<typeof getServerD
 }
 
 export async function GET(request: Request, context: RouteContext) {
-  const authorizedProvider = await getAuthorizedProviderContext();
+  const { searchParams } = new URL(request.url);
+  const authorizedProvider = await getAuthorizedDesktopBridgeContext(
+    request,
+    searchParams.get('providerId') || undefined,
+  );
   if (!authorizedProvider) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
   const providerId = resolveScopedProviderIdentityId(searchParams.get('providerId') || undefined, authorizedProvider.providerIdentityId);
   const { sessionId } = await context.params;
   const session = getServerDictationSession(sessionId, providerId);
@@ -120,18 +132,28 @@ export async function GET(request: Request, context: RouteContext) {
 }
 
 export async function POST(request: Request, context: RouteContext) {
-  const authorizedProvider = await getAuthorizedProviderContext();
-  if (!authorizedProvider) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const body = await request.json() as {
+  let body: {
     providerId?: string;
-    action?: 'mock_utterance' | 'upload_chunk' | 'pull_events' | 'stop';
+    action?: 'mock_utterance' | 'upload_chunk' | 'pull_events' | 'commit_segment' | 'stop';
     transcriptText?: string;
     chunk?: DictationAudioChunkUpload;
     reason?: DictationStopReason;
+    segment?: TranscriptSegment;
+    draftId?: string;
+    destinationMode?: 'floating-source-box' | 'floating-field-box';
+    destinationFieldId?: string;
+    destinationFieldLabel?: string;
   };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid dictation request body.' }, { status: 400 });
+  }
+
+  const authorizedProvider = await getAuthorizedDesktopBridgeContext(request, body.providerId);
+  if (!authorizedProvider) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
   const providerId = resolveScopedProviderIdentityId(body.providerId, authorizedProvider.providerIdentityId);
   const { sessionId } = await context.params;
@@ -177,6 +199,52 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ transcriptEvents: drained.events });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to load dictation transcript events.';
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+  }
+
+  if (body.action === 'commit_segment') {
+    const session = getServerDictationSession(sessionId, providerId);
+    if (!session) {
+      return NextResponse.json({ error: 'Dictation session not found.' }, { status: 404 });
+    }
+
+    if (!body.segment?.id || !body.segment?.text?.trim()) {
+      return NextResponse.json({ error: 'Final transcript segment is required.' }, { status: 400 });
+    }
+
+    try {
+      const committed = await appendOverlaySegmentToDraft({
+        providerId,
+        dictationSessionId: session.sessionId,
+        encounterId: session.config.encounterId,
+        targetSection: (
+          body.segment.targetSection
+          || session.config.targetSection
+          || 'clinicianNotes'
+        ) as DictationTargetSection,
+        segment: {
+          ...body.segment,
+          dictationSessionId: session.sessionId,
+          encounterId: session.config.encounterId,
+          noteId: body.segment.noteId || body.draftId,
+          isFinal: true,
+        },
+        draftId: body.draftId,
+        destinationMode: body.destinationMode,
+        destinationFieldId: body.destinationFieldId,
+        destinationFieldLabel: body.destinationFieldLabel,
+      });
+
+      return NextResponse.json({
+        committed: {
+          draftId: committed.draft.id,
+          draftUrl: committed.draftUrl,
+          insertion: committed.insertion,
+        },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to commit dictation segment.';
       return NextResponse.json({ error: message }, { status: 400 });
     }
   }

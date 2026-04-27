@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     return NextResponse.json(summary);
   } catch (error) {
     return NextResponse.json({
-      error: error instanceof Error ? error.message : 'Unable to load Vera Lab summary.',
+      error: error instanceof Error ? error.message : 'Unable to load Atlas Lab summary.',
     }, { status: 500 });
   }
 }

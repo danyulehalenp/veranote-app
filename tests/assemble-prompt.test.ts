@@ -167,6 +167,33 @@ describe('assemblePrompt', () => {
     expect(prompt).toContain('do not reframe it as a harmless supplement');
   });
 
+  it('tells sparse templates to omit empty low-value sections instead of repeating not-documented boilerplate', () => {
+    const prompt = assemblePrompt({
+      ...baseInput,
+      sourceInput: `### Clinician note
+- Brief med check.
+- "About the same."
+- Needs refill.`,
+    });
+
+    expect(prompt).toContain('Do not pad the draft by rendering a long run of empty history domains');
+    expect(prompt).toContain('use one short gap statement in Assessment or Plan');
+  });
+
+  it('treats safety planning and crisis-resource review as explicit plan content', () => {
+    const prompt = assemblePrompt({
+      ...baseInput,
+      sourceInput: `### Clinician note
+- Safety planning reviewed.
+- Mobile crisis discussed.
+- Support person stayed overnight.
+- ED escalation threshold reviewed.`,
+    });
+
+    expect(prompt).toContain('carry those details into the Plan section instead of leaving Plan generic');
+    expect(prompt).not.toContain('No explicit plan is documented in the source.');
+  });
+
 });
 
 describe('assembleAssistantKnowledgePrompt', () => {

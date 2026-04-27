@@ -9,8 +9,19 @@ import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '@/lib/constant
 import { findProviderProfile } from '@/lib/constants/provider-profiles';
 import { EVAL_CASE_KEY } from '@/lib/constants/storage';
 import { buildSourceInputFromSections, describePopulatedSourceSections, EMPTY_SOURCE_SECTIONS, normalizeSourceSections } from '@/lib/ai/source-sections';
+import {
+  buildAmbientResumeSnapshot,
+  parseAmbientResumeSnapshot,
+  shouldIgnoreAmbientResumeClearDuringHydration,
+  type AmbientResumeSnapshot,
+} from '@/lib/ambient-listening/resume-storage';
 import { ReviewWorkspace } from '@/components/note/review-workspace';
+import {
+  AmbientEncounterWorkspace,
+  type AmbientSessionPersistenceSnapshot,
+} from '@/components/note/ambient/ambient-encounter-workspace';
 import { DictationControlBar } from '@/components/note/dictation/dictation-control-bar';
+import { DictationCommandManager } from '@/components/note/dictation/dictation-command-manager';
 import { DictationTranscriptPanel } from '@/components/note/dictation/dictation-transcript-panel';
 import { CombinedView } from '@/components/veranote/input/CombinedView';
 import { SourceInput } from '@/components/veranote/input/SourceInput';
@@ -29,10 +40,12 @@ import { buildLanePreferencePrompt, buildPreferenceAssistantDraft } from '@/lib/
 import {
   buildStarterOutputProfiles,
   getOutputDestinationMeta,
+  getOutputDestinationOptions,
   getOutputNoteFocusLabel,
   inferOutputNoteFocus,
 } from '@/lib/veranote/output-destinations';
 import {
+  getAmbientSessionResumeStorageKey,
   getAssistantPendingActionStorageKey,
   getCurrentProviderId,
   getDraftRecoveryStorageKey,
@@ -62,6 +75,9 @@ import {
   setDictationUiState as setLocalDictationUiState,
   updateDictationTarget,
 } from '@/lib/dictation/session-store';
+import { resolveDictationCommandMatch } from '@/lib/dictation/command-library';
+import { getEffectiveDictationCommands } from '@/lib/dictation/command-library';
+import { buildDictationVoiceGuide, buildVoiceVocabularyHints } from '@/lib/dictation/voice-training';
 import { resolveVeraAddress } from '@/lib/veranote/vera-relationship';
 import {
   dismissLanePreferenceSuggestion,
@@ -72,11 +88,36 @@ import {
 import type { DraftComposeLane, DraftSession, EncounterSupport, PersistedDraftSession, SourceSections, StructuredPsychDiagnosisProfileEntry, StructuredPsychMedicationProfileEntry } from '@/types/session';
 import type { DictationAuditEvent, DictationTargetSection } from '@/types/dictation';
 import type { EvalCaseSelection } from '@/types/eval';
+import type { AmbientCareSetting, AmbientListeningMode } from '@/types/ambient-listening';
+
+const PROVIDER_ROLE_OPTIONS = [
+  'Psychiatric NP',
+  'Psychiatrist',
+  'Physician Assistant',
+  'Medical physician',
+  'Social Worker',
+  'Therapist',
+  'Psychologist',
+  'PCP',
+];
+
+const SPECIALTY_OPTIONS = Object.keys(noteTypeOptionsBySpecialty);
 
 function defaultRoleForSpecialty(specialty: string) {
   switch (specialty) {
+    case 'Social Work':
+      return 'Social Worker';
+    case 'Psychology':
+      return 'Psychologist';
     case 'Therapy':
       return 'Therapist';
+    case 'Primary Care':
+    case 'Family Medicine':
+    case 'Internal Medicine':
+    case 'Pediatrics':
+    case 'Emergency Medicine':
+    case 'Hospital Medicine':
+    case 'Neurology':
     case 'General Medical':
       return 'PCP';
     case 'Psychiatry':
@@ -90,6 +131,32 @@ function specialtyForNoteType(noteType: string) {
   return entry?.[0] || 'Psychiatry';
 }
 
+type SourceWorkspaceMode = 'manual' | 'dictation' | 'transcript' | 'objective';
+
+function inferAmbientCareSetting(noteType: string): AmbientCareSetting {
+  if (/telehealth/i.test(noteType)) {
+    return 'telehealth';
+  }
+
+  if (/crisis|ed/i.test(noteType)) {
+    return 'ed_crisis';
+  }
+
+  if (/inpatient|discharge/i.test(noteType)) {
+    return 'inpatient';
+  }
+
+  return 'outpatient_psychiatry';
+}
+
+function inferAmbientListeningMode(noteType: string): AmbientListeningMode {
+  if (/telehealth/i.test(noteType)) {
+    return 'ambient_telehealth';
+  }
+
+  return 'ambient_in_room';
+}
+
 type WorkflowGuidance = {
   careSetting: 'Inpatient' | 'Outpatient' | 'Telehealth' | 'Mixed';
   title: string;
@@ -98,6 +165,8 @@ type WorkflowGuidance = {
   reviewReminder: string;
   sectionHints: Partial<Record<keyof SourceSections, string>>;
 };
+
+const AMBIENT_RESUME_FALLBACK_STORAGE_KEY = 'veranote:ambient-session-resume:last';
 
 function getDiagnosisStatusGuidance(
   status: StructuredPsychDiagnosisProfileEntry['status'],
@@ -417,7 +486,7 @@ function buildComposeNudges(input: {
     nudges.push({
       id: 'start-source',
       label: 'Start with any source stream',
-      detail: 'Paste intake, clinician notes, transcript, or objective data first. The workflow does not need every box before it becomes useful.',
+      detail: 'Add pre-visit data, live visit notes, ambient transcript, or provider add-on details first. The workflow does not need every box before it becomes useful.',
       tone: 'info',
     });
   }
@@ -652,14 +721,14 @@ function getSectionExpectationClasses(status: SectionExpectationSignal['status']
 }
 
 const DICTATION_TARGET_LABELS: Record<DictationTargetSection, string> = {
-  clinicianNotes: 'Clinician notes',
-  intakeCollateral: 'Intake or collateral',
-  patientTranscript: 'Patient conversation',
-  objectiveData: 'Objective data',
+  intakeCollateral: 'Pre-Visit Data',
+  clinicianNotes: 'Live Visit Notes',
+  patientTranscript: 'Ambient Transcript',
+  objectiveData: 'Provider Add-On',
 };
 
 function isDictationTargetSection(value: SourceTabKey): value is DictationTargetSection {
-  return value === 'clinicianNotes' || value === 'intakeCollateral' || value === 'patientTranscript';
+  return value === 'clinicianNotes' || value === 'intakeCollateral' || value === 'patientTranscript' || value === 'objectiveData';
 }
 
 function formatDictationProviderLabel(sttProvider: string | null | undefined) {
@@ -678,15 +747,40 @@ function formatDictationProviderLabel(sttProvider: string | null | undefined) {
   return sttProvider.replace(/-/g, ' ');
 }
 
+function formatDictationProviderRuntimeLabel(input: {
+  providerLabel?: string | null;
+  engineLabel?: string | null;
+  fallbackApplied?: boolean;
+}) {
+  const providerLabel = input.providerLabel?.trim() || 'not started';
+  const engineLabel = input.engineLabel?.trim();
+
+  if (providerLabel === 'not started') {
+    return providerLabel;
+  }
+
+  const parts = [providerLabel];
+  if (engineLabel) {
+    parts.push(engineLabel);
+  }
+  if (input.fallbackApplied) {
+    parts.push('fallback');
+  }
+
+  return parts.join(' • ');
+}
+
 function formatDictationBackendStatusLabel(input: {
   status?: string;
   streamConnected?: boolean;
+  fallbackApplied?: boolean;
 }) {
+  const status = input.status || 'idle';
   if (input.streamConnected && input.status === 'active') {
-    return 'active • live stream';
+    return input.fallbackApplied ? 'active • live stream • fallback' : 'active • live stream';
   }
 
-  return input.status || 'idle';
+  return input.fallbackApplied && status === 'active' ? 'active • fallback' : status;
 }
 
 function mergeDictationAuditEvents(
@@ -730,6 +824,15 @@ type DictationSessionHistoryItem = {
   providerLabel: string;
   eventCount: number;
   eventNames: string[];
+};
+
+type DictationProviderStatusOption = {
+  providerId: string;
+  providerLabel: string;
+  adapterId: string;
+  available: boolean;
+  engineLabel: string;
+  reason: string;
 };
 
 function summarizeDictationSessionHistory(events: DictationAuditEvent[]) {
@@ -791,20 +894,35 @@ function mergeDictationSessionHistory(
     .slice(0, 5);
 }
 
+function isServerDictationSessionId(sessionId: string | undefined) {
+  return Boolean(sessionId?.startsWith('server-dictation-'));
+}
+
 export function NewNoteForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   const composeWorkspaceRef = useRef<HTMLDivElement | null>(null);
+  const topDictationControlsRef = useRef<HTMLDivElement | null>(null);
   const outputPreferencesDetailsRef = useRef<HTMLDetailsElement | null>(null);
+  const specialtySelectRef = useRef<HTMLSelectElement | null>(null);
+  const roleSelectRef = useRef<HTMLSelectElement | null>(null);
+  const noteTypeSelectRef = useRef<HTMLSelectElement | null>(null);
+  const templateSelectRef = useRef<HTMLSelectElement | null>(null);
+  const activeOutputProfileSelectRef = useRef<HTMLSelectElement | null>(null);
+  const outputProfileNameInputRef = useRef<HTMLInputElement | null>(null);
+  const jumpHighlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const composeSectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const hydratedFromSavedStateRef = useRef(false);
   const providerProfileAppliedRef = useRef(false);
   const dictationMediaStreamRef = useRef<MediaStream | null>(null);
   const dictationRecorderRef = useRef<MediaRecorder | null>(null);
+  const dictationRecordedAudioChunksRef = useRef<Blob[]>([]);
   const dictationEventSourceRef = useRef<EventSource | null>(null);
   const dictationChunkSequenceRef = useRef(0);
   const [hasClientHydrated, setHasClientHydrated] = useState(false);
+  const [jumpHighlightTarget, setJumpHighlightTarget] = useState<'setup' | 'output-preferences' | 'site-presets' | null>(null);
+  const [sessionSnapshotPanel, setSessionSnapshotPanel] = useState<'setup' | 'site-presets' | 'destination-fit' | null>(null);
   const [workflowStage, setWorkflowStage] = useState<'compose' | 'review'>('compose');
   const [activeComposeLane, setActiveComposeLane] = useState<DraftComposeLane>('source');
   const [generatedSession, setGeneratedSession] = useState<DraftSession | null>(null);
@@ -823,6 +941,7 @@ export function NewNoteForm() {
   const [encounterSupport, setEncounterSupport] = useState<EncounterSupport>(() => createEncounterSupportDefaults('Inpatient Psych Progress Note'));
   const [medicationProfile, setMedicationProfile] = useState<StructuredPsychMedicationProfileEntry[]>([]);
   const [diagnosisProfile, setDiagnosisProfile] = useState<StructuredPsychDiagnosisProfileEntry[]>([]);
+  const [sourceWorkspaceMode, setSourceWorkspaceMode] = useState<SourceWorkspaceMode>('manual');
   const [activeSourceTab, setActiveSourceTab] = useState<SourceTabKey>('intakeCollateral');
   const [dictationInsertions, setDictationInsertions] = useState<DraftSession['dictationInsertions']>({});
   const [dictationSession, setDictationSession] = useState(() => createLocalDictationSession({}));
@@ -834,6 +953,11 @@ export function NewNoteForm() {
   const [dictationUploadedChunkCount, setDictationUploadedChunkCount] = useState(0);
   const [dictationUploadedAudioBytes, setDictationUploadedAudioBytes] = useState(0);
   const [dictationProviderLabel, setDictationProviderLabel] = useState('not started');
+  const [dictationProviderNote, setDictationProviderNote] = useState('No dictation provider selected yet.');
+  const [dictationProviderOptions, setDictationProviderOptions] = useState<DictationProviderStatusOption[]>([]);
+  const [dictationRequestedProviderId, setDictationRequestedProviderId] = useState('');
+  const [dictationAllowMockFallback, setDictationAllowMockFallback] = useState(true);
+  const [dictationProviderStatusLoading, setDictationProviderStatusLoading] = useState(false);
   const [dictationBackendStatus, setDictationBackendStatus] = useState('idle');
   const [dictationQueuedEventCount, setDictationQueuedEventCount] = useState(0);
   const [dictationTransportLabel, setDictationTransportLabel] = useState('polling standby');
@@ -842,6 +966,23 @@ export function NewNoteForm() {
   const [selectedDictationHistorySessionId, setSelectedDictationHistorySessionId] = useState('');
   const [selectedDictationHistoryEvents, setSelectedDictationHistoryEvents] = useState<DictationAuditEvent[]>([]);
   const [selectedDictationHistoryLoading, setSelectedDictationHistoryLoading] = useState(false);
+  const [ambientSessionSummary, setAmbientSessionSummary] = useState<{
+    sessionState: string;
+    transcriptEventCount: number;
+    unresolvedSpeakerTurnCount: number;
+    reviewFlagCount: number;
+    transcriptReadyForSource: boolean;
+  }>({
+    sessionState: 'idle',
+    transcriptEventCount: 0,
+    unresolvedSpeakerTurnCount: 0,
+    reviewFlagCount: 0,
+    transcriptReadyForSource: false,
+  });
+  const [ambientTranscriptHandoff, setAmbientTranscriptHandoff] = useState<DraftSession['ambientTranscriptHandoff']>();
+  const [ambientResumeSnapshot, setAmbientResumeSnapshot] = useState<AmbientResumeSnapshot | null>(null);
+  const [ambientResumeHydrated, setAmbientResumeHydrated] = useState(false);
+  const [ambientWorkspaceResetToken, setAmbientWorkspaceResetToken] = useState(0);
   const [outputStyle, setOutputStyle] = useState('Standard');
   const [format, setFormat] = useState('Labeled Sections');
   const [flagMissingInfo, setFlagMissingInfo] = useState(true);
@@ -864,10 +1005,25 @@ export function NewNoteForm() {
   const [outputProfileName, setOutputProfileName] = useState('');
   const [outputProfileSiteLabel, setOutputProfileSiteLabel] = useState('');
   const resolvedProviderIdentityId = session?.user?.providerIdentityId || getCurrentProviderId();
+  const ambientSessionResumeStorageKey = getAmbientSessionResumeStorageKey(resolvedProviderIdentityId);
   const draftSessionStorageKey = getDraftSessionStorageKey(resolvedProviderIdentityId);
   const draftRecoveryStorageKey = getDraftRecoveryStorageKey(resolvedProviderIdentityId);
   const draftStageStorageKey = `${draftSessionStorageKey}-stage`;
   const assistantPendingActionStorageKey = getAssistantPendingActionStorageKey(resolvedProviderIdentityId);
+
+  useEffect(() => {
+    return () => {
+      if (jumpHighlightTimeoutRef.current) {
+        clearTimeout(jumpHighlightTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    });
+  }, []);
 
   const noteTypeOptions = useMemo(() => noteTypeOptionsBySpecialty[specialty] || [], [specialty]);
   const templateOptions = useMemo(() => templateOptionsByNoteType[noteType] || [], [noteType]);
@@ -898,9 +1054,22 @@ export function NewNoteForm() {
     () => (isDictationTargetSection(activeSourceTab) ? activeSourceTab : undefined),
     [activeSourceTab],
   );
+  const ambientCareSetting = useMemo(() => inferAmbientCareSetting(noteType), [noteType]);
+  const ambientListeningMode = useMemo(() => inferAmbientListeningMode(noteType), [noteType]);
+  const effectiveDictationCommands = useMemo(
+    () => getEffectiveDictationCommands(providerSettings.dictationCommands),
+    [providerSettings.dictationCommands],
+  );
+  const dictationVoiceGuide = useMemo(
+    () => buildDictationVoiceGuide({
+      settings: providerSettings.dictationVoiceProfile,
+      pendingSegments: dictationSession.pendingSegments,
+    }),
+    [dictationSession.pendingSegments, providerSettings.dictationVoiceProfile],
+  );
   const dictationTargetLabel = dictationTargetSection
-    ? `Target section: ${DICTATION_TARGET_LABELS[dictationTargetSection]}`
-    : 'Target section: choose clinician notes, intake, or patient conversation';
+    ? `Dictation target: ${DICTATION_TARGET_LABELS[dictationTargetSection]}`
+    : 'Dictation target: choose clinician notes, intake, or patient conversation';
   const dictationCaptureState = useMemo(() => getBrowserDictationCaptureState({
     supported: hasClientHydrated && typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function',
     stream: dictationHasStream ? dictationMediaStreamRef.current : null,
@@ -1033,6 +1202,55 @@ export function NewNoteForm() {
     };
   }, [resolvedProviderIdentityId, selectedDictationHistorySessionId]);
 
+  async function refreshDictationProviderStatuses() {
+    setDictationProviderStatusLoading(true);
+    try {
+      const response = await fetch('/api/dictation/providers', { cache: 'no-store' });
+      const payload = await response.json() as {
+        providers?: DictationProviderStatusOption[];
+        defaultSelection?: {
+          requestedProvider?: string;
+          activeProvider?: string;
+          activeProviderLabel?: string;
+          engineLabel?: string;
+          fallbackApplied?: boolean;
+          fallbackReason?: string;
+          reason?: string;
+        };
+      };
+
+      if (!response.ok) {
+        throw new Error('Unable to load dictation provider status.');
+      }
+
+      const nextProviders = Array.isArray(payload.providers) ? payload.providers : [];
+      setDictationProviderOptions(nextProviders);
+
+      if (!dictationSession.sessionId) {
+        const defaultRequestedProvider = payload.defaultSelection?.requestedProvider
+          || nextProviders.find((item) => item.available && item.providerId === 'openai-transcription')?.providerId
+          || nextProviders[0]?.providerId
+          || 'mock-stt';
+        setDictationRequestedProviderId((current) => current || defaultRequestedProvider);
+        setDictationProviderLabel(formatDictationProviderRuntimeLabel({
+          providerLabel: payload.defaultSelection?.activeProviderLabel,
+          engineLabel: payload.defaultSelection?.engineLabel,
+          fallbackApplied: payload.defaultSelection?.fallbackApplied,
+        }));
+        setDictationProviderNote(payload.defaultSelection?.fallbackReason || payload.defaultSelection?.reason || 'Select a provider before starting dictation.');
+      }
+    } catch (err) {
+      setDictationProviderNote(err instanceof Error ? err.message : 'Unable to load dictation provider status.');
+    } finally {
+      setDictationProviderStatusLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void refreshDictationProviderStatuses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     return () => {
       if (dictationEventSourceRef.current) {
@@ -1042,6 +1260,7 @@ export function NewNoteForm() {
       if (dictationRecorderRef.current && dictationRecorderRef.current.state !== 'inactive') {
         dictationRecorderRef.current.stop();
       }
+      dictationRecordedAudioChunksRef.current = [];
       stopBrowserDictationStream(dictationMediaStreamRef.current);
       dictationMediaStreamRef.current = null;
     };
@@ -1104,6 +1323,11 @@ export function NewNoteForm() {
       error?: string;
       session?: {
         sttProvider?: string;
+        activeProviderLabel?: string;
+        engineLabel?: string;
+        fallbackApplied?: boolean;
+        fallbackReason?: string;
+        providerReason?: string;
         status?: string;
         receivedAudioChunkCount?: number;
         receivedAudioBytes?: number;
@@ -1118,8 +1342,16 @@ export function NewNoteForm() {
 
     const session = payload.session as NonNullable<typeof payload.session>;
 
-    setDictationProviderLabel(formatDictationProviderLabel(session.sttProvider));
-    setDictationBackendStatus(formatDictationBackendStatusLabel({ status: session.status || 'active' }));
+    setDictationProviderLabel(formatDictationProviderRuntimeLabel({
+      providerLabel: session.activeProviderLabel || formatDictationProviderLabel(session.sttProvider),
+      engineLabel: session.engineLabel,
+      fallbackApplied: session.fallbackApplied,
+    }));
+    setDictationProviderNote(session.fallbackReason || session.providerReason || 'Backend provider session is active.');
+    setDictationBackendStatus(formatDictationBackendStatusLabel({
+      status: session.status || 'active',
+      fallbackApplied: session.fallbackApplied,
+    }));
     setDictationUploadedChunkCount(session.receivedAudioChunkCount || 0);
     setDictationUploadedAudioBytes(session.receivedAudioBytes || 0);
     setDictationQueuedEventCount(session.queuedTranscriptEventCount || 0);
@@ -1155,6 +1387,12 @@ export function NewNoteForm() {
     setDictationSession((current) => {
       const interimSegments = transcriptEvents.filter((segment) => !segment.isFinal);
       const finalSegments = transcriptEvents.filter((segment) => segment.isFinal);
+      if (finalSegments.length) {
+        pauseBrowserRecorder();
+        setBrowserDictationStreamPaused(dictationMediaStreamRef.current, true);
+        setDictationCapturePaused(true);
+        setEvalBanner('Transcript is ready for review. Microphone capture is paused until you insert or discard it.');
+      }
       const withInterim = interimSegments.length
         ? applyInterimSegment(updateDictationTarget(current, dictationTargetSection), interimSegments[interimSegments.length - 1])
         : current;
@@ -1182,6 +1420,11 @@ export function NewNoteForm() {
     source.addEventListener('session_state', (event) => {
       const payload = JSON.parse((event as MessageEvent<string>).data) as {
         sttProvider?: string;
+        activeProviderLabel?: string;
+        engineLabel?: string;
+        fallbackApplied?: boolean;
+        fallbackReason?: string;
+        providerReason?: string;
         status?: string;
         receivedAudioChunkCount?: number;
         receivedAudioBytes?: number;
@@ -1189,10 +1432,16 @@ export function NewNoteForm() {
         recentAuditEvents?: DictationAuditEvent[];
       };
 
-      setDictationProviderLabel(formatDictationProviderLabel(payload.sttProvider));
+      setDictationProviderLabel(formatDictationProviderRuntimeLabel({
+        providerLabel: payload.activeProviderLabel || formatDictationProviderLabel(payload.sttProvider),
+        engineLabel: payload.engineLabel,
+        fallbackApplied: payload.fallbackApplied,
+      }));
+      setDictationProviderNote(payload.fallbackReason || payload.providerReason || 'Backend provider session is active.');
       setDictationBackendStatus(formatDictationBackendStatusLabel({
         status: payload.status || 'active',
         streamConnected: true,
+        fallbackApplied: payload.fallbackApplied,
       }));
       setDictationUploadedChunkCount(payload.receivedAudioChunkCount || 0);
       setDictationUploadedAudioBytes(payload.receivedAudioBytes || 0);
@@ -1247,7 +1496,11 @@ export function NewNoteForm() {
   }
 
   useEffect(() => {
-    if (workflowStage !== 'compose' || !dictationSession.sessionId || dictationSession.uiState === 'stopped') {
+    if (
+      workflowStage !== 'compose'
+      || !isServerDictationSessionId(dictationSession.sessionId)
+      || dictationSession.uiState === 'stopped'
+    ) {
       closeDictationEventStream();
       return;
     }
@@ -1286,6 +1539,7 @@ export function NewNoteForm() {
       return;
     }
 
+    dictationRecordedAudioChunksRef.current = [];
     const preferredMimeType = getPreferredRecorderMimeType(window.MediaRecorder);
     const recorder = preferredMimeType
       ? new window.MediaRecorder(stream, { mimeType: preferredMimeType })
@@ -1297,7 +1551,12 @@ export function NewNoteForm() {
         return;
       }
 
-      void uploadRecordedDictationChunk(sessionId, blob).catch((err) => {
+      dictationRecordedAudioChunksRef.current.push(blob);
+      const cumulativeBlob = new Blob(dictationRecordedAudioChunksRef.current, {
+        type: blob.type || preferredMimeType || 'audio/webm',
+      });
+
+      void uploadRecordedDictationChunk(sessionId, cumulativeBlob).catch((err) => {
         const message = err instanceof Error ? err.message : 'Unable to upload dictation audio.';
         setDictationCaptureError(message);
         setError(message);
@@ -1325,6 +1584,7 @@ export function NewNoteForm() {
       dictationRecorderRef.current.stop();
     }
     dictationRecorderRef.current = null;
+    dictationRecordedAudioChunksRef.current = [];
   }
 
   async function handleApplyOutputProfile(profileId: string) {
@@ -1378,6 +1638,44 @@ export function NewNoteForm() {
     } catch {
       // Local state still supports the workflow if backend persistence is unavailable.
     }
+  }
+
+  function handleTopSpecialtyChange(nextSpecialty: string) {
+    const nextNoteTypeOptions = noteTypeOptionsBySpecialty[nextSpecialty] || [];
+    const nextNoteType = nextNoteTypeOptions.includes(noteType) ? noteType : nextNoteTypeOptions[0] || noteType;
+    const nextTemplateOptions = templateOptionsByNoteType[nextNoteType] || [];
+
+    setSpecialty(nextSpecialty);
+    setRole((current) => (PROVIDER_ROLE_OPTIONS.includes(current) ? current : defaultRoleForSpecialty(nextSpecialty)));
+    setNoteType(nextNoteType);
+    setTemplate((current) => (nextTemplateOptions.includes(current) ? current : nextTemplateOptions[0] || current));
+    setEvalBanner(`Field changed to ${nextSpecialty}. Note type options now match that workflow.`);
+  }
+
+  function handleTopNoteTypeChange(nextNoteType: string) {
+    const nextTemplateOptions = templateOptionsByNoteType[nextNoteType] || [];
+
+    setNoteType(nextNoteType);
+    setTemplate(nextTemplateOptions[0] || '');
+    setEncounterSupport(createEncounterSupportDefaults(nextNoteType));
+    setEvalBanner(`Note type changed to ${nextNoteType}. Veranote will format the draft around that note lane.`);
+  }
+
+  async function handleTopDestinationChange(nextDestination: ProviderSettings['outputDestination']) {
+    const destinationMeta = getOutputDestinationMeta(nextDestination);
+    const nextSettings = {
+      ...providerSettings,
+      outputDestination: nextDestination,
+      asciiSafe: destinationMeta.enforceAsciiSafe,
+      paragraphOnly: destinationMeta.preferParagraphOnly,
+      wellskyFriendly: nextDestination === 'WellSky',
+      activeOutputProfileId: '',
+    };
+
+    setProviderSettings(nextSettings);
+    setFormat(nextSettings.paragraphOnly ? 'Paragraph Style' : 'Labeled Sections');
+    setEvalBanner(`EHR destination changed to ${destinationMeta.summaryLabel}. Veranote will use that destination behavior.`);
+    await persistProviderSettings(nextSettings);
   }
 
   async function handleSaveOutputProfile() {
@@ -1589,38 +1887,64 @@ export function NewNoteForm() {
     () => ([
       {
         key: 'intakeCollateral',
-        label: 'Paste intake or collateral',
-        shortLabel: 'Intake',
-        description: 'Intake notes, collateral history, social work context, or background records.',
+        label: 'Pre-Visit Data',
+        shortLabel: 'Pre-Visit',
+        description: 'Labs, vitals, med lists, nursing intake, chart review, collateral, rating scales, and copied raw EHR data gathered before seeing the patient.',
       },
       {
         key: 'clinicianNotes',
-        label: 'Paste clinician notes',
-        shortLabel: 'Clinician',
-        description: 'Your rough bullets, copied chart text, impressions, and shorthand clinical notes.',
+        label: 'Live Visit Notes',
+        shortLabel: 'Live Visit',
+        description: 'Provider typing or dictation during the visit: HPI, observed behavior, MSE impressions, risk language, medication discussion, and clinical reasoning.',
       },
       {
         key: 'patientTranscript',
-        label: 'Paste patient conversation or transcript',
-        shortLabel: 'Transcript',
-        description: 'Direct quotes, interview excerpts, timelines, or patient-reported details.',
+        label: 'Ambient Transcript',
+        shortLabel: 'Ambient',
+        description: 'Ambient listening output, patient/provider dialogue, direct quotes, transcript corrections, and any spoken material the provider wants included.',
       },
       {
         key: 'objectiveData',
-        label: 'Paste objective data, meds, labs, or vitals',
-        shortLabel: 'Objective',
-        description: 'Medication lists, labs, vitals, scales, and other structured findings.',
+        label: 'Provider Add-On',
+        shortLabel: 'Add-On',
+        description: 'Diagnosis or billing codes, preferred plan language, site-specific instructions, discharge wording, or anything important that does not fit the other fields.',
       },
     ]),
     [],
   );
-  const activeSourceStepIndex = useMemo(
-    () => sourceEntrySteps.findIndex((step) => step.key === activeSourceTab),
-    [activeSourceTab, sourceEntrySteps],
-  );
-  const activeSourceStep = sourceEntrySteps[Math.max(activeSourceStepIndex, 0)] || sourceEntrySteps[0];
+  const manualSourceSteps = sourceEntrySteps;
+  const dictationTargetSteps = sourceEntrySteps;
+  const activeDictationTargetStep = dictationTargetSection
+    ? dictationTargetSteps.find((step) => step.key === dictationTargetSection) || dictationTargetSteps[0]
+    : dictationTargetSteps[0];
   const sourceCompletionCount = populatedSectionLabels.length;
   const sourceCompletionPercent = Math.round((sourceCompletionCount / sourceEntrySteps.length) * 100);
+  const sourceModeCards = useMemo(
+    () => ([
+      {
+        id: 'manual' as const,
+        label: 'Source packet',
+        detail: 'The four-field note workspace: pre-visit data, live visit notes, ambient transcript, and provider add-on.',
+      },
+      {
+        id: 'dictation' as const,
+        label: 'Dictation',
+        detail: 'Provider-directed source capture with insertion review, owned by the dictation lane.',
+      },
+      {
+        id: 'transcript' as const,
+        label: 'Transcript',
+        detail: 'Review spoken source, queued dictation segments, and transcript history in one calmer workspace.',
+      },
+    ]),
+    [],
+  );
+
+  useEffect(() => {
+    if (sourceWorkspaceMode === 'objective' && activeSourceTab !== 'objectiveData') {
+      setActiveSourceTab('objectiveData');
+    }
+  }, [activeSourceTab, sourceWorkspaceMode]);
   const workspaceStageItems = useMemo(
     () => buildWorkspaceStageStatusItems({
       sourceCompletionCount,
@@ -1734,6 +2058,30 @@ export function NewNoteForm() {
 
     return 'No saved checkpoint is active. This workspace is ready for a fresh note.';
   }, [draftCheckpoint?.lastSavedAt, draftCheckpoint?.sourceInput, generatedSession?.note, generatedSession?.noteType]);
+  const ambientResumeStatus = useMemo(() => {
+    if (!ambientResumeSnapshot?.sessionId) {
+      return null;
+    }
+
+    const lastUpdatedLabel = ambientResumeSnapshot.updatedAt
+      ? formatRelativeCheckpointTime(ambientResumeSnapshot.updatedAt)
+      : 'recently';
+    const hasLiveAmbientContext = ambientSessionSummary.sessionState !== 'idle'
+      || ambientSessionSummary.transcriptEventCount > 0
+      || ambientSessionSummary.reviewFlagCount > 0;
+
+    if (hasLiveAmbientContext) {
+      return {
+        title: 'Ambient encounter reattached',
+        detail: `Resumed ${ambientResumeSnapshot.sessionState.replace(/_/g, ' ')} ambient work from ${lastUpdatedLabel}. Keep transcript review and speaker correction in this lane before trusting the note handoff.`,
+      };
+    }
+
+    return {
+      title: 'Ambient encounter available to resume',
+      detail: `A saved ambient session from ${lastUpdatedLabel} is ready to reopen in this note workspace.`,
+    };
+  }, [ambientResumeSnapshot, ambientSessionSummary.reviewFlagCount, ambientSessionSummary.sessionState, ambientSessionSummary.transcriptEventCount]);
 
   useEffect(() => {
     async function hydratePresets() {
@@ -1755,6 +2103,29 @@ export function NewNoteForm() {
 
     void hydratePresets();
   }, [resolvedProviderIdentityId]);
+
+  useEffect(() => {
+    if (!hasClientHydrated) {
+      return;
+    }
+
+    const raw = localStorage.getItem(ambientSessionResumeStorageKey);
+    const parsed = parseAmbientResumeSnapshot(raw)
+      || parseAmbientResumeSnapshot(localStorage.getItem(AMBIENT_RESUME_FALLBACK_STORAGE_KEY));
+
+    if (!parsed) {
+      if (raw) {
+        localStorage.removeItem(ambientSessionResumeStorageKey);
+      }
+      localStorage.removeItem(AMBIENT_RESUME_FALLBACK_STORAGE_KEY);
+      setAmbientResumeSnapshot(null);
+      setAmbientResumeHydrated(true);
+      return;
+    }
+
+    setAmbientResumeSnapshot(parsed);
+    setAmbientResumeHydrated(true);
+  }, [ambientSessionResumeStorageKey, hasClientHydrated]);
 
   useEffect(() => {
     async function hydrateDraft() {
@@ -1783,6 +2154,7 @@ export function NewNoteForm() {
             setOutputScope(parsed.outputScope || 'full-note');
             setRequestedSections(Array.isArray(parsed.requestedSections) ? parsed.requestedSections as NoteSectionKey[] : []);
             setDictationInsertions(parsed.dictationInsertions || {});
+            setAmbientTranscriptHandoff(parsed.ambientTranscriptHandoff);
             setPresetName('');
             setDraftCheckpoint(parsed);
             setGeneratedSession(parsed.note ? parsed : null);
@@ -1863,6 +2235,7 @@ export function NewNoteForm() {
           setRequestedSections([]);
           setPresetName('');
           setCustomInstructions('');
+          setAmbientTranscriptHandoff(undefined);
           setGeneratedSession(null);
           setDraftCheckpoint(null);
           setWorkflowStage('compose');
@@ -1908,6 +2281,7 @@ export function NewNoteForm() {
           setOutputScope(parsed.outputScope || 'full-note');
           setRequestedSections(Array.isArray(parsed.requestedSections) ? parsed.requestedSections as NoteSectionKey[] : []);
           setDictationInsertions(parsed.dictationInsertions || {});
+          setAmbientTranscriptHandoff(parsed.ambientTranscriptHandoff);
           setPresetName('');
           setDraftCheckpoint(parsed);
           setGeneratedSession(parsed.note ? parsed : null);
@@ -1945,6 +2319,7 @@ export function NewNoteForm() {
         setOutputScope(parsed.outputScope || 'full-note');
         setRequestedSections(Array.isArray(parsed.requestedSections) ? parsed.requestedSections as NoteSectionKey[] : []);
         setDictationInsertions(parsed.dictationInsertions || {});
+        setAmbientTranscriptHandoff(parsed.ambientTranscriptHandoff);
         setPresetName('');
         setDraftCheckpoint(parsed);
         setGeneratedSession(parsed.note ? parsed : null);
@@ -2008,6 +2383,7 @@ export function NewNoteForm() {
       diagnosisProfile,
       sourceInput,
       sourceSections,
+      ambientTranscriptHandoff,
       dictationInsertions,
       note: '',
       flags: [],
@@ -2043,6 +2419,7 @@ export function NewNoteForm() {
       diagnosisProfile,
       sourceInput,
       sourceSections,
+      ambientTranscriptHandoff,
       dictationInsertions,
       composeLane: activeComposeLane,
     });
@@ -2066,6 +2443,7 @@ export function NewNoteForm() {
           diagnosisProfile: draftCheckpoint.diagnosisProfile,
           sourceInput: draftCheckpoint.sourceInput,
           sourceSections: draftCheckpoint.sourceSections,
+          ambientTranscriptHandoff: draftCheckpoint.ambientTranscriptHandoff,
           dictationInsertions: draftCheckpoint.dictationInsertions,
           composeLane: draftCheckpoint.recoveryState?.composeLane || 'source',
         })
@@ -2121,6 +2499,7 @@ export function NewNoteForm() {
     return () => window.clearTimeout(timeout);
   }, [
     activeComposeLane,
+    ambientTranscriptHandoff,
     customInstructions,
     diagnosisProfile,
     dictationInsertions,
@@ -2277,7 +2656,7 @@ export function NewNoteForm() {
           assistantMemoryService.getProfilePromptSuggestion(providerSettings.providerProfileId, resolvedProviderIdentityId),
         );
       } catch {
-        // Keep local provider-scoped Vera memory available if backend hydration fails.
+        // Keep local provider-scoped Atlas memory available if backend hydration fails.
       }
     }
 
@@ -2291,6 +2670,7 @@ export function NewNoteForm() {
   useEffect(() => {
     publishAssistantContext({
       stage: workflowStage,
+      activeSourceMode: sourceWorkspaceMode,
       noteType: workflowStage === 'review' && generatedSession ? generatedSession.noteType : noteType,
       specialty: workflowStage === 'review' && generatedSession ? generatedSession.specialty : specialty,
       currentDraftText: workflowStage === 'review' && generatedSession?.note ? generatedSession.note.slice(0, 4000) : undefined,
@@ -2304,8 +2684,18 @@ export function NewNoteForm() {
       customInstructions,
       presetName,
       selectedPresetId,
+      ambientSessionState: ambientSessionSummary.sessionState,
+      ambientTranscriptEventCount: ambientSessionSummary.transcriptEventCount,
+      ambientReviewFlagCount: ambientSessionSummary.reviewFlagCount,
+      ambientUnresolvedSpeakerTurnCount: ambientSessionSummary.unresolvedSpeakerTurnCount,
+      ambientTranscriptReadyForSource: ambientSessionSummary.transcriptReadyForSource,
     });
   }, [
+    ambientSessionSummary.reviewFlagCount,
+    ambientSessionSummary.sessionState,
+    ambientSessionSummary.transcriptEventCount,
+    ambientSessionSummary.transcriptReadyForSource,
+    ambientSessionSummary.unresolvedSpeakerTurnCount,
     customInstructions,
     generatedSession,
     noteType,
@@ -2316,6 +2706,7 @@ export function NewNoteForm() {
     providerSettings.veraProactivityLevel,
     providerSettings.outputDestination,
     selectedPresetId,
+    sourceWorkspaceMode,
     specialty,
     workflowStage,
     activeProviderProfile,
@@ -2396,8 +2787,53 @@ export function NewNoteForm() {
     setSourceSections((current) => ({ ...current, [key]: value }));
   }
 
+  function handleSourceWorkspaceModeChange(mode: SourceWorkspaceMode) {
+    setSourceWorkspaceMode(mode);
+
+    if (mode === 'objective') {
+      setActiveSourceTab('objectiveData');
+    }
+  }
+
+  function handleAmbientTranscriptCommit(text: string, mode: 'replace' | 'append') {
+    const trimmedText = text.trim();
+    if (!trimmedText) {
+      setEvalBanner('Ambient transcript is still empty. Record and review before loading it into source.');
+      return;
+    }
+
+    setSourceSections((current) => {
+      const existing = current.patientTranscript.trim();
+      const nextValue = mode === 'append' && existing
+        ? `${existing}\n\n${trimmedText}`
+        : trimmedText;
+
+      return {
+        ...current,
+        patientTranscript: nextValue,
+      };
+    });
+    setAmbientTranscriptHandoff({
+      sourceSection: 'patientTranscript',
+      sourceMode: 'ambient_transcript',
+      committedAt: new Date().toISOString(),
+      sessionState: ambientSessionSummary.sessionState,
+      transcriptEventCount: ambientSessionSummary.transcriptEventCount,
+      reviewFlagCount: ambientSessionSummary.reviewFlagCount,
+      unresolvedSpeakerTurnCount: ambientSessionSummary.unresolvedSpeakerTurnCount,
+      transcriptReadyForSource: ambientSessionSummary.transcriptReadyForSource,
+    });
+    setActiveSourceTab('patientTranscript');
+    setSourceWorkspaceMode('manual');
+    setEvalBanner(
+      mode === 'append'
+        ? 'Appended the reviewed ambient transcript to the patient conversation source.'
+        : 'Loaded the reviewed ambient transcript into the patient conversation source.',
+    );
+  }
+
   async function ensureServerDictationSession(targetSection: DictationTargetSection) {
-    if (dictationSession.sessionId && dictationSession.uiState !== 'stopped') {
+    if (isServerDictationSessionId(dictationSession.sessionId) && dictationSession.uiState !== 'stopped') {
       return dictationSession.sessionId;
     }
 
@@ -2410,8 +2846,11 @@ export function NewNoteForm() {
         noteId: draftCheckpoint?.draftId,
         targetSection,
         mode: 'provider_dictation',
+        sttProvider: dictationRequestedProviderId,
         language: 'en',
+        vocabularyHints: buildVoiceVocabularyHints(providerSettings.dictationVoiceProfile),
         commitMode: 'manual_accept',
+        allowMockFallback: dictationAllowMockFallback,
       }),
     });
 
@@ -2420,6 +2859,12 @@ export function NewNoteForm() {
       session?: {
         sessionId: string;
         provider?: string;
+        requestedProvider?: string;
+        activeProviderLabel?: string;
+        engineLabel?: string;
+        fallbackApplied?: boolean;
+        fallbackReason?: string;
+        reason?: string;
       };
     };
 
@@ -2433,8 +2878,19 @@ export function NewNoteForm() {
       uiState: 'listening',
       startedAt: new Date().toISOString(),
     }));
-    setDictationProviderLabel(formatDictationProviderLabel(payload.session.provider));
-    setDictationBackendStatus(formatDictationBackendStatusLabel({ status: 'active' }));
+    setDictationProviderLabel(formatDictationProviderRuntimeLabel({
+      providerLabel: payload.session.activeProviderLabel || formatDictationProviderLabel(payload.session.provider),
+      engineLabel: payload.session.engineLabel,
+      fallbackApplied: payload.session.fallbackApplied,
+    }));
+    if (payload.session.requestedProvider) {
+      setDictationRequestedProviderId(payload.session.requestedProvider);
+    }
+    setDictationProviderNote(payload.session.fallbackReason || payload.session.reason || 'Backend provider session is active.');
+    setDictationBackendStatus(formatDictationBackendStatusLabel({
+      status: 'active',
+      fallbackApplied: payload.session.fallbackApplied,
+    }));
     setDictationQueuedEventCount(0);
     setDictationTransportLabel('connecting live stream');
     setDictationAuditEvents([]);
@@ -2461,6 +2917,7 @@ export function NewNoteForm() {
       } else {
         const stream = await requestBrowserDictationStream(
           typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined,
+          { secureContext: typeof window !== 'undefined' ? window.isSecureContext : undefined },
         );
         dictationMediaStreamRef.current = stream;
       }
@@ -2521,6 +2978,7 @@ export function NewNoteForm() {
     dictationChunkSequenceRef.current = 0;
     setDictationBackendStatus('stopped');
     setDictationProviderLabel('not started');
+    setDictationProviderNote('No dictation provider selected yet.');
     setDictationQueuedEventCount(0);
     setDictationTransportLabel('polling standby');
     setDictationAuditEvents([]);
@@ -2574,8 +3032,17 @@ export function NewNoteForm() {
       return;
     }
 
+    const commandMatch = resolveDictationCommandMatch(segment.text, effectiveDictationCommands);
+    const segmentToInsert = commandMatch?.outputText
+      ? {
+          ...segment,
+          text: commandMatch.outputText,
+          normalizedText: commandMatch.outputText,
+        }
+      : segment;
+
     try {
-      const result = await dictationAdapter.insertFinalSegment(segment);
+      const result = await dictationAdapter.insertFinalSegment(segmentToInsert);
       setDictationSession((current) => markSegmentInserted(current, segmentId, result.transactionId));
       setDictationAuditEvents((current) => mergeDictationAuditEvents(current, [createClientDictationAuditEvent({
         sessionId: dictationSession.sessionId,
@@ -2587,17 +3054,50 @@ export function NewNoteForm() {
         payload: {
           targetSection: segment.targetSection,
           transactionId: result.transactionId,
+          commandId: commandMatch?.commandId,
+          commandApplied: Boolean(commandMatch?.outputText),
         },
       })]));
       const targetLabel = segment.targetSection && isDictationTargetSection(segment.targetSection as SourceTabKey)
         ? DICTATION_TARGET_LABELS[segment.targetSection as DictationTargetSection]
         : 'source section';
-      setEvalBanner(`Inserted dictated text into ${targetLabel}.`);
+      setEvalBanner(commandMatch?.outputText
+        ? `Applied ${commandMatch.label.toLowerCase()} and inserted it into ${targetLabel}.`
+        : `Inserted dictated text into ${targetLabel}.`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to insert dictated text.';
       setError(message);
       setDictationSession((current) => setLocalDictationUiState(current, 'error', message));
     }
+  }
+
+  async function handleSaveDictationCommands(commands: ProviderSettings['dictationCommands']) {
+    const nextSettings = {
+      ...providerSettings,
+      dictationCommands: commands,
+    };
+
+    setProviderSettings(nextSettings);
+    await persistProviderSettings(nextSettings);
+    setEvalBanner('Saved dictation command library.');
+  }
+
+  async function handleVoiceGuideAction() {
+    const nextSettings = {
+      ...providerSettings,
+      dictationVoiceProfile: {
+        ...providerSettings.dictationVoiceProfile,
+        baselineCompletedAt: new Date().toISOString(),
+      },
+    };
+
+    setProviderSettings(nextSettings);
+    await persistProviderSettings(nextSettings);
+    setEvalBanner(
+      dictationVoiceGuide.needsAttention
+        ? 'Saved the current voice check so dictation can start from a calibrated baseline.'
+        : 'Refreshed the voice check marker for this provider.',
+    );
   }
 
   function handleDiscardDictationSegment(segmentId: string) {
@@ -2627,6 +3127,7 @@ export function NewNoteForm() {
 
   function scrollToOutputPreferences() {
     setActiveComposeLane('finish');
+    flashJumpHighlight('output-preferences');
     if (outputPreferencesDetailsRef.current) {
       outputPreferencesDetailsRef.current.open = true;
     }
@@ -2639,6 +3140,93 @@ export function NewNoteForm() {
     });
   }
 
+  function focusAfterScroll<T extends HTMLElement>(target: T | null) {
+    if (!target) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.setTimeout(() => {
+          target.focus({ preventScroll: true });
+        }, 120);
+      });
+    });
+  }
+
+  function flashJumpHighlight(target: 'setup' | 'output-preferences' | 'site-presets') {
+    setJumpHighlightTarget(target);
+    if (jumpHighlightTimeoutRef.current) {
+      clearTimeout(jumpHighlightTimeoutRef.current);
+    }
+    jumpHighlightTimeoutRef.current = setTimeout(() => {
+      setJumpHighlightTarget((current) => (current === target ? null : current));
+      jumpHighlightTimeoutRef.current = null;
+    }, 1800);
+  }
+
+  function scrollToNoteLaneSetup() {
+    scrollToComposeLane('setup');
+    flashJumpHighlight('setup');
+    focusAfterScroll(noteTypeSelectRef.current || specialtySelectRef.current || roleSelectRef.current || templateSelectRef.current);
+  }
+
+  function scrollToSitePresetPreferences() {
+    scrollToOutputPreferences();
+    flashJumpHighlight('site-presets');
+    focusAfterScroll(activeOutputProfileSelectRef.current || outputProfileNameInputRef.current);
+  }
+
+  function openProviderStartChoice(target: 'role' | 'specialty' | 'destination' | 'note-type') {
+    if (target === 'destination') {
+      setSessionSnapshotPanel('destination-fit');
+      scrollToSitePresetPreferences();
+      return;
+    }
+
+    setSessionSnapshotPanel('setup');
+    scrollToComposeLane('setup');
+    flashJumpHighlight('setup');
+
+    const focusTargetByChoice = {
+      role: roleSelectRef.current,
+      specialty: specialtySelectRef.current,
+      'note-type': noteTypeSelectRef.current,
+    };
+
+    focusAfterScroll(focusTargetByChoice[target]);
+  }
+
+  function handleCaptureOptionToggle(mode: 'dictation' | 'transcript') {
+    const isActive = sourceWorkspaceMode === mode;
+    handleSourceWorkspaceModeChange(isActive ? 'manual' : mode);
+    if (!isActive && mode === 'dictation') {
+      setActiveSourceTab('clinicianNotes');
+      scrollToTopDictationControls();
+    } else {
+      scrollToComposeLane('source');
+    }
+    setEvalBanner(
+      isActive
+        ? 'Capture option turned off. Manual source entry is active.'
+        : mode === 'dictation'
+          ? 'Dictation lane opened. Choose the target source section, then start provider voice capture.'
+          : 'Ambient listening lane opened. Start or resume the encounter from the ambient workspace.',
+    );
+  }
+
+  function scrollToTopDictationControls() {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const target = topDictationControlsRef.current || document.getElementById('web-dictation-start-controls');
+        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (target instanceof HTMLElement) {
+          target.focus({ preventScroll: true });
+        }
+      });
+    });
+  }
+
   function scrollToComposeLane(lane: DraftComposeLane) {
     const targetIdByLane: Record<DraftComposeLane, string> = {
       setup: 'setup-panel',
@@ -2647,7 +3235,12 @@ export function NewNoteForm() {
       finish: 'generate-note-panel',
     };
 
-    document.getElementById(targetIdByLane[lane])?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActiveComposeLane(lane);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.getElementById(targetIdByLane[lane])?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
   }
 
   function clearLocalDraftState() {
@@ -2656,8 +3249,47 @@ export function NewNoteForm() {
     localStorage.removeItem(draftStageStorageKey);
   }
 
+  function clearAmbientResumeState() {
+    localStorage.removeItem(ambientSessionResumeStorageKey);
+    localStorage.removeItem(AMBIENT_RESUME_FALLBACK_STORAGE_KEY);
+    setAmbientResumeSnapshot(null);
+  }
+
+  function handleAmbientSessionPersistenceChange(snapshot: AmbientSessionPersistenceSnapshot) {
+    if (shouldIgnoreAmbientResumeClearDuringHydration({
+      hydrated: ambientResumeHydrated,
+      sessionId: snapshot.sessionId,
+    })) {
+      return;
+    }
+
+    const nextSnapshot = buildAmbientResumeSnapshot({
+      sessionId: snapshot.sessionId,
+      encounterId: snapshot.encounterId,
+      sessionState: snapshot.sessionState,
+      updatedAt: snapshot.updatedAt,
+    });
+
+    if (!nextSnapshot) {
+      clearAmbientResumeState();
+      return;
+    }
+
+    setAmbientResumeSnapshot((current) => (
+      current?.sessionId === nextSnapshot.sessionId
+      && current?.sessionState === nextSnapshot.sessionState
+      && current?.encounterId === nextSnapshot.encounterId
+        ? current
+        : nextSnapshot
+    ));
+    localStorage.setItem(ambientSessionResumeStorageKey, JSON.stringify(nextSnapshot));
+    localStorage.setItem(AMBIENT_RESUME_FALLBACK_STORAGE_KEY, JSON.stringify(nextSnapshot));
+  }
+
   function resetWorkspaceState() {
     clearLocalDraftState();
+    clearAmbientResumeState();
+    setAmbientWorkspaceResetToken((current) => current + 1);
     void handleStopDictation();
     setSourceSections(EMPTY_SOURCE_SECTIONS);
     setDictationInsertions({});
@@ -2670,6 +3302,7 @@ export function NewNoteForm() {
     setDictationUploadedChunkCount(0);
     setDictationUploadedAudioBytes(0);
     setDictationProviderLabel('not started');
+    setDictationProviderNote('No dictation provider selected yet.');
     setDictationBackendStatus('idle');
     setDictationQueuedEventCount(0);
     setDictationTransportLabel('polling standby');
@@ -2681,6 +3314,7 @@ export function NewNoteForm() {
     setEncounterSupport(createEncounterSupportDefaults(noteType));
     setMedicationProfile([]);
     setDiagnosisProfile([]);
+    setAmbientTranscriptHandoff(undefined);
     setDraftCheckpointStatus('idle');
     setGeneratedSession(null);
     setDraftCheckpoint(null);
@@ -2998,6 +3632,7 @@ export function NewNoteForm() {
         diagnosisProfile,
         sourceInput,
         sourceSections,
+        ambientTranscriptHandoff,
         dictationInsertions,
         note: data.note,
         flags: Array.isArray(data.flags) ? data.flags : [],
@@ -3093,10 +3728,13 @@ export function NewNoteForm() {
 
   function handleLoadExample() {
     void handleStopDictation();
+    clearAmbientResumeState();
+    setAmbientWorkspaceResetToken((current) => current + 1);
     setSourceSections({
       ...EMPTY_SOURCE_SECTIONS,
       clinicianNotes: sampleSourceInput,
     });
+    setAmbientTranscriptHandoff(undefined);
     setDictationInsertions({});
     setDictationSession(createLocalDictationSession({ targetSection: 'clinicianNotes' }));
     setDictationMockDraft('');
@@ -3107,6 +3745,7 @@ export function NewNoteForm() {
     setDictationUploadedChunkCount(0);
     setDictationUploadedAudioBytes(0);
     setDictationProviderLabel('not started');
+    setDictationProviderNote('No dictation provider selected yet.');
     setDictationBackendStatus('idle');
     setDictationQueuedEventCount(0);
     setDictationTransportLabel('polling standby');
@@ -3143,6 +3782,8 @@ export function NewNoteForm() {
     }
 
     void handleStopDictation();
+    clearAmbientResumeState();
+    setAmbientWorkspaceResetToken((current) => current + 1);
     setSpecialty('Psychiatry');
     setRole('Psychiatric NP');
     setNoteType(starter.noteType);
@@ -3166,6 +3807,7 @@ export function NewNoteForm() {
     setDictationUploadedChunkCount(0);
     setDictationUploadedAudioBytes(0);
     setDictationProviderLabel('not started');
+    setDictationProviderNote('No dictation provider selected yet.');
     setDictationBackendStatus('idle');
     setDictationQueuedEventCount(0);
     setDictationTransportLabel('polling standby');
@@ -3266,34 +3908,301 @@ export function NewNoteForm() {
                   Capture source, generate once, and finish in the same workspace. The layout keeps setup lighter so the main surface can stay on the clinical text.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2 lg:max-w-[320px] lg:justify-end">
-                <div className="workspace-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
-                  {role}
-                </div>
-                <div className="workspace-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
-                  {specialty}
-                </div>
-                <div className="workspace-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
-                  {getOutputDestinationMeta(providerSettings.outputDestination).summaryLabel}
-                </div>
-                <div className="workspace-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
-                  {getOutputNoteFocusLabel(providerSettings.outputNoteFocus || inferOutputNoteFocus(noteType))}
-                </div>
+              <div className="grid w-full gap-2 lg:max-w-[520px] lg:grid-cols-2">
+                <label className="workspace-badge-static grid gap-1 rounded-[18px] px-3 py-2 text-cyan-50">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/58">Role</span>
+                  <select
+                    value={role}
+                    onChange={(event) => setRole(event.target.value)}
+                    className="w-full cursor-pointer appearance-none bg-transparent text-sm font-semibold text-cyan-50 outline-none"
+                    aria-label="Select provider role"
+                  >
+                    {PROVIDER_ROLE_OPTIONS.map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="workspace-badge-static grid gap-1 rounded-[18px] px-3 py-2 text-cyan-50">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/58">Field</span>
+                  <select
+                    value={specialty}
+                    onChange={(event) => handleTopSpecialtyChange(event.target.value)}
+                    className="w-full cursor-pointer appearance-none bg-transparent text-sm font-semibold text-cyan-50 outline-none"
+                    aria-label="Select clinical field"
+                  >
+                    {SPECIALTY_OPTIONS.map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="workspace-badge-static grid gap-1 rounded-[18px] px-3 py-2 text-cyan-50">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/58">EHR / Site</span>
+                  <select
+                    value={providerSettings.outputDestination}
+                    onChange={(event) => void handleTopDestinationChange(event.target.value as ProviderSettings['outputDestination'])}
+                    className="w-full cursor-pointer appearance-none bg-transparent text-sm font-semibold text-cyan-50 outline-none"
+                    aria-label="Select EHR destination"
+                  >
+                    {getOutputDestinationOptions().map((item) => (
+                      <option key={item.label} value={item.label}>
+                        {item.summaryLabel}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="workspace-badge-static grid gap-1 rounded-[18px] px-3 py-2 text-cyan-50">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/58">Note type</span>
+                  <select
+                    value={noteType}
+                    onChange={(event) => handleTopNoteTypeChange(event.target.value)}
+                    className="w-full cursor-pointer appearance-none bg-transparent text-sm font-semibold text-cyan-50 outline-none"
+                    aria-label="Select note type"
+                  >
+                    {noteTypeOptions.map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
+                </label>
                 {visibleActiveOutputProfile ? (
-                  <div className="workspace-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
+                  <div className="workspace-badge-static rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
                     Site: {visibleActiveOutputProfile.name}
                   </div>
                 ) : null}
                 {activeProviderProfile ? (
-                  <div className="workspace-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
+                  <div className="workspace-badge-static rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
                     Profile: {activeProviderProfile.name}
                   </div>
                 ) : null}
               </div>
             </div>
 
+            <div className="rounded-[22px] border border-cyan-200/12 bg-[rgba(255,255,255,0.045)] p-3.5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/66">Capture options</div>
+                  <p className="mt-1 text-sm leading-6 text-cyan-50/72">
+                    Turn on the capture lane before starting source. The actual microphone/listening controls stay inside each module for safety.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    {
+                      id: 'transcript' as const,
+                      label: 'Ambient listening',
+                      detail: sourceWorkspaceMode === 'transcript' ? 'On - ambient lane open' : 'Off - open ambient lane',
+                    },
+                    {
+                      id: 'dictation' as const,
+                      label: 'Dictation',
+                      detail: sourceWorkspaceMode === 'dictation' ? 'On - dictation lane open' : 'Off - open dictation lane',
+                    },
+                  ].map((captureOption) => {
+                    const isActive = sourceWorkspaceMode === captureOption.id;
+
+                    return (
+                      <button
+                        key={captureOption.id}
+                        type="button"
+                        onClick={() => handleCaptureOptionToggle(captureOption.id)}
+                        className={`rounded-[16px] border px-4 py-3 text-left transition focus:outline-none focus:ring-2 focus:ring-cyan-200/50 ${
+                          isActive
+                            ? 'border-emerald-300/34 bg-emerald-400/14 text-white shadow-[0_18px_44px_rgba(16,185,129,0.14)]'
+                            : 'border-cyan-200/12 bg-[rgba(8,24,42,0.66)] text-cyan-50/82 hover:border-cyan-200/28 hover:bg-[rgba(16,40,67,0.72)]'
+                        }`}
+                      >
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em]">
+                          {captureOption.label}
+                        </div>
+                        <div className={`mt-1 text-xs leading-5 ${isActive ? 'text-emerald-50/82' : 'text-cyan-50/60'}`}>
+                          {captureOption.detail}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {sourceWorkspaceMode === 'dictation' ? (
+              <div
+                id="web-dictation-start-controls"
+                ref={topDictationControlsRef}
+                tabIndex={-1}
+                className="rounded-[26px] border border-emerald-300/22 bg-[linear-gradient(145deg,rgba(6,78,59,0.34),rgba(8,47,73,0.34))] p-3.5 shadow-[0_18px_50px_rgba(4,12,24,0.28)] outline-none focus:ring-2 focus:ring-emerald-200/45"
+                aria-label="Web dictation start controls"
+              >
+                <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-100/74">Dictation start station</div>
+                    <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-white">
+                      Start recording from here
+                    </h2>
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-cyan-50/74">
+                      Chrome may ask for microphone permission after Start. If permission fails, the exact browser or device reason appears in the capture status below.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSourceWorkspaceModeChange('transcript');
+                      scrollToComposeLane('source');
+                    }}
+                    className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
+                  >
+                    Open full transcript review
+                  </button>
+                </div>
+
+                <DictationControlBar
+                  enabled={Boolean(dictationTargetSection)}
+                  uiState={dictationSession.uiState}
+                  captureState={dictationCaptureState}
+                  captureLabel={dictationCaptureLabel}
+                  providerLabel={dictationProviderLabel}
+                  providerNote={dictationProviderNote}
+                  providerOptions={dictationProviderOptions}
+                  requestedProviderId={dictationRequestedProviderId}
+                  allowMockFallback={dictationAllowMockFallback}
+                  providerStatusLoading={dictationProviderStatusLoading}
+                  sessionStatusLabel={`${dictationBackendStatus} • ${dictationTransportLabel}`}
+                  targetLabel={dictationTargetLabel}
+                  helperText={dictationTargetSection
+                    ? 'Click Start to request mic access and begin provider dictation into this source section. Final text stays in review until you explicitly insert it.'
+                    : 'Choose Pre-Visit Data, Live Visit Notes, Ambient Transcript, or Provider Add-On before starting dictation.'}
+                  voiceGuide={dictationVoiceGuide}
+                  onVoiceGuideAction={() => {
+                    void handleVoiceGuideAction();
+                  }}
+                  onRequestedProviderChange={setDictationRequestedProviderId}
+                  onAllowMockFallbackChange={setDictationAllowMockFallback}
+                  onRefreshProviderStatus={() => {
+                    void refreshDictationProviderStatuses();
+                  }}
+                  onStart={() => {
+                    void handleStartDictation();
+                  }}
+                  onPause={() => {
+                    void handlePauseDictation();
+                  }}
+                  onStop={() => {
+                    void handleStopDictation();
+                  }}
+                />
+
+                <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,0.72fr)_minmax(260px,0.28fr)]">
+                  <div className="workspace-subpanel rounded-[20px] p-3.5">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Transcript preview and review queue</div>
+                        <div className="mt-1 text-sm font-semibold text-white">Review-first insertion stays visible while recording</div>
+                      </div>
+                      <div className="flex gap-2 text-xs text-cyan-50/72">
+                        <span>{dictationSession.pendingSegments.length} pending</span>
+                        <span>{dictationSession.insertedSegments.length} inserted</span>
+                      </div>
+                    </div>
+                    <div className="mt-3 rounded-[16px] border border-white/10 bg-white/5 p-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Interim preview</div>
+                      <div className="mt-1.5 whitespace-pre-wrap text-sm text-cyan-50/78">
+                        {dictationSession.interimSegment?.text?.trim() || 'Live transcript preview will appear here after Start.'}
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {dictationSession.pendingSegments.length ? dictationSession.pendingSegments.slice(0, 2).map((segment) => (
+                        <div key={`top-dictation-${segment.id}`} className="rounded-[16px] border border-amber-300/20 bg-[rgba(245,158,11,0.08)] p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-100/78">Final transcript waiting</div>
+                          <div className="mt-2 whitespace-pre-wrap text-sm text-white">{segment.text}</div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleAcceptDictationSegment(segment.id);
+                              }}
+                              className="rounded-xl bg-[rgba(34,197,94,0.18)] px-3 py-2 text-sm font-medium text-emerald-50"
+                            >
+                              Insert into source
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDiscardDictationSegment(segment.id)}
+                              className="rounded-xl bg-[rgba(255,255,255,0.08)] px-3 py-2 text-sm font-medium text-cyan-50/80"
+                            >
+                              Discard
+                            </button>
+                          </div>
+                        </div>
+                      )) : (
+                        <div className="rounded-[16px] border border-white/10 bg-[rgba(255,255,255,0.04)] p-3 text-sm text-cyan-50/72">
+                          No final transcript is waiting yet. Speak a short phrase after Start, then stop or wait for the final segment to appear here.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="workspace-subpanel rounded-[20px] p-3.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Mic and queue status</div>
+                    <div className="mt-2 space-y-2 text-sm text-cyan-50/76">
+                      <div className="rounded-[14px] border border-white/10 bg-white/5 p-3">
+                        <div className="text-xs uppercase tracking-[0.12em] text-cyan-100/58">Capture</div>
+                        <div className="mt-1 font-medium text-white">{dictationCaptureLabel}</div>
+                      </div>
+                      <div className="rounded-[14px] border border-white/10 bg-white/5 p-3">
+                        <div className="text-xs uppercase tracking-[0.12em] text-cyan-100/58">Backend intake</div>
+                        <div className="mt-1 font-medium text-white">
+                          {dictationUploadedChunkCount} chunk{dictationUploadedChunkCount === 1 ? '' : 's'} • {dictationUploadedAudioBytes} bytes
+                        </div>
+                      </div>
+                      <div className="rounded-[14px] border border-white/10 bg-white/5 p-3">
+                        <div className="text-xs uppercase tracking-[0.12em] text-cyan-100/58">Review queue</div>
+                        <div className="mt-1 font-medium text-white">{dictationQueuedEventCount} queued event{dictationQueuedEventCount === 1 ? '' : 's'}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="rounded-[26px] border border-cyan-200/16 bg-[linear-gradient(145deg,rgba(6,22,38,0.88),rgba(10,39,66,0.78))] p-3.5 shadow-[0_18px_46px_rgba(4,12,24,0.26)]">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-100/70">Start here</div>
+                  <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-white">
+                    Enter the note source packet
+                  </h2>
+                  <p className="mt-1 max-w-3xl text-sm leading-6 text-cyan-50/72">
+                    After choosing the provider role, field, EHR, and note type, work directly in these four boxes. Type, paste, or dictate into any field.
+                  </p>
+                </div>
+                <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
+                  {sourceCompletionCount}/{sourceEntrySteps.length} fields loaded
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                {sourceEntrySteps.map((step, index) => (
+                  <SourceInput
+                    key={`quick-${step.key}`}
+                    label={`${index + 1}. ${step.label}`}
+                    hint={step.description}
+                    value={sourceSections[step.key]}
+                    onChange={(value) => updateSourceSection(step.key, value)}
+                    placeholder={
+                      step.key === 'intakeCollateral'
+                        ? 'Paste labs, vitals, nursing intake, chart review, med list, collateral, or copied EHR data here.'
+                        : step.key === 'clinicianNotes'
+                          ? 'Type or dictate your live visit notes, HPI, MSE impressions, risk wording, and plan thoughts here.'
+                          : step.key === 'patientTranscript'
+                            ? 'Ambient listening transcript, corrected dialogue, direct quotes, or spoken-session material can go here.'
+                            : 'Add diagnosis codes, billing code preference, plan language, discharge wording, or site-specific instructions here.'
+                    }
+                    compact
+                  />
+                ))}
+              </div>
+            </div>
+
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <div className="workspace-kpi rounded-[22px] p-4">
+              <div className="workspace-card-static rounded-[22px] p-4">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Source readiness</div>
                 <div className="mt-2 flex items-end gap-2">
                   <div className="text-3xl font-semibold tracking-[-0.04em] text-white">{sourceCompletionPercent}%</div>
@@ -3303,7 +4212,7 @@ export function NewNoteForm() {
                   <div className="h-full rounded-full bg-[linear-gradient(90deg,rgba(45,212,191,0.76),rgba(56,189,248,0.94))]" style={{ width: `${sourceCompletionPercent}%` }} />
                 </div>
               </div>
-              <div className="workspace-kpi rounded-[22px] p-4">
+              <div className="workspace-card-static rounded-[22px] p-4">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Draft state</div>
                 <div className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-white">
                   {generatedSession ? 'Review live' : draftCheckpoint?.sourceInput?.trim() ? 'Recovery saved' : 'Compose ready'}
@@ -3314,7 +4223,7 @@ export function NewNoteForm() {
                     : 'The canvas is prepared for source collection and one-screen generation without leaving the workspace.'}
                 </p>
               </div>
-              <div className="workspace-kpi rounded-[22px] p-4">
+              <div className="workspace-card-static rounded-[22px] p-4">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Workflow frame</div>
                 <div className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-white">{workflowGuidance?.careSetting || 'Mixed'}</div>
                 <p className="mt-2 text-sm leading-6 text-cyan-50/70">
@@ -3367,20 +4276,46 @@ export function NewNoteForm() {
             <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-100/64">Session snapshot</div>
             <div className="mt-3 grid gap-3">
               {[
-                `Note lane: ${noteType}`,
-                `Support tools active: ${activeSupportPanels}`,
-                `Output scope: ${outputScope === 'full-note' ? 'Full note' : `${requestedSections.length || availableSectionEntries.length} section focus`}`,
-                providerSettings.asciiSafe ? 'ASCII-safe formatting enabled' : 'Formatting can use standard punctuation',
+                {
+                  label: `Note lane: ${noteType}`,
+                  hint: 'Open note type setup',
+                  onClick: () => {
+                    setSessionSnapshotPanel('setup');
+                    scrollToNoteLaneSetup();
+                  },
+                },
+                {
+                  label: `Support tools active: ${activeSupportPanels}`,
+                  hint: 'Open support tools',
+                  onClick: () => scrollToComposeLane('support'),
+                },
+                {
+                  label: `Output scope: ${outputScope === 'full-note' ? 'Full note' : `${requestedSections.length || availableSectionEntries.length} section focus`}`,
+                  hint: 'Open output preferences',
+                  onClick: scrollToOutputPreferences,
+                },
+                {
+                  label: providerSettings.asciiSafe ? 'ASCII-safe formatting enabled' : 'Formatting can use standard punctuation',
+                  hint: 'Open output preferences',
+                  onClick: scrollToOutputPreferences,
+                },
               ].map((item) => (
-                <div key={item} className="workspace-chip rounded-[18px] px-4 py-3 text-sm text-cyan-50/82">
-                  {item}
-                </div>
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={item.onClick}
+                  className="workspace-chip relative z-10 rounded-[18px] px-4 py-3 text-left text-sm text-cyan-50/82 transition hover:border-cyan-200/30 hover:bg-[rgba(16,40,67,0.72)] hover:text-white"
+                >
+                  <div>{item.label}</div>
+                  <div className="mt-1 text-[11px] uppercase tracking-[0.14em] text-cyan-100/58">{item.hint}</div>
+                </button>
               ))}
             </div>
             {visibleOutputProfiles.length ? (
               <label className="mt-4 grid gap-2 text-sm font-medium text-cyan-50/82">
                 <span>Active site / EHR preset</span>
                 <select
+                  ref={activeOutputProfileSelectRef}
                   value={hasClientHydrated ? providerSettings.activeOutputProfileId : ''}
                   onChange={(event) => void handleApplyOutputProfile(event.target.value)}
                   className="rounded-[16px] border border-cyan-200/14 bg-[rgba(6,18,32,0.86)] p-3 text-sm text-cyan-50"
@@ -3394,21 +4329,185 @@ export function NewNoteForm() {
                 </select>
               </label>
             ) : (
-              <div className="mt-4 rounded-[18px] border border-cyan-200/10 bg-[rgba(13,30,50,0.52)] px-4 py-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setSessionSnapshotPanel('site-presets');
+                  scrollToSitePresetPreferences();
+                }}
+                className="relative z-10 mt-4 w-full rounded-[18px] border border-cyan-200/10 bg-[rgba(13,30,50,0.52)] px-4 py-3 text-left transition hover:border-cyan-200/24 hover:bg-[rgba(16,40,67,0.72)]"
+              >
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Site presets</div>
                 <div className="mt-1 text-sm leading-6 text-cyan-50/76">
                   No saved site/EHR presets yet. Open advanced preferences below to save one, or start from the suggested presets there.
                 </div>
-              </div>
+                <div className="mt-2 text-[11px] uppercase tracking-[0.14em] text-cyan-100/58">Open site / EHR preferences</div>
+              </button>
             )}
-            <div className="mt-4 rounded-[18px] border border-cyan-200/10 bg-[rgba(13,30,50,0.52)] px-4 py-3">
+            <button
+              type="button"
+              onClick={() => {
+                setSessionSnapshotPanel('destination-fit');
+                scrollToSitePresetPreferences();
+              }}
+              className="relative z-10 mt-4 w-full rounded-[18px] border border-cyan-200/10 bg-[rgba(13,30,50,0.52)] px-4 py-3 text-left transition hover:border-cyan-200/24 hover:bg-[rgba(16,40,67,0.72)]"
+            >
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Destination fit</div>
               <div className="mt-1 text-sm leading-6 text-cyan-50/76">{destinationFitSummary}</div>
-            </div>
+              <div className="mt-2 text-[11px] uppercase tracking-[0.14em] text-cyan-100/58">Adjust destination behavior</div>
+            </button>
+            {sessionSnapshotPanel === 'setup' ? (
+              <div className="mt-4 rounded-[18px] border border-cyan-200/14 bg-[rgba(7,18,32,0.84)] p-4">
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Quick note lane setup</div>
+                    <div className="mt-1 text-sm leading-6 text-cyan-50/76">
+                      These are the real note-lane controls. Changes here update the workspace immediately.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSessionSnapshotPanel(null)}
+                    className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.04)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50"
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <Field label="Specialty">
+                    <select value={specialty} onChange={(event) => handleTopSpecialtyChange(event.target.value)} className="workspace-control w-full rounded-xl px-3 py-2.5">
+                      {SPECIALTY_OPTIONS.map((item) => (
+                        <option key={item}>{item}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Role">
+                    <select value={role} onChange={(event) => setRole(event.target.value)} className="workspace-control w-full rounded-xl px-3 py-2.5">
+                      {PROVIDER_ROLE_OPTIONS.map((item) => (
+                        <option key={item}>{item}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Note Type">
+                    <select value={noteType} onChange={(event) => setNoteType(event.target.value)} className="workspace-control w-full rounded-xl px-3 py-2.5">
+                      {noteTypeOptions.map((item) => (
+                        <option key={item}>{item}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Template">
+                    <select value={template} onChange={(event) => setTemplate(event.target.value)} className="workspace-control w-full rounded-xl px-3 py-2.5">
+                      {templateOptions.map((item) => (
+                        <option key={item}>{item}</option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              </div>
+            ) : null}
+            {sessionSnapshotPanel === 'site-presets' ? (
+              <div className="mt-4 rounded-[18px] border border-cyan-200/14 bg-[rgba(7,18,32,0.84)] p-4">
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Quick site / EHR access</div>
+                    <div className="mt-1 text-sm leading-6 text-cyan-50/76">
+                      Apply a saved preset here or start a new one before opening the full advanced panel.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSessionSnapshotPanel(null)}
+                    className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.04)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50"
+                  >
+                    Close
+                  </button>
+                </div>
+                {visibleOutputProfiles.length ? (
+                  <label className="mt-4 grid gap-2 text-sm font-medium text-cyan-50/82">
+                    <span>Saved site / EHR preset</span>
+                    <select
+                      value={hasClientHydrated ? providerSettings.activeOutputProfileId : ''}
+                      onChange={(event) => void handleApplyOutputProfile(event.target.value)}
+                      className="rounded-[16px] border border-cyan-200/14 bg-[rgba(6,18,32,0.86)] p-3 text-sm text-cyan-50"
+                    >
+                      <option value="">No saved preset selected</option>
+                      {visibleOutputProfiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.name} - {profile.siteLabel}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <Field label="Preset name">
+                      <input
+                        value={outputProfileName}
+                        onChange={(event) => setOutputProfileName(event.target.value)}
+                        className="w-full rounded-lg border border-cyan-200/14 bg-[rgba(6,18,32,0.86)] p-3 text-cyan-50"
+                        placeholder="Example: Hospital A - Tebra Psych Initial"
+                      />
+                    </Field>
+                    <Field label="Site label">
+                      <input
+                        value={outputProfileSiteLabel}
+                        onChange={(event) => setOutputProfileSiteLabel(event.target.value)}
+                        className="w-full rounded-lg border border-cyan-200/14 bg-[rgba(6,18,32,0.86)] p-3 text-cyan-50"
+                        placeholder="Example: Hospital A"
+                      />
+                    </Field>
+                    <div className="md:col-span-2 flex flex-wrap gap-3">
+                      <button type="button" onClick={() => void handleSaveOutputProfile()} className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium">
+                        Save current as site preset
+                      </button>
+                      <button type="button" onClick={scrollToOutputPreferences} className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium">
+                        Open full advanced preferences
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
+            {sessionSnapshotPanel === 'destination-fit' ? (
+              <div className="mt-4 rounded-[18px] border border-cyan-200/14 bg-[rgba(7,18,32,0.84)] p-4">
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Destination fit details</div>
+                    <div className="mt-1 text-sm leading-6 text-cyan-50/76">{destinationFitSummary}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSessionSnapshotPanel(null)}
+                    className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.04)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50"
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 text-xs font-medium text-cyan-50">
+                    Destination: {getOutputDestinationMeta(providerSettings.outputDestination).summaryLabel}
+                  </div>
+                  <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 text-xs font-medium text-cyan-50">
+                    {providerSettings.asciiSafe ? 'ASCII-safe on' : 'Standard punctuation'}
+                  </div>
+                  <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 text-xs font-medium text-cyan-50">
+                    {providerSettings.paragraphOnly ? 'Paragraph-first' : 'Headings allowed'}
+                  </div>
+                  <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 text-xs font-medium text-cyan-50">
+                    {providerSettings.wellskyFriendly ? 'Strict template cleanup' : 'Standard cleanup'}
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button type="button" onClick={scrollToOutputPreferences} className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium">
+                    Open full destination preferences
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <p className="mt-4 text-sm leading-6 text-cyan-50/68">
               Keep this strip for orientation only. The main work happens in the source, draft, and review panes below.
             </p>
-            <div className="mt-4 rounded-[18px] border border-cyan-200/10 bg-[rgba(13,30,50,0.52)] px-4 py-3">
+            <div className="workspace-card-static mt-4 rounded-[18px] px-4 py-3">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Return state</div>
               <div className="mt-1 text-sm leading-6 text-cyan-50/76">{resumeStateSummary}</div>
             </div>
@@ -3423,7 +4522,7 @@ export function NewNoteForm() {
               <div
                 id="setup-panel"
                 ref={registerComposeSection('core-setup')}
-                className="workspace-panel workspace-shine rounded-[28px] p-4 shadow-md backdrop-blur-xl"
+                className={`workspace-panel workspace-shine rounded-[28px] p-4 shadow-md backdrop-blur-xl transition-all ${jumpHighlightTarget === 'setup' ? 'ring-2 ring-cyan-300/70 shadow-[0_0_0_4px_rgba(34,211,238,0.14)]' : ''}`}
               >
                 <div className="grid gap-3 2xl:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.7fr)]">
                   <div className="grid gap-3">
@@ -3448,32 +4547,50 @@ export function NewNoteForm() {
 
                     <StatusStrip items={workspaceStatusItems} />
 
+                    <div className="grid gap-2 rounded-[20px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] p-3 sm:grid-cols-2 xl:grid-cols-4">
+                      {[
+                        '1. Choose note type',
+                        '2. Paste source',
+                        '3. Generate draft',
+                        '4. Review before copy',
+                      ].map((step) => (
+                        <div
+                          key={step}
+                          className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.42)] px-3 py-2 text-sm font-medium text-cyan-50"
+                        >
+                          {step}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="rounded-[20px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] px-4 py-3 text-sm leading-6 text-cyan-50/78">
+                      Use the note builder to generate the draft. Use Atlas to improve wording, clarify risk language, or preserve contradictions.
+                    </div>
+
                     <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-4">
                       <Field label="Specialty">
-                        <select value={specialty} onChange={(event) => setSpecialty(event.target.value)} className="workspace-control w-full rounded-xl px-3 py-2.5">
-                          <option>Psychiatry</option>
-                          <option>Therapy</option>
-                          <option>General Medical</option>
+                        <select ref={specialtySelectRef} value={specialty} onChange={(event) => handleTopSpecialtyChange(event.target.value)} className="workspace-control w-full rounded-xl px-3 py-2.5">
+                          {SPECIALTY_OPTIONS.map((item) => (
+                            <option key={item}>{item}</option>
+                          ))}
                         </select>
                       </Field>
                       <Field label="Role">
-                        <select value={role} onChange={(event) => setRole(event.target.value)} className="workspace-control w-full rounded-xl px-3 py-2.5">
-                          <option>Psychiatric NP</option>
-                          <option>Psychiatrist</option>
-                          <option>Therapist</option>
-                          <option>Psychologist</option>
-                          <option>PCP</option>
+                        <select ref={roleSelectRef} value={role} onChange={(event) => setRole(event.target.value)} className="workspace-control w-full rounded-xl px-3 py-2.5">
+                          {PROVIDER_ROLE_OPTIONS.map((item) => (
+                            <option key={item}>{item}</option>
+                          ))}
                         </select>
                       </Field>
                       <Field label="Note Type">
-                        <select value={noteType} onChange={(event) => setNoteType(event.target.value)} className="workspace-control w-full rounded-xl px-3 py-2.5">
+                        <select ref={noteTypeSelectRef} value={noteType} onChange={(event) => setNoteType(event.target.value)} className={`workspace-control w-full rounded-xl px-3 py-2.5 transition-all ${jumpHighlightTarget === 'setup' ? 'ring-2 ring-cyan-300/70' : ''}`}>
                           {noteTypeOptions.map((item) => (
                             <option key={item}>{item}</option>
                           ))}
                         </select>
                       </Field>
                       <Field label="Template">
-                        <select value={template} onChange={(event) => setTemplate(event.target.value)} className="workspace-control w-full rounded-xl px-3 py-2.5">
+                        <select ref={templateSelectRef} value={template} onChange={(event) => setTemplate(event.target.value)} className="workspace-control w-full rounded-xl px-3 py-2.5">
                           {templateOptions.map((item) => (
                             <option key={item}>{item}</option>
                           ))}
@@ -3511,7 +4628,7 @@ export function NewNoteForm() {
             <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-100/70">Source entry</div>
             <h2 className="mt-1.5 text-[1.24rem] font-semibold tracking-[-0.03em] text-white">Build the draft from raw source, one pass at a time</h2>
             <p className="mt-1.5 max-w-2xl text-sm leading-6 text-cyan-50/74">
-              Move top to bottom. Paste what you have into the active step, advance when ready, and generate without leaving this workspace.
+              Paste your rough notes, dictation, collateral, or chart details here. Move top to bottom, then generate without leaving this workspace.
             </p>
           </div>
           <div className="workspace-subpanel grid gap-2.5 rounded-[20px] p-3.5">
@@ -3582,210 +4699,379 @@ export function NewNoteForm() {
           </div>
         ) : null}
         <div className="grid min-h-0 flex-1 gap-3 pr-1">
-          <div className="grid gap-3">
-            <div className="grid gap-2.5 sm:grid-cols-2 2xl:grid-cols-4">
-              {sourceEntrySteps.map((step, index) => {
-                const isActive = step.key === activeSourceStep.key;
-                const hasContent = Boolean(sourceSections[step.key]?.trim());
-
-                return (
-                  <button
-                    key={step.key}
-                    type="button"
-                    onClick={() => setActiveSourceTab(step.key)}
-                    className={`rounded-[18px] border px-4 py-3.5 text-left transition ${
-                      isActive
-                        ? 'border-cyan-300/30 bg-[linear-gradient(145deg,rgba(20,184,166,0.2),rgba(14,165,233,0.24))] text-white shadow-[0_20px_44px_rgba(4,12,24,0.28)]'
-                        : 'border-white/10 bg-[rgba(255,255,255,0.035)] text-cyan-50/84 hover:border-cyan-200/24 hover:bg-white/8'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className={`text-[11px] font-semibold uppercase tracking-[0.16em] ${isActive ? 'text-cyan-50/80' : 'text-cyan-100/54'}`}>Step {index + 1}</div>
-                      <div className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${hasContent ? 'border-emerald-300/30 bg-emerald-400/10 text-emerald-100' : 'border-white/10 bg-white/5 text-cyan-50/72'}`}>
-                        {hasContent ? 'Loaded' : 'Waiting'}
-                      </div>
-                    </div>
-                    <div className="mt-2 text-sm font-semibold">{step.shortLabel}</div>
-                    <div className={`mt-1 text-xs leading-5 ${isActive ? 'text-cyan-50/78' : 'text-cyan-50/60'}`}>{step.description}</div>
-                  </button>
-                );
-              })}
+          {ambientResumeStatus ? (
+            <div className="rounded-[20px] border border-cyan-200/16 bg-[rgba(56,189,248,0.08)] px-4 py-3 text-cyan-50">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/72">Ambient resume</div>
+              <div className="mt-1 text-sm font-semibold text-white">{ambientResumeStatus.title}</div>
+              <p className="mt-1 text-sm leading-6 text-cyan-50/74">{ambientResumeStatus.detail}</p>
             </div>
+          ) : null}
+          <AmbientEncounterWorkspace
+            key={ambientWorkspaceResetToken}
+            providerIdentityId={resolvedProviderIdentityId}
+            encounterId={draftCheckpoint?.draftId || 'new-note-encounter'}
+            transcriptModeActive={sourceWorkspaceMode === 'transcript'}
+            defaultCareSetting={ambientCareSetting}
+            defaultMode={ambientListeningMode}
+            initialSessionId={ambientResumeSnapshot?.sessionId || null}
+            onCommitTranscriptToSource={handleAmbientTranscriptCommit}
+            onOpenTranscriptMode={() => handleSourceWorkspaceModeChange('transcript')}
+            onOpenDraftControls={scrollToDraftControls}
+            onSessionSummaryChange={setAmbientSessionSummary}
+            onSessionPersistenceChange={handleAmbientSessionPersistenceChange}
+          />
 
-            <div className="workspace-subpanel rounded-[22px] p-3.5 backdrop-blur-sm">
+          <div className="grid gap-3">
+            <div className="rounded-[20px] border border-cyan-200/12 bg-[rgba(255,255,255,0.035)] p-3">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">
-                    Step {activeSourceStepIndex + 1} of {sourceEntrySteps.length}
-                  </div>
-                  <div className="mt-1 text-base font-semibold text-white">{activeSourceStep.label}</div>
-                  <p className="mt-1 max-w-2xl text-sm text-cyan-50/74">{activeSourceStep.description}</p>
-                  <p className="mt-2 text-xs uppercase tracking-[0.14em] text-cyan-100/54">You can leave any step blank and continue if that source type is not available.</p>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Source capture modes</div>
+                  <div className="mt-1 text-sm font-semibold text-white">Choose how source enters the draft</div>
+                  <p className="mt-1 max-w-2xl text-xs leading-5 text-cyan-50/68">
+                    Ambient stays above. These modes only control source capture and review inside the shared note workflow.
+                  </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setActiveSourceTab(sourceEntrySteps[Math.max(activeSourceStepIndex - 1, 0)]!.key)}
-                    disabled={activeSourceStepIndex <= 0}
-                    className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (activeSourceStepIndex < sourceEntrySteps.length - 1) {
-                        setActiveSourceTab(sourceEntrySteps[activeSourceStepIndex + 1]!.key);
-                      } else {
-                        scrollToDraftControls();
+                <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
+                  Active: {sourceModeCards.find((item) => item.id === sourceWorkspaceMode)?.label || 'Manual'}
+                </div>
+              </div>
+              <div className="mt-3 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                {sourceModeCards.map((modeCard) => {
+                  const isActive = sourceWorkspaceMode === modeCard.id;
+
+                  return (
+                    <button
+                      key={modeCard.id}
+                      type="button"
+                      onClick={() => handleSourceWorkspaceModeChange(modeCard.id)}
+                      className={`rounded-[16px] border px-3.5 py-3 text-left transition ${
+                        isActive
+                          ? 'border-cyan-300/30 bg-[linear-gradient(145deg,rgba(20,184,166,0.2),rgba(14,165,233,0.24))] text-white shadow-[0_20px_44px_rgba(4,12,24,0.28)]'
+                          : 'border-white/10 bg-[rgba(255,255,255,0.035)] text-cyan-50/84 hover:border-cyan-200/24 hover:bg-white/8'
+                      }`}
+                    >
+                      <div className={`text-[11px] font-semibold uppercase tracking-[0.16em] ${isActive ? 'text-cyan-50/80' : 'text-cyan-100/54'}`}>
+                        {modeCard.label}
+                      </div>
+                      <div className={`mt-1.5 text-xs leading-5 ${isActive ? 'text-cyan-50/78' : 'text-cyan-50/60'}`}>
+                        {modeCard.detail}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {sourceWorkspaceMode === 'manual' || sourceWorkspaceMode === 'dictation' || sourceWorkspaceMode === 'transcript' ? (
+              <div className="grid gap-3">
+                <div className="workspace-subpanel rounded-[20px] p-3">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Source packet</div>
+                      <div className="mt-1 text-sm font-semibold text-white">Fill any of the four fields Veranote should use for this note</div>
+                      <p className="mt-1 max-w-2xl text-xs leading-5 text-cyan-50/70">
+                        Type, paste, or dictate into any field. Leave a field blank if it does not apply; Veranote will build from the source packet that is present.
+                      </p>
+                    </div>
+                    <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
+                      {sourceCompletionCount}/{sourceEntrySteps.length} fields loaded
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 xl:grid-cols-2">
+                  {sourceEntrySteps.map((step) => (
+                    <SourceInput
+                      key={step.key}
+                      label={step.label}
+                      hint={step.description}
+                      value={sourceSections[step.key]}
+                      onChange={(value) => updateSourceSection(step.key, value)}
+                      placeholder={
+                        step.key === 'intakeCollateral'
+                          ? 'Paste labs, vitals, nursing intake, chart review, med list, collateral, or copied EHR data here.'
+                          : step.key === 'clinicianNotes'
+                            ? 'Type or dictate your live visit notes, HPI, MSE impressions, risk wording, and plan thoughts here.'
+                            : step.key === 'patientTranscript'
+                              ? 'Ambient listening transcript, corrected dialogue, direct quotes, or spoken-session material can go here.'
+                              : 'Add diagnosis codes, billing code preference, plan language, discharge wording, or site-specific instructions here.'
                       }
-                    }}
-                    className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
-                  >
-                    {activeSourceStepIndex < sourceEntrySteps.length - 1 ? 'Next source' : 'Open draft controls'}
-                  </button>
+                      compact
+                    />
+                  ))}
+                </div>
+
+                <div className="sticky bottom-0 z-10 -mx-1 rounded-[20px] border border-cyan-200/16 bg-[linear-gradient(145deg,rgba(4,12,24,0.94),rgba(8,32,58,0.96))] px-4 py-3 shadow-[0_-12px_40px_rgba(4,12,24,0.34)] backdrop-blur-xl">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Next move</div>
+                      <div className="mt-1 text-sm font-semibold text-white">
+                        {sourceCompletionCount > 0 ? 'Source is usable. Generate when you are ready.' : 'Add at least one source stream to make the first draft more useful.'}
+                      </div>
+                      <div className="mt-1 text-xs text-cyan-50/66">
+                        {sourceCompletionCount}/{sourceEntrySteps.length} source steps loaded • {composeNudges.filter((item) => item.tone === 'warning' || item.tone === 'danger').length} attention item{composeNudges.filter((item) => item.tone === 'warning' || item.tone === 'danger').length === 1 ? '' : 's'}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          scrollToDraftControls();
+                          void handleGenerate();
+                        }}
+                        disabled={isLoading || sourceCompletionCount === 0}
+                        className="aurora-primary-button rounded-xl px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isLoading ? 'Generating…' : 'Generate draft now'}
+                      </button>
+                      <a
+                        href="#generate-note-panel"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          scrollToDraftControls();
+                        }}
+                        className="aurora-primary-button rounded-xl px-4 py-2.5 text-sm font-medium"
+                      >
+                        Open draft controls
+                      </a>
+                      <a
+                        href="#output-preferences-panel"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          scrollToOutputPreferences();
+                        }}
+                        className="aurora-secondary-button rounded-xl px-4 py-2.5 text-sm font-medium"
+                      >
+                        Preferences
+                      </a>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : null}
 
-            <div className="sticky bottom-0 z-10 -mx-1 rounded-[22px] border border-cyan-200/16 bg-[linear-gradient(145deg,rgba(4,12,24,0.94),rgba(8,32,58,0.96))] px-4 py-3 shadow-[0_-12px_40px_rgba(4,12,24,0.34)] backdrop-blur-xl">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Next move</div>
-                  <div className="mt-1 text-sm font-semibold text-white">
-                    {sourceCompletionCount > 0 ? 'Source is usable. Generate when you are ready.' : 'Add at least one source stream to make the first draft more useful.'}
-                  </div>
-                  <div className="mt-1 text-xs text-cyan-50/66">
-                    {sourceCompletionCount}/{sourceEntrySteps.length} source steps loaded • {composeNudges.filter((item) => item.tone === 'warning' || item.tone === 'danger').length} attention item{composeNudges.filter((item) => item.tone === 'warning' || item.tone === 'danger').length === 1 ? '' : 's'}
+            {sourceWorkspaceMode === 'dictation' ? (
+              <div className="grid gap-4">
+                <div className="workspace-subpanel rounded-[22px] p-3.5">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Dictation source mode</div>
+                      <div className="mt-1 text-base font-semibold text-white">Provider voice capture stays in source capture, not encounter control</div>
+                      <p className="mt-1 max-w-2xl text-sm text-cyan-50/74">
+                        This lane stays focused on provider-directed insertion into note source sections. Ambient transcript review remains separate in Transcript mode.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {manualSourceSteps.map((step) => {
+                        const isTarget = step.key === activeSourceTab;
+                        return (
+                          <button
+                            key={step.key}
+                            type="button"
+                            onClick={() => setActiveSourceTab(step.key)}
+                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] ${
+                              isTarget
+                                ? 'border-cyan-300/30 bg-cyan-400/12 text-cyan-50'
+                                : 'border-white/10 bg-white/5 text-cyan-50/70'
+                            }`}
+                          >
+                            {step.shortLabel}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      scrollToDraftControls();
-                      void handleGenerate();
-                    }}
-                    disabled={isLoading || sourceCompletionCount === 0}
-                    className="aurora-primary-button rounded-xl px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isLoading ? 'Generating…' : 'Generate draft now'}
-                  </button>
-                  <a
-                    href="#generate-note-panel"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      scrollToDraftControls();
-                    }}
-                    className="aurora-primary-button rounded-xl px-4 py-2.5 text-sm font-medium"
-                  >
-                    Open draft controls
-                  </a>
-                  <a
-                    href="#output-preferences-panel"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      scrollToOutputPreferences();
-                    }}
-                    className="aurora-secondary-button rounded-xl px-4 py-2.5 text-sm font-medium"
-                  >
-                    Preferences
-                  </a>
+
+                <DictationControlBar
+                  enabled={Boolean(dictationTargetSection)}
+                  uiState={dictationSession.uiState}
+                  captureState={dictationCaptureState}
+                  captureLabel={dictationCaptureLabel}
+                  providerLabel={dictationProviderLabel}
+                  providerNote={dictationProviderNote}
+                  providerOptions={dictationProviderOptions}
+                  requestedProviderId={dictationRequestedProviderId}
+                  allowMockFallback={dictationAllowMockFallback}
+                  providerStatusLoading={dictationProviderStatusLoading}
+                  sessionStatusLabel={`${dictationBackendStatus} • ${dictationTransportLabel}`}
+                  targetLabel={dictationTargetLabel}
+                  helperText={dictationTargetSection
+                    ? 'Dictation stays in review until you explicitly insert the final segment into this source section. Microphone capture is real, and the transport switches to polling only if the live stream drops.'
+                    : 'Pick Pre-Visit Data, Live Visit Notes, Ambient Transcript, or Provider Add-On before starting dictation.'}
+                  voiceGuide={dictationVoiceGuide}
+                  onVoiceGuideAction={() => {
+                    void handleVoiceGuideAction();
+                  }}
+                  onRequestedProviderChange={setDictationRequestedProviderId}
+                  onAllowMockFallbackChange={setDictationAllowMockFallback}
+                  onRefreshProviderStatus={() => {
+                    void refreshDictationProviderStatuses();
+                  }}
+                  onStart={() => {
+                    void handleStartDictation();
+                  }}
+                  onPause={() => {
+                    void handlePauseDictation();
+                  }}
+                  onStop={() => {
+                    void handleStopDictation();
+                  }}
+                />
+
+                <div className="grid gap-3 xl:grid-cols-[minmax(0,0.72fr)_minmax(260px,0.28fr)]">
+                  <div className="workspace-subpanel rounded-[22px] p-3.5">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Dictation now</div>
+                        <div className="mt-1 text-base font-semibold text-white">
+                          {activeDictationTargetStep?.label || 'Choose a target section'}
+                        </div>
+                        <p className="mt-1 max-w-2xl text-sm text-cyan-50/74">
+                          Stay in Dictation mode while capturing provider speech. Move to Transcript mode when you want the full review queue, session ledger, and transcript history.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSourceWorkspaceModeChange('transcript')}
+                        className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
+                      >
+                        Open transcript review
+                      </button>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-[16px] border border-white/10 bg-white/5 p-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Interim</div>
+                        <div className="mt-1.5 text-sm text-cyan-50/78">
+                          {dictationSession.interimSegment?.text?.trim() || 'Live preview will appear here while dictating.'}
+                        </div>
+                      </div>
+                      <div className="rounded-[16px] border border-white/10 bg-white/5 p-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Pending review</div>
+                        <div className="mt-1.5 text-xl font-semibold text-white">{dictationSession.pendingSegments.length}</div>
+                        <div className="mt-1 text-xs text-cyan-50/66">Segments waiting to be reviewed before source insertion.</div>
+                      </div>
+                      <div className="rounded-[16px] border border-white/10 bg-white/5 p-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Inserted</div>
+                        <div className="mt-1.5 text-xl font-semibold text-white">{dictationSession.insertedSegments.length}</div>
+                        <div className="mt-1 text-xs text-cyan-50/66">Reviewed segments already committed into source.</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <details className="workspace-subpanel rounded-[22px] p-3.5">
+                    <summary className="cursor-pointer text-sm font-semibold text-cyan-50">Stored commands</summary>
+                    <div className="mt-1 text-xs text-cyan-50/66">
+                      Keep the dictation phrases you use often close by, without crowding the capture lane.
+                    </div>
+                    <div className="mt-3">
+                      <DictationCommandManager
+                        commands={effectiveDictationCommands}
+                        onSave={handleSaveDictationCommands}
+                        compact
+                      />
+                    </div>
+                  </details>
                 </div>
               </div>
-            </div>
+            ) : null}
+
+            {sourceWorkspaceMode === 'transcript' ? (
+              <div className="grid gap-4">
+                <div className="workspace-subpanel rounded-[22px] p-3.5">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Transcript mode</div>
+                      <div className="mt-1 text-base font-semibold text-white">Review spoken source before it becomes note input</div>
+                      <p className="mt-1 max-w-2xl text-sm text-cyan-50/74">
+                        This lane is for queued spoken source, transcript history, and reviewable insertion decisions. Return to Dictation when you want to keep capturing.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSourceWorkspaceModeChange('dictation')}
+                        className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
+                      >
+                        Back to dictation
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSourceWorkspaceModeChange('manual')}
+                        className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
+                      >
+                        Back to manual
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <DictationTranscriptPanel
+                  enabled={Boolean(dictationTargetSection)}
+                  captureLabel={dictationCaptureLabel}
+                  providerLabel={dictationProviderLabel}
+                  providerNote={dictationProviderNote}
+                  transportLabel={dictationTransportLabel}
+                  auditEvents={dictationAuditEvents}
+                  sessionHistory={dictationSessionHistory}
+                  selectedSessionId={selectedDictationHistorySessionId}
+                  selectedSessionEvents={selectedDictationHistoryEvents}
+                  selectedSessionLoading={selectedDictationHistoryLoading}
+                  queuedTranscriptEventCount={dictationQueuedEventCount}
+                  uploadedChunkCount={dictationUploadedChunkCount}
+                  uploadedAudioBytes={dictationUploadedAudioBytes}
+                  interimText={dictationSession.interimSegment?.text}
+                  mockDraft={dictationMockDraft}
+                  onMockDraftChange={setDictationMockDraft}
+                  onQueueMockUtterance={() => {
+                    void handleQueueMockUtterance();
+                  }}
+                  pendingSegments={dictationSession.pendingSegments}
+                  insertedSegments={dictationSession.insertedSegments}
+                  commandLibrary={effectiveDictationCommands}
+                  onAcceptSegment={(segmentId) => {
+                    void handleAcceptDictationSegment(segmentId);
+                  }}
+                  onDiscardSegment={handleDiscardDictationSegment}
+                  onSelectSessionHistory={setSelectedDictationHistorySessionId}
+                />
+              </div>
+            ) : null}
+
+            {sourceWorkspaceMode === 'objective' ? (
+              <div className="grid gap-4">
+                <div className="workspace-subpanel rounded-[22px] p-3.5">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Provider add-on mode</div>
+                      <div className="mt-1 text-base font-semibold text-white">Extra provider direction stays separate from the main source packet</div>
+                      <p className="mt-1 max-w-2xl text-sm text-cyan-50/74">
+                        Diagnosis codes, billing preference, plan wording, discharge language, and site-specific instructions can stay here without crowding the live visit note.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSourceWorkspaceModeChange('manual')}
+                      className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
+                    >
+                      Back to manual
+                    </button>
+                  </div>
+                </div>
+
+                <SourceInput
+                  label="Provider Add-On"
+                  hint="Diagnosis or billing codes, preferred plan language, site-specific instructions, discharge wording, or anything important that does not fit the other fields."
+                  value={sourceSections.objectiveData}
+                  onChange={(value) => updateSourceSection('objectiveData', value)}
+                  placeholder="Add diagnosis codes, billing code preference, plan language, discharge wording, or site-specific instructions here."
+                  autoFocus
+                  compact
+                />
+              </div>
+            ) : null}
           </div>
 
-          {activeSourceTab === 'clinicianNotes' ? (
-            <SourceInput
-              label="Paste clinician note or chart text"
-              hint={workflowGuidance?.sectionHints.clinicianNotes || 'Shorthand, rough bullets, your own impressions, partial charting.'}
-              value={sourceSections.clinicianNotes}
-              onChange={(value) => updateSourceSection('clinicianNotes', value)}
-              placeholder="Paste the provider note, bullet list, copied chart text, or rough clinical source here."
-              autoFocus
-            />
-          ) : null}
-          {activeSourceTab === 'intakeCollateral' ? (
-            <SourceInput
-              label="Paste intake or collateral"
-              hint={workflowGuidance?.sectionHints.intakeCollateral || 'Nursing intake, collateral history, social work documentation, family report.'}
-              value={sourceSections.intakeCollateral}
-              onChange={(value) => updateSourceSection('intakeCollateral', value)}
-              placeholder="Paste intake text, collateral information, pre-visit notes, or related background here."
-              autoFocus
-            />
-          ) : null}
-          {activeSourceTab === 'patientTranscript' ? (
-            <SourceInput
-              label="Paste patient conversation or transcript"
-              hint={workflowGuidance?.sectionHints.patientTranscript || 'Interview text, transcript excerpts, direct quotes, chronology from conversation.'}
-              value={sourceSections.patientTranscript}
-              onChange={(value) => updateSourceSection('patientTranscript', value)}
-              placeholder="Paste patient quotes, interview text, or transcript excerpts here."
-              autoFocus
-            />
-          ) : null}
-          {activeSourceTab === 'objectiveData' ? (
-            <SourceInput
-              label="Paste objective data, meds, labs, or vitals"
-              hint={workflowGuidance?.sectionHints.objectiveData || 'Vitals, labs, meds, relevant objective findings, other structured data.'}
-              value={sourceSections.objectiveData}
-              onChange={(value) => updateSourceSection('objectiveData', value)}
-              placeholder="Paste medication lists, labs, vitals, scales, or other objective data here."
-              autoFocus
-            />
-          ) : null}
-          <div className="grid gap-4">
-            <DictationControlBar
-              enabled={Boolean(dictationTargetSection)}
-              uiState={dictationSession.uiState}
-              captureState={dictationCaptureState}
-              captureLabel={dictationCaptureLabel}
-              providerLabel={dictationProviderLabel}
-              sessionStatusLabel={`${dictationBackendStatus} • ${dictationTransportLabel}`}
-              targetLabel={dictationTargetLabel}
-              helperText={dictationTargetSection
-                ? 'Dictation stays in review until you explicitly insert the final segment into this source section. Microphone capture is real, and the transport switches to polling only if the live stream drops.'
-                : 'Objective data stays paste-first for now. Dictation is intentionally limited to clinician, intake, and patient-conversation source lanes.'}
-              onStart={() => {
-                void handleStartDictation();
-              }}
-              onPause={() => {
-                void handlePauseDictation();
-              }}
-              onStop={() => {
-                void handleStopDictation();
-              }}
-            />
-            <DictationTranscriptPanel
-              enabled={Boolean(dictationTargetSection)}
-              captureLabel={dictationCaptureLabel}
-              providerLabel={dictationProviderLabel}
-              transportLabel={dictationTransportLabel}
-              auditEvents={dictationAuditEvents}
-              sessionHistory={dictationSessionHistory}
-              selectedSessionId={selectedDictationHistorySessionId}
-              selectedSessionEvents={selectedDictationHistoryEvents}
-              selectedSessionLoading={selectedDictationHistoryLoading}
-              queuedTranscriptEventCount={dictationQueuedEventCount}
-              uploadedChunkCount={dictationUploadedChunkCount}
-              uploadedAudioBytes={dictationUploadedAudioBytes}
-              interimText={dictationSession.interimSegment?.text}
-              mockDraft={dictationMockDraft}
-              onMockDraftChange={setDictationMockDraft}
-              onQueueMockUtterance={() => {
-                void handleQueueMockUtterance();
-              }}
-              pendingSegments={dictationSession.pendingSegments}
-              insertedSegments={dictationSession.insertedSegments}
-              onAcceptSegment={(segmentId) => {
-                void handleAcceptDictationSegment(segmentId);
-              }}
-              onDiscardSegment={handleDiscardDictationSegment}
-              onSelectSessionHistory={setSelectedDictationHistorySessionId}
-            />
-          </div>
           <details className="workspace-subpanel rounded-[20px] px-4 py-3">
             <summary className="cursor-pointer text-sm font-semibold text-cyan-50">Preview combined source</summary>
             <div className="mt-4">
@@ -3885,14 +5171,14 @@ export function NewNoteForm() {
           </div>
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <div className="workspace-kpi rounded-[18px] p-4">
+            <div className="workspace-card-static rounded-[18px] p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Current status</div>
               <div className="mt-2 text-lg font-semibold text-white">No draft yet</div>
               <p className="mt-2 text-sm leading-6 text-cyan-50/72">
                 The review editor appears here once the draft-control panel runs generation.
               </p>
             </div>
-            <div className="workspace-kpi rounded-[18px] p-4">
+            <div className="workspace-card-static rounded-[18px] p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">What stays visible</div>
               <div className="mt-2 text-lg font-semibold text-white">Source on the left</div>
               <p className="mt-2 text-sm leading-6 text-cyan-50/72">
@@ -3914,7 +5200,7 @@ export function NewNoteForm() {
               'Open the draft controls and generate once the source is ready.',
               'Review, revise, and copy the note here without leaving the workspace.',
             ].map((item, index) => (
-              <div key={item} className="workspace-kpi flex items-start gap-3 rounded-[18px] p-4">
+              <div key={item} className="workspace-card-static flex items-start gap-3 rounded-[18px] p-4">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-cyan-200/16 bg-[rgba(255,255,255,0.05)] text-[11px] font-semibold text-white">
                   {index + 1}
                 </div>
@@ -4677,7 +5963,7 @@ export function NewNoteForm() {
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/80">Draft controls</div>
                 <h2 className="mt-2 text-xl font-semibold tracking-[-0.02em] text-white">Generate, then review in place</h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-cyan-50/78">
-                  Generate once from the current source packet, then keep review in the same workspace instead of bouncing between separate screens.
+                  Generate once from the current source packet, then review flagged sections or ask Atlas to tighten wording before copying.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -4809,7 +6095,7 @@ export function NewNoteForm() {
                 <div>
                   <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Before you generate</div>
                   <div className="mt-1 text-sm leading-6 text-cyan-50/76">
-                    Veranote stays light here: no interruptive popup, just a last compose check before the first draft.
+                    Veranote stays light here: one last compose check before the first draft.
                   </div>
                 </div>
                 <div className="text-xs text-cyan-50/58">
@@ -4849,13 +6135,17 @@ export function NewNoteForm() {
             </div>
           </div>
 
-          <div id="output-preferences-panel" ref={registerComposeSection('output-preferences')}>
+          <div
+            id="output-preferences-panel"
+            ref={registerComposeSection('output-preferences')}
+            className={`transition-all ${jumpHighlightTarget === 'output-preferences' || jumpHighlightTarget === 'site-presets' ? 'rounded-[28px] ring-2 ring-cyan-300/40 shadow-[0_0_0_4px_rgba(34,211,238,0.1)]' : ''}`}
+          >
             <details ref={outputPreferencesDetailsRef} className="rounded-[24px] border border-white/75 bg-white/78 p-4 shadow-md backdrop-blur-xl">
               <summary className="cursor-pointer list-none">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Advanced</div>
-                    <div className="mt-1 text-base font-semibold text-slate-950">Preferences, presets, and Vera helpers</div>
+                    <div className="mt-1 text-base font-semibold text-slate-950">Advanced preferences, presets, and Atlas helpers</div>
                     <p className="mt-1 text-sm text-slate-600">
                       Open only when you want to tune output structure or save reusable note behavior.
                     </p>
@@ -4922,7 +6212,7 @@ export function NewNoteForm() {
                       </div>
                     ) : (
                       <div className="mt-4 rounded-[16px] border border-dashed border-slate-200 bg-white p-3 text-sm leading-6 text-slate-600">
-                        Vera has not learned many explicit workflow notes yet. As repeated habits show up, they will appear here and in Vera’s memory center.
+                        Atlas has not learned many explicit workflow notes yet. As repeated habits show up, they will appear here and in Atlas’s memory center.
                       </div>
                     )}
                   </div>
@@ -4972,7 +6262,7 @@ export function NewNoteForm() {
                       </Field>
                     </div>
 
-                    <div className="mt-4 rounded-[20px] border border-slate-200 bg-white p-4">
+                    <div className={`mt-4 rounded-[20px] border border-slate-200 bg-white p-4 transition-all ${jumpHighlightTarget === 'site-presets' ? 'ring-2 ring-cyan-300/60 shadow-[0_0_0_4px_rgba(34,211,238,0.12)]' : ''}`}>
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div>
                           <div className="text-sm font-semibold text-slate-950">Site / EHR presets</div>
@@ -4988,9 +6278,10 @@ export function NewNoteForm() {
                       <div className="mt-4 grid gap-4 md:grid-cols-2">
                         <Field label="Preset name">
                           <input
+                            ref={outputProfileNameInputRef}
                             value={outputProfileName}
                             onChange={(event) => setOutputProfileName(event.target.value)}
-                            className="w-full rounded-lg border border-border bg-white p-3"
+                            className={`w-full rounded-lg border border-border bg-white p-3 transition-all ${jumpHighlightTarget === 'site-presets' ? 'ring-2 ring-cyan-300/60' : ''}`}
                             placeholder="Example: Hospital A - Tebra Psych Initial"
                           />
                         </Field>
@@ -5165,9 +6456,9 @@ export function NewNoteForm() {
                       <div className="mt-4 rounded-[20px] border border-cyan-200/12 bg-[rgba(255,255,255,0.05)] p-4">
                         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                           <div>
-                            <div className="text-sm font-semibold text-white">Vera insight</div>
+                            <div className="text-sm font-semibold text-white">Atlas insight</div>
                             <p className="mt-1 text-xs text-cyan-50/78">
-                              Vera has noticed that you repeatedly use this kind of prompt preference for {noteType.toLowerCase()}: <span className="font-semibold text-white">{promptPreferenceSuggestion.label}</span>.
+                              Atlas has noticed that you repeatedly use this kind of prompt preference for {noteType.toLowerCase()}: <span className="font-semibold text-white">{promptPreferenceSuggestion.label}</span>.
                             </p>
                           </div>
                           <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium">
@@ -5200,9 +6491,9 @@ export function NewNoteForm() {
                       <div className="mt-4 rounded-[20px] border border-cyan-200/12 bg-[rgba(255,255,255,0.05)] p-4">
                         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                           <div>
-                            <div className="text-sm font-semibold text-white">Vera profile insight</div>
+                            <div className="text-sm font-semibold text-white">Atlas profile insight</div>
                             <p className="mt-1 text-xs text-cyan-50/78">
-                              Across the <span className="font-semibold text-white">{activeProviderProfile.name}</span> profile, Vera has noticed a repeated preference pattern: <span className="font-semibold text-white">{profilePromptPreferenceSuggestion.label}</span>.
+                              Across the <span className="font-semibold text-white">{activeProviderProfile.name}</span> profile, Atlas has noticed a repeated preference pattern: <span className="font-semibold text-white">{profilePromptPreferenceSuggestion.label}</span>.
                             </p>
                           </div>
                           <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium">
@@ -5239,9 +6530,9 @@ export function NewNoteForm() {
                     ) : null}
 
                     <div className="mt-4 rounded-[20px] border border-slate-200 bg-white p-4">
-                      <div className="text-sm font-semibold text-slate-950">Vera quick builder</div>
+                      <div className="text-sm font-semibold text-slate-950">Atlas quick builder</div>
                       <p className="mt-1 text-xs leading-5 text-slate-600">
-                        Describe how you want this note lane to behave, then let Vera draft a reusable preference block for you.
+                        Describe how you want this note lane to behave, then let Atlas draft a reusable preference block for you.
                       </p>
                       <div className="mt-4 flex flex-wrap gap-2">
                         {[
@@ -5275,7 +6566,7 @@ export function NewNoteForm() {
                           onClick={() => handleBuildPreferenceDraft()}
                           className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
                         >
-                          Draft Vera suggestion
+                          Draft Atlas suggestion
                         </button>
                         {assistantPreferenceDraft ? (
                           <>
@@ -5298,7 +6589,7 @@ export function NewNoteForm() {
                       </div>
                       {assistantPreferenceDraft ? (
                         <div className="aurora-soft-panel mt-4 rounded-[18px] p-4">
-                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Vera draft</div>
+                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Atlas draft</div>
                           <div className="mt-2 whitespace-pre-wrap text-sm text-ink">{assistantPreferenceDraft}</div>
                         </div>
                       ) : null}

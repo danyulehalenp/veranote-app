@@ -298,7 +298,7 @@ export function buildStructuredPsychDiagnosisCatalogHelp(
 
   if (diagnosisMatch) {
     return {
-      message: `${directLead}for ${diagnosisMatch.diagnosis.diagnosis_name}, the safest ICD-10-CM path in Vera right now is the ${diagnosisMatch.diagnosis.likely_icd10_family} family rather than a one-click final code, because documentation details can still change specificity.`,
+      message: `${directLead}for ${diagnosisMatch.diagnosis.diagnosis_name}, the safest ICD-10-CM path in Atlas right now is the ${diagnosisMatch.diagnosis.likely_icd10_family} family rather than a one-click final code, because documentation details can still change specificity.`,
       suggestions: buildDiagnosisSuggestions(diagnosisMatch),
       references: buildDiagnosisReferences(diagnosisMatch.diagnosis),
     };
@@ -310,11 +310,11 @@ export function buildStructuredPsychDiagnosisCatalogHelp(
   }
 
   return {
-    message: `${directLead}for ${familyMatch.linkage.label}, the safest ICD-10-CM path in Vera right now is ${familyMatch.linkage.likely_icd10_cm_family_linkage}.`,
+    message: `${directLead}for ${familyMatch.linkage.label}, the safest ICD-10-CM path in Atlas right now is ${familyMatch.linkage.likely_icd10_cm_family_linkage}.`,
     suggestions: [
       `Specificity issue: ${familyMatch.linkage.specificity_issues}`,
       `Preserve uncertainty when needed: ${familyMatch.linkage.uncertainty_issues}`,
-      `Why Vera stays conservative here: ${familyMatch.linkage.product_implications_for_diagnosis_suggestion_ui}`,
+      `Why Atlas stays conservative here: ${familyMatch.linkage.product_implications_for_diagnosis_suggestion_ui}`,
     ],
     references: buildFamilyReferences(familyMatch.linkage),
   };
@@ -331,7 +331,7 @@ export function buildPriorityStructuredPsychDiagnosisHelp(
   }
 
   return {
-    message: `${directLead}for ${match.diagnosis.diagnosis_name}, the safest ICD-10-CM path in Vera right now is the ${match.diagnosis.likely_icd10_family} family rather than a one-click final code, because documentation details can still change specificity.`,
+    message: `${directLead}for ${match.diagnosis.diagnosis_name}, the safest ICD-10-CM path in Atlas right now is the ${match.diagnosis.likely_icd10_family} family rather than a one-click final code, because documentation details can still change specificity.`,
     suggestions: buildDiagnosisSuggestions(match),
     references: buildDiagnosisReferences(match.diagnosis),
   };

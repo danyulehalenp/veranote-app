@@ -11,14 +11,14 @@ export default function VeraLabPage() {
 
   return (
     <AppShell
-      title="Vera Lab"
-      subtitle="Internal QA surface for interrogating the live Vera endpoint, classifying failures, routing repair tasks, and gating regressions before changes ship."
+      title="Atlas Lab"
+      subtitle="Internal QA surface for interrogating the live Atlas endpoint, classifying failures, routing repair tasks, and gating regressions before changes ship."
       fullWidth
       showFeedback={false}
     >
       <InternalSurfaceNotice
         title="Internal admin surface"
-        body="Vera Lab is for internal QA, failure analysis, repair routing, and regression gating. It should stay isolated from the provider-facing workflow."
+        body="Atlas Lab is for internal QA, failure analysis, repair routing, and regression gating. It should stay isolated from the provider-facing workflow."
       />
       <div className="mt-6">
         <VeraLabDashboard />

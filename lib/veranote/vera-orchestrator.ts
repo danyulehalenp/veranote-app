@@ -19,8 +19,16 @@ export type AssistantOrchestratorBuilders = {
   buildBoundaryHelp: (normalizedMessage: string) => AssistantResponsePayload | null;
   buildConversationalHelp: (normalizedMessage: string, context?: AssistantApiContext) => AssistantResponsePayload | null;
   buildInternalKnowledgeHelp: (normalizedMessage: string, context?: AssistantApiContext) => AssistantResponsePayload | null;
-  buildReferenceLookupHelp: (normalizedMessage: string, context?: AssistantApiContext) => AssistantResponsePayload | null;
-  buildGeneralKnowledgeHelp: (normalizedMessage: string, context?: AssistantApiContext) => AssistantResponsePayload | null;
+  buildReferenceLookupHelp: (
+    normalizedMessage: string,
+    context?: AssistantApiContext,
+    recentMessages?: AssistantThreadTurn[],
+  ) => AssistantResponsePayload | null;
+  buildGeneralKnowledgeHelp: (
+    normalizedMessage: string,
+    context?: AssistantApiContext,
+    recentMessages?: AssistantThreadTurn[],
+  ) => AssistantResponsePayload | null;
   buildPrivacyTrustHelp: (normalizedMessage: string) => AssistantResponsePayload | null;
   buildSupportAndTrainingHelp: (normalizedMessage: string) => AssistantResponsePayload | null;
   buildRequestedRevisionHelp: (
@@ -85,8 +93,8 @@ export function orchestrateAssistantResponse(
     builders.buildBoundaryHelp(normalizedMessage)
     || builders.buildConversationalHelp(normalizedMessage, context)
     || (mode === 'reference-lookup'
-      ? builders.buildReferenceLookupHelp(normalizedMessage, context)
-      : builders.buildGeneralKnowledgeHelp(normalizedMessage, context)
+      ? builders.buildReferenceLookupHelp(normalizedMessage, context, recentMessages)
+      : builders.buildGeneralKnowledgeHelp(normalizedMessage, context, recentMessages)
         || builders.buildInternalKnowledgeHelp(normalizedMessage, context))
     || builders.buildPrivacyTrustHelp(normalizedMessage)
     || builders.buildSupportAndTrainingHelp(normalizedMessage)

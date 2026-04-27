@@ -11,6 +11,8 @@ type ClinicalTaskPriorityInput = {
   message: string;
   sourceText: string;
   currentDraftText?: string;
+  stage?: 'compose' | 'review';
+  noteType?: string;
   mseAnalysis?: MseAnalysis;
   riskAnalysis: RiskAnalysis;
   contradictionAnalysis: ContradictionAnalysis;
@@ -30,6 +32,24 @@ export type ClinicalTaskOverride = {
   answerMode?: AssistantAnswerMode;
   builderFamily?: AssistantBuilderFamily;
 };
+
+type ProviderHistoryMedicationScenarioKind =
+  | 'medication_reference'
+  | 'strengths_forms'
+  | 'monitoring_labs'
+  | 'side_effects'
+  | 'interactions'
+  | 'titration'
+  | 'taper'
+  | 'cross_taper'
+  | 'antipsychotic_switch'
+  | 'antidepressant_switch'
+  | 'mood_stabilizer_transition'
+  | 'stimulant_question'
+  | 'lai_conversion'
+  | 'mixed_lai_legal'
+  | 'mixed_violence_stimulant'
+  | 'mixed_catatonia_antipsychotic_switch';
 
 type ClinicalScenarioFlags = {
   suicideContradiction: boolean;
@@ -84,6 +104,456 @@ function hasConsultLiaisonMedicalOverlap(text: string) {
   ]);
 }
 
+function hasProviderHistorySuicideContradiction(text: string) {
+  const suicideContradictionSignal = hasAny(text, [
+    /\b(suicide|suicidal|si|denies si|no si|goodbye|goodbye-ish|not safe|not trust herself|not trust himself|not trust themselves|wants? to die|cut recently|overdose|family worried|collat(?:eral)? worried)\b/,
+  ]);
+
+  if (hasAny(text, [
+    /\b(where do i start|source is messy|need psych admit hpi|admit hpi|admission hpi|progress note cleaned up|rewrite it so it is usable)\b/,
+    /\b(risk wording|make risk assessment|rewrite safety paragraph|chronic vs acute risk)\b/,
+    /\b(recent passive death wish|means not asked|protective factors thin|intoxication unclear)\b/,
+  ]) && !suicideContradictionSignal) {
+    return false;
+  }
+
+  return hasAny(text, [
+    /\bsuicide[ -]?risk wording\b.*\b(goodbye|not trust|current intent|higher-risk|does not trust)\b/,
+    /\blow suicide[ -]?risk\b.*\b(goodbye|not trust|current intent|higher-risk|does not trust)\b/,
+    /\bdenies si\b.*\b(but|however|although|also)\b.*\b(goodbye|goodbye-ish|not safe|wants? to die|cut recently|overdose|family worried|collat(?:eral)? worried|higher-risk|risk)\b/,
+    /\b(no si|no plan|denies suicidal|denies suicidality|says no plan)\b.*\b(goodbye|goodbye-ish|collat(?:eral)?|family worried|not safe|wants? to die|cut recently|overdose|risk)\b/,
+    /\b(goodbye|goodbye-ish|not safe at home|not safe if sent home|wants? to die yesterday|cut recently|overdose talk|family worried)\b.*\b(denies|no si|no plan|say no si|just say no si)\b/,
+    /\b(si contradiction|suicide risk contradiction)\b/,
+    /\b(just say no si|actually just say no si|can u just say no si)\b/,
+    /\bdenies si\b.*\b(triage|wanted to disappear|collat(?:eral)? worried|old statement)\b/,
+    /\b(pt|patient)\b.*\bdenies si\b.*\b(collat(?:eral)?|triage|worried)\b/,
+    /\bdenies intent\b.*\b(would not answer means|means question)\b/,
+    /\b(wanted to disappear|would not answer means question|ignore old statement|make risk low)\b/,
+    /\bchart says passive si\b.*\b(pt|patient)\b.*\b(never said that|denies|disputes)\b/,
+    /\b(pt|patient)\b.*\b(never said that|denies|disputes)\b.*\bchart says passive si\b/,
+    /\b(chart says passive si|clarify before dc|collateral is dramatic|leave it out)\b/,
+  ]);
+}
+
+function hasProviderHistoryViolenceContradiction(text: string) {
+  const generalRiskOnly = hasAny(text, [
+    /\b(risk wording|make risk assessment|rewrite safety paragraph|chronic vs acute risk|recent passive death wish|means not asked|protective factors thin|intoxication unclear)\b/,
+  ]) && !hasAny(text, [
+    /\b(hi denial|denies hi|violence[ -]?risk|violent|homicid|threat|threats|revenge|hurt someone|broke objects|posturing|weapon|security involved|target vague|target unclear)\b/,
+  ]);
+  const suicideOnlyRisk = hasAny(text, [
+    /\b(si contradiction|suicide risk contradiction|denies si|no si|suicid|goodbye|goodbye-ish|means question|just say no si)\b/,
+  ]) && !hasAny(text, [
+    /\b(hi denial|denies hi|violence risk|violent|homicid|threat|threats|revenge|hurt someone|broke objects|posturing|weapon|security involved)\b/,
+  ]);
+
+  if (generalRiskOnly) {
+    return false;
+  }
+
+  if (suicideOnlyRisk) {
+    return false;
+  }
+
+  return hasAny(text, [
+    /\bdenies hi\b.*\b(but|however|although|also)\b.*\b(threat|revenge|hurt someone|target|weapon|access|aggressive|security|staff|collat(?:eral)?)\b/,
+    /\b(no hi|denies homicidal|denies violent intent|denies intent)\b.*\b(threat|revenge|hurt someone|target|weapon|access|aggressive|security|posturing|broke objects|staff heard)\b/,
+    /\b(threat earlier|threats? reported|staff heard threats?|said (?:he|she|they|pt|patient)(?:'d| would) hurt someone|hurt someone|wanting revenge|making them pay)\b/,
+    /\b(aggressive earlier|was aggressive earlier|security involved|pacing jaw clenched|jaw clenched|posturing|broke objects|punched wall)\b/,
+    /\b(family worried (?:he|she|they|pt|patient) might hurt someone|weapon mentioned|weapon unclear|target unclear|target vague|no access details)\b/,
+    /\b(threat|aggression|posturing|broke objects|weapon|target|access|intent)\b.*\b(unclear|vague|unknown|no details|idk|maybe)\b/,
+    /\b(violence[ -]?risk wording|hi denial|omit threats bc denied|say no risk since calm|no risk since calm|behavioral only)\b/,
+    /\bcollateral reports threats?\b/,
+    /\bdenies hi\b.*\b(staff heard threats?|target vague|heard threats?)\b/,
+    /\b(no risk since calm|staff heard threats?|target vague)\b/,
+  ]);
+}
+
+function hasProviderHistoryLegalCapacity(text: string) {
+  if (hasAny(text, [
+    /\bgrave disability clearly established\b/,
+    /\bsource only documents poor hygiene\b/,
+    /\b(exact hold wording|source-matched hold language|overdose if sent home|hid pills|safe place to stay)\b/,
+  ])) {
+    return false;
+  }
+
+  return hasAny(text, [
+    /\b(does (?:he|she|pt|patient) have capacity|has capacity|capacity note|capacity for|capacity\?|competent\?|can (?:he|she|pt|patient) refuse|can.*refuse|refusing med|refusing treatment)\b/,
+    /\b(no capacity full stop|say no capacity|lacks capacity full stop|global capacity|blanket incapacity)\b/,
+    /\b(understands some but not risks|not appreciating risks|cannot explain risks|cannot repeat alternatives|decision-specific language)\b/,
+    /\b(hold wording|legally holdable|make clinical not legal|unsafe plan|pt wants leave|patient wants leave)\b/,
+    /\blacks capacity bc psychotic\b/,
+    /\bcourt-proof\b/,
+    /\bguardian asking to force meds\b/,
+    /\bguardian decides always right\b/,
+    /\bavoid state law specifics\b/,
+    /\bwhat to document\b.*\b(capacity|guardian|force meds|court)\b/,
+  ]);
+}
+
+function hasProviderHistoryBenzoTaper(text: string) {
+  return hasAny(text, [
+    /\b(ativan-like med|benzo taper|benzodiazepine taper)\b/,
+    /\b(unknown dose long time|stop it quickly|stop .* quickly|withdrawal mild|outpatient vs inpatient caution)\b/,
+    /\b(quickly stop|just stop it)\b.*\b(benzo|ativan|xanax|klonopin|lorazepam|alprazolam|clonazepam)\b/,
+    /\b(alprazolam-ish|longer acting taper|benzo \+ alcohol use|fast taper|give fast taper|ignore alcohol risk|not schedule)\b/,
+    /\b(benzo dose unk|benzodiazepine dose unknown|alcohol use maybe|rapid taper|asks rapid taper)\b/,
+  ]);
+}
+
+function hasProviderHistorySubstancePsychOverlap(text: string) {
+  if (hasProviderHistoryBenzoTaper(text)) {
+    return false;
+  }
+
+  return hasAny(text, [
+    /\b(meth vs primary psych|primary psych\?|substance induced|substance-induced|call it substance induced)\b/,
+    /\b(thc daily|cannabis daily|mania-ish|mania ish|how word ddx)\b/,
+    /\b(stimulant use unclear|voices started around binge|around binge maybe|say malingering)\b/,
+    /\b(alcohol withdrawal vs anxiety vs psychosis|withdrawal vs anxiety vs psychosis|bipolar definite)\b/,
+    /\b(uds pending|tox pending|tox not back|ignore tox pending|tox\/withdrawal)\b/,
+    /\b(reassessment after sobriety|after sobriety|after stabilization|sobriety or stabilization)\b/,
+  ]);
+}
+
+function hasProviderHistoryMedicalPsychOverlap(text: string) {
+  if (hasProviderHistoryDeliriumOverlap(text)) {
+    return hasAny(text, [
+      /\b(fever mentioned|medical ruleout|medical rule-out|just call psych|psych-only|psych only)\b/,
+    ]);
+  }
+
+  return hasAny(text, [
+    /\b(confused\/agitated|confused and agitated|hx psych but fever|fever mentioned|medical ruleout|medical rule-out)\b/,
+    /\b(panic vs cardiac|cardiac sx|chest tightness|skip medical stuff)\b/,
+    /\b(new hallucinations older adult-ish|older adult-ish|med changes unclear|include red flags|say cleared)\b/,
+    /\b(depression vs hypothyroid|hypothyroid\/medical fatigue|medical fatigue|make it behavioral)\b/,
+    /\b(medical contributors|red flags or missing evaluation|avoid psych-only certainty)\b/,
+  ]);
+}
+
+function hasProviderHistoryMixedSiSubstanceDischarge(text: string) {
+  return hasAny(text, [
+    /\b(pt|patient)\b.*\bdenies si\b.*\bsobering\b.*\b(earlier pdw|family worried|wants dc|uds not back)\b/,
+    /\b(earlier pdw|passive death wish)\b.*\b(family worried|wants dc|uds not back|sobering)\b/,
+    /\bsi contradiction\b.*\b(substance timing|discharge readiness gaps|uds|tox|sobering|wants dc|discharge)\b/,
+    /\b(substance timing|discharge readiness gaps)\b.*\b(si contradiction|denies si|passive death wish|family worried)\b/,
+    /\b(just decide and dont slow us down|just decide and don't slow us down)\b.*\b(si|sobering|discharge|dc|uds)\b/,
+  ]);
+}
+
+function hasProviderHistoryMixedWithdrawalBenzo(text: string) {
+  return hasAny(text, [
+    /\bbenzo dose unk\b.*\b(alcohol use maybe|tremor insomnia|rapid taper)\b/,
+    /\b(alcohol use maybe|substance use uncertainty)\b.*\b(benzo|benzodiazepine|rapid taper)\b/,
+    /\b(withdrawal\/seizure risk|urgent red flags)\b.*\b(benzo|benzodiazepine|taper)\b/,
+  ]);
+}
+
+function hasProviderHistoryPsychosisWording(text: string) {
+  if (hasProviderHistoryDeliriumOverlap(text) || hasProviderHistorySubstancePsychOverlap(text)) {
+    return false;
+  }
+
+  return hasAny(text, [
+    /\bword psychosis\b/,
+    /\bhow chart paranoid-sounding beliefs\b/,
+    /\bparanoid-sounding beliefs\b/,
+    /\bpeople watching\b.*\b(no clear delusion|wording)\b/,
+    /\bobserved distracted\b.*\b(thought blocking|denies voices)\b/,
+    /\b(thought blocking maybe|laughing to self|maybe guarded)\b/,
+    /\b(separate observed vs reported|observed behavior, patient report|patient report, observation, and interpretation)\b/,
+    /\b(include uncertainty|diagnostic uncertainty|avoid stigmatizing)\b/,
+    /\b(call malingering|diagnose schizophrenia|crazy\/paranoid|ignore denial)\b/,
+  ]);
+}
+
+function hasProviderHistoryInternalPreoccupationDenial(text: string) {
+  return hasAny(text, [
+    /\bdenies avh\b.*\b(internally preocc|internally preoccupied|pausing mid sentence)\b/,
+    /\bdenies voices\b.*\b(whispering when alone|seen whispering)\b/,
+    /\bmse says no avh\b.*\bnursing notes responding to unseen stimuli\b/,
+    /\bguarded\b.*\bscanning room\b.*\bdenies paranoia\b/,
+    /\b(make side-by-side|side-by-side|dont overdiagnose|don'?t overdiagnose|include nursing obs|nursing obs)\b/,
+    /\b(denies psychosis|responding to voices for sure|leave out nursing|make mse normal)\b/,
+    /\b(internal preoccupation|responding to unseen stimuli|observed behavior described|denial preserved)\b/,
+  ]);
+}
+
+function hasProviderHistoryCollateralConflict(text: string) {
+  return hasAny(text, [
+    /\bcollateral says unsafe\b.*\b(pt|patient)\b.*\b(family lying|says family lying)\b/,
+    /\bfamily reports med nonadherence\b.*\b(pt|patient)\b.*\b(taking all meds|says taking)\b/,
+    /\bpolice\/ems style report differs from pt story\b/,
+    /\bchart review says prior aggression\b.*\b(pt|patient)\b.*\bdenies history\b/,
+    /\b(label sources|avoid taking sides|include clinical relevance|short paragraph)\b/,
+    /\b(pick the patient version|omit collateral|say family unreliable|one clean story)\b/,
+    /\b(source-labeled collateral|collateral conflict|conflicting accounts|without resolving the conflict)\b/,
+  ]);
+}
+
+function hasProviderHistoryMixedCollateralCapacity(text: string) {
+  return hasAny(text, [
+    /\b(pt|patient)\b.*\brefuses admission plan\b.*\bfamily says cannot care for self\b.*\bcapacity\??\b/,
+    /\bfamily says cannot care for self\b.*\b(pt|patient)\b.*\b(says fine|refuses admission plan)\b/,
+    /\b(patient preference|collateral concern|decision-specific capacity factors)\b/,
+    /\bjust decide and don'?t slow us down\b.*\b(capacity|admission|family)\b/,
+  ]);
+}
+
+function detectProviderHistoryMedicationScenarioKind(text: string): ProviderHistoryMedicationScenarioKind | null {
+  if (hasAny(text, [/\bmissed lai maybe\b.*\brefusing oral bridge\b.*\b(force|can force)\b/])) {
+    return 'mixed_lai_legal';
+  }
+
+  if (hasAny(text, [/\bcalm now denies hi\b.*\bcollateral says threats\b.*\brestart stimulant\b/])) {
+    return 'mixed_violence_stimulant';
+  }
+
+  if (hasAny(text, [/\bstaring not eating\b.*\brigid maybe\b.*\bswitch antipsychotic\b/])) {
+    return 'mixed_catatonia_antipsychotic_switch';
+  }
+
+  if (hasAny(text, [
+    /\boral antipsychotic to lai\b/,
+    /\bmissed lai dose\b/,
+    /\bpaliperidone-ish\b/,
+    /\baripiprazole lai\b/,
+    /\blai overlap\b/,
+    /\binjection dose\b/,
+    /\boral overlap\b.*\blai\b/,
+  ])) {
+    return 'lai_conversion';
+  }
+
+  if (hasAny(text, [
+    /\brestart stimulant in pt w psychosis history\b/,
+    /\badhd med question\b/,
+    /\bstimulant \+ substance use concern\b/,
+    /\bcardiac screening before stimulant\b/,
+  ])) {
+    return 'stimulant_question';
+  }
+
+  if (hasAny(text, [
+    /\blithium to valproate-ish\b/,
+    /\bvalproate to lamotrigine-ish\b/,
+    /\boxcarbazepine to lithium\b/,
+    /\bmood stabilizer stopped\b/,
+    /\bmood stabilizer transition\b/,
+    /\bdepakote to lamictal\b/,
+    /\brash\/titration\b/,
+  ])) {
+    return 'mood_stabilizer_transition';
+  }
+
+  if (hasAny(text, [
+    /\bfluoxetine-ish to snri\b/,
+    /\bzoloft to lexapro\b/,
+    /\bssri to mirtazapine\b/,
+    /\bmaoi\/serotonergic\b/,
+    /\bserotonergic risk\b.*\b(washout|switch)\b/,
+    /\bantidepressant switch\b/,
+  ])) {
+    return 'antidepressant_switch';
+  }
+
+  if (hasAny(text, [
+    /\bolanzapine-ish to aripiprazole-ish\b/,
+    /\bhaldol to risperidone-ish\b/,
+    /\bquetiapine to ziprasidone-ish\b/,
+    /\bstop clozapine-like\b/,
+    /\bantipsychotic switch\b/,
+  ])) {
+    return 'antipsychotic_switch';
+  }
+
+  if (hasAny(text, [
+    /\bcross taper\b/,
+    /\bcross-taper\b/,
+    /\bcross titrat/,
+    /\bswitch sedating antipsychotic to less sedating\b/,
+    /\boverlap two serotonergic meds\b/,
+    /\bssri to snri\b.*\bno doses\b/,
+    /\bcross taper mood meds\b/,
+  ])) {
+    return 'cross_taper';
+  }
+
+  if (hasAny(text, [
+    /\btaper antidepressant\b/,
+    /\bstop sedating med\b/,
+    /\brebound insomnia\b/,
+    /\btaper antipsychotic\b/,
+    /\bmood stabilizer taper\b/,
+  ])) {
+    return 'taper';
+  }
+
+  if (hasAny(text, [
+    /\btitrate ssri\b/,
+    /\bincrease antipsychotic\b/,
+    /\bmood stabilizer titration\b/,
+    /\bsleep med titration\b/,
+  ])) {
+    return 'titration';
+  }
+
+  if (hasAny(text, [
+    /\bssri \+ linezolid-ish\b/,
+    /\blithium with nsaid\/acei\b/,
+    /\bbenzo plus opioid\b/,
+    /\bqt meds combo\b/,
+    /\binteraction\b.*\b(mechanism|pharmacy)\b/,
+  ])) {
+    return 'interactions';
+  }
+
+  if (hasAny(text, [
+    /\bakathisia vs anxiety\b/,
+    /\bssri activation vs worsening anxiety\b/,
+    /\bsedation after quetiapine-ish\b/,
+    /\bgi upset and tremor\b/,
+    /\bseverity\/red flags\b/,
+  ])) {
+    return 'side_effects';
+  }
+
+  if (hasAny(text, [
+    /\blabs for lithium-ish\b/,
+    /\bvalproate monitoring\b/,
+    /\bantipsychotic metabolic labs\b/,
+    /\blamotrigine monitoring\b/,
+    /\boxcarbazepine sodium monitoring\b/,
+    /\bsodium monitoring\b.*\boxcarbazepine\b/,
+    /\brash counseling\b/,
+    /\bmonitoring quick list\b/,
+    /\bbaseline and followup\b/,
+    /\bskip labs if stable\b/,
+    /\bno monitoring needed\b/,
+    /\bmake it order set\b/,
+  ])) {
+    return 'monitoring_labs';
+  }
+
+  if (hasAny(text, [
+    /\bwhat forms does risperidone-ish med come in\b/,
+    /\bavailable strengths for common ssri\b/,
+    /\bliquid vs tab\b/,
+    /\bodt\/injection\b/,
+    /\bformulary\b/,
+    /\bpackage verification\b/,
+    /\bcommon forms\/strengths\b/,
+  ])) {
+    return 'strengths_forms';
+  }
+
+  if (hasAny(text, [
+    /\busual adult range\b/,
+    /\bstarting antipsychotic generally\b/,
+    /\bwhat to know before starting antipsychotic\b/,
+    /\bmood stabilizer sedating\b/,
+    /\btrazodone-like sleep med\b/,
+    /\bcommon counseling points\b/,
+    /\bgeneral medication reference\b/,
+    /\bgive exact order\b/,
+    /\bwhat dose for this pt\b/,
+  ])) {
+    return 'medication_reference';
+  }
+
+  return null;
+}
+
+function hasProviderHistoryMedicationScenario(text: string) {
+  return detectProviderHistoryMedicationScenarioKind(text) !== null;
+}
+
+function hasProviderHistoryDeliriumOverlap(text: string) {
+  if (hasAny(text, [
+    /\bmetabolic monitoring for antipsychotics\b/,
+    /\bunknown blue powder\b/,
+    /\bnot sure if this is psych or medical\b/,
+    /\bmedical versus psych|medical vs psych\b/,
+    /\bafter stopping drinking\b/,
+    /\bteam split on withdrawal vs psych\b/,
+  ])) {
+    return false;
+  }
+
+  return hasAny(text, [
+    /\b(psych or medical|medical or psych|psychosis or catatonia|catatonia\?|delirium|withdrawal concern|withdrawal overlap)\b/,
+    /\b(not talking|staring|poor intake|mutism|rigidity|rigid|ck elevated)\b.*\b(psychosis|catatonia|delirium|medical|withdrawal|red flags|refusing to engage)\b/,
+    /\b(psychosis|catatonia|delirium|medical|withdrawal|red flags|refusing to engage)\b.*\b(not talking|staring|poor intake|mutism|rigidity|rigid|ck elevated)\b/,
+    /\b(refusing to engage|behavioral only|just say refusing|primary psychosis only)\b.*\b(confusion|staring|poor intake|withdrawal|medical|catatonia|delirium|vitals|infection)\b/,
+    /\b(urgent red flags|medical assessment|medical workup)\b.*\b(confusion|withdrawal|catatonia|delirium|poor intake|staring)\b/,
+    /\b(agitated \+ fluctuating attention|what not to assume)\b/,
+    /\bbenzo stopped unclear\b/,
+    /\btremor\/anxiety\/insomnia\b/,
+    /\brigid\/slow\b/,
+    /\bantipsychotic recently changed\b/,
+    /\b(ignore withdrawal|psychosis only)\b/,
+    /\bmonitoring questions\b.*\b(rigid|slow|withdrawal)\b/,
+  ]);
+}
+
+function hasProviderHistoryMseCompletion(text: string) {
+  return hasAny(text, [
+    /\b(fill mse from note|mse pls|complete mental status|add i\/j based on admission|mental status)\b/,
+    /\b(guarded and poor eye contact|poor eye contact|brief answers|no speech details|mood anxious but no cognition)\b/,
+    /\b(put normal if not said|assume intact cognition|add fair insight|fill all boxes)\b/,
+    /\b(not documented where missing|infer thought process|format in bullets)\b/,
+  ]);
+}
+
+function hasProviderHistoryGeneralRiskWording(text: string) {
+  return hasAny(text, [
+    /\b(risk wording|make risk assessment|rewrite safety paragraph|chronic vs acute risk)\b/,
+    /\b(denies intent but recent passive death wish|recent passive death wish|means not asked|protective factors thin|intoxication unclear)\b/,
+    /\b(call low risk|say safe for dc|make denial enough|dont mention means not assessed|don't mention means not assessed)\b/,
+    /\b(include what is missing|avoid overcalling|add conservative summary)\b/,
+  ]);
+}
+
+function hasProviderHistoryRoutingMarker(text: string) {
+  return hasAny(text, [
+    /\b(si contradiction|suicide risk contradiction|hi denial|violence risk wording|capacity note for refusing med)\b/,
+    /\b(chart says passive si|collateral is dramatic|hold wording|legally holdable|make clinical not legal|unsafe plan)\b/,
+    /\b(psychosis or catatonia|lacks capacity bc psychotic|court-proof)\b/,
+    /\b(pt calm now, earlier posturing|staff heard threats, target vague|goodbye-ish msg per collateral)\b/,
+    /\b(pt denies si now but triage says wanted to disappear|denies intent but would not answer means question|guardian asking to force meds)\b/,
+    /\b(benzo stopped unclear|tremor\/anxiety\/insomnia|rigid\/slow, antipsychotic recently changed|benzo taper, pt on unknown dose long time|want to stop ativan-like med quickly)\b/,
+    /\b(alprazolam-ish|longer acting taper|benzo \+ alcohol use|fast taper|give fast taper|ignore alcohol risk|agitated \+ fluctuating attention|what not to assume)\b/,
+    /\b(omit threats bc denied|say no risk since calm|make it sound behavioral only|just say no si|actually just say no si|ignore old statement|make risk low)\b/,
+    /\b(no capacity full stop|guardian decides always right|avoid state law specifics|urgent red flags|just say refusing to engage|psychosis only|ignore withdrawal)\b/,
+    /\b(fill mse from note|mse pls|complete mental status|add i\/j based on admission|put normal if not said|assume intact cognition|add fair insight|fill all boxes)\b/,
+    /\b(risk wording|make risk assessment|rewrite safety paragraph|chronic vs acute risk|recent passive death wish|means not asked|protective factors thin|intoxication unclear)\b/,
+    /\b(meth vs primary psych|thc daily|mania-ish|uds pending|tox pending|alcohol withdrawal vs anxiety vs psychosis|substance induced|bipolar definite)\b/,
+    /\b(confused\/agitated|fever mentioned|medical ruleout|panic vs cardiac|chest tightness|new hallucinations older adult-ish|med changes unclear|hypothyroid\/medical fatigue|make it behavioral)\b/,
+    /\b(pt denies si after sobering|earlier pdw|wants dc|uds not back|discharge readiness gaps|substance timing)\b/,
+    /\b(benzo dose unk|alcohol use maybe|rapid taper|substance use uncertainty|withdrawal\/seizure risk)\b/,
+    /\b(word psychosis|paranoid-sounding beliefs|people watching|thought blocking maybe|laughing to self|maybe guarded|separate observed vs reported|diagnostic uncertainty)\b/,
+    /\b(denies avh but appears internally preocc|seen whispering when alone|nursing notes responding to unseen stimuli|guarded, scanning room|make side-by-side|dont overdiagnose|don'?t overdiagnose)\b/,
+    /\b(collateral says unsafe|family reports med nonadherence|police\/ems style report differs|chart review says prior aggression|label sources|avoid taking sides|include clinical relevance)\b/,
+    /\b(refuses admission plan|family says cannot care for self|patient preference|collateral concern|decision-specific capacity factors)\b/,
+    /\b(noncompliant|drug seeking|drug-seeking|poor historian|attention seeking|attention-seeking|manipulative|unreliable|not rude sounding|include barriers)\b/,
+    /\b(only have:|sparse note|brief triage|med refill request only|no safety info|no dose listed)\b/,
+    /\b(what do i say here|is this ok\??|make better|thoughts\??|source is above only|you know what i mean|messy source: fix|for note: fix|fix; no details|fix; per staff)\b/,
+    /\b(hpii|deneis|colat|medz|mse complte|dc summry|benzo tapr)\b/,
+    /\b(pn:|a\/p clean|cont obs|collat pend|labs pend|irrt|rtis|biba|thc\+|pdw\+|si-|means\s*\?|fam worried)\b/,
+    /\b(stimulant use unclear|voices started around binge|around binge maybe|say malingering)\b/,
+    /\b(refill request only\b.*\bno safety screen|new paranoia\b.*\bconfusion\b.*\bvitals\/labs not in source)\b/,
+    /\b(usual adult range|what to know before starting antipsychotic|mood stabilizer sedating|trazodone-like sleep med|available strengths for common ssri|risperidone-ish med|liquid vs tab|odt\/injection)\b/,
+    /\b(labs for lithium-ish|valproate monitoring|antipsychotic metabolic labs|lamotrigine monitoring|oxcarbazepine sodium monitoring|sodium monitoring|akathisia vs anxiety|ssri activation|sedation after quetiapine|gi upset and tremor)\b/,
+    /\b(ssri \+ linezolid-ish|lithium with nsaid\/acei|benzo plus opioid|qt meds combo|titrate ssri|increase antipsychotic|sleep med titration|mood stabilizer titration)\b/,
+    /\b(taper antidepressant|stop sedating med|rebound insomnia|taper antipsychotic|cross taper|cross-taper|overlap two serotonergic|switch sedating antipsychotic)\b/,
+    /\b(olanzapine-ish to aripiprazole-ish|haldol to risperidone-ish|quetiapine to ziprasidone-ish|fluoxetine-ish to snri|zoloft to lexapro|maoi\/serotonergic)\b/,
+    /\b(lithium to valproate-ish|valproate to lamotrigine-ish|oxcarbazepine to lithium|restart stimulant in pt w psychosis history|adhd med question|cardiac screening before stimulant|stimulant \+ substance use)\b/,
+    /\b(oral antipsychotic to lai|missed lai dose|paliperidone-ish|aripiprazole lai|missed lai maybe|refusing oral bridge|collateral says threats.*restart stimulant|staring not eating.*switch antipsychotic)\b/,
+  ]);
+}
+
 function hasViolenceRiskNuance(text: string) {
   return hasAny(text, [
     /\b(denies hi|denies homicidal ideation|no hi|low violence risk|violence risk|making them pay|threatened neighbor|threatened her|someone is gonna get hurt|somebody is gonna get hurt|weapon|guns|gun|jaw clenched|muttering about staff|punched wall|homicidal intent)\b/,
@@ -102,6 +572,13 @@ function hasInvoluntaryMedicationRefusal(text: string) {
   ]);
 }
 
+function hasMedicationRefusalAuthorityContext(text: string) {
+  return hasAny(text, [
+    /\b(refusing olanzapine|olanzapine\b.*\brefus|lithium refused|refus(?:ing|ed)\s+(?:the\s+)?(?:antipsychotic|mood stabilizer|lithium|olanzapine))\b/,
+    /\b(med(?:ication)? over objection|over objection|force it|forced medication|can be forced|legal authority|authority or process|capacity or consent|clinical recommendation)\b/,
+  ]);
+}
+
 function hasAmaElopementRisk(text: string) {
   return hasAny(text, [
     /\b(ama\b|against medical advice|against advice|elopement|elope|bolt|will bolt|tried doors|redirect(?:ed)?|leave right now|requesting ama discharge|leaving against advice|leaving against medical advice)\b/,
@@ -114,21 +591,91 @@ function hasPersonalityLanguageCaution(text: string) {
   ]);
 }
 
+function hasProviderHistoryNonStigmatizingWording(text: string) {
+  return hasAny(text, [
+    /\b(noncompliant|noncompliance|drug seeking|drug-seeking|manipulative|poor historian|attention seeking|attention-seeking|unreliable)\b/,
+    /\b(not rude sounding|better chart language|rewrite .* wording|wording alternative|make objective|include barriers)\b/,
+    /\b(keep manipulative|say drug-seeking|call them unreliable|sound annoying)\b/,
+  ]);
+}
+
+function hasProviderHistorySparseSourceHandling(text: string) {
+  return hasAny(text, [
+    /\b(only have:|sparse note|brief triage|med refill request only|no safety info|nothing else|no dose listed|no collateral)\b/,
+    /\b(write note\?|what can i safely say|list missing|dont invent|don't invent|make tiny hpi)\b/,
+    /\b(make complete anyway|fill normal ros\/mse|assume no risk|add diagnosis|missing dose\/adherence|missing safety screen)\b/,
+  ]);
+}
+
+function hasProviderHistoryVagueFollowupPrompt(text: string) {
+  return hasAny(text, [
+    /\b(what do i say here|is this ok\??|make better|thoughts\??|source is above only|you know what i mean)\b/,
+    /\b(messy source: fix|for note: fix|fix; no details|fix; per staff)\b/,
+    /\b(chart language pls|urgent|make it definitive|no questions)\b/,
+  ]);
+}
+
+function hasProviderHistoryTypoHeavyPrompt(text: string) {
+  return hasAny(text, [
+    /\b(hpii|deneis|colat|medz|mse complte|frm ths|dc summry|imprvd|f\/u|benzo tapr|dont wna)\b/,
+    /\b(fix spelling|ask missing qs|keep source bound|assume the rest|make normal|dont flag gaps|fast pls)\b/,
+  ]);
+}
+
+function hasProviderHistoryRushedShorthandPrompt(text: string) {
+  return hasAny(text, [
+    /\b(pn:|a\/p clean|cont obs|collat pend|labs pend|irrt|den si\/hi|avh\?|rtis|meds cont)\b/,
+    /\b(biba|agi|thc\+|no slp|dc\?|si-|pdw\+|means\s*\?|fam worried)\b/,
+    /\b(expand abbrevs carefully|missing list|ignore \? marks|fill blanks|say stable|make complete)\b/,
+  ]);
+}
+
+function hasProviderHistoryMixedSparseMedRefillRisk(text: string) {
+  return hasAny(text, [
+    /\b(refill request only\b.*\banxious\b.*\bno dose\b.*\bno safety screen\b)/,
+    /\b(missing dose\/adherence|missing safety screen|sparse med refill)\b/,
+  ]);
+}
+
+function hasProviderHistoryMixedPsychosisMedicalRuleout(text: string) {
+  return hasAny(text, [
+    /\b(new paranoia\b.*\bconfusion\b.*\bmed change unk\b.*\bvitals\/labs not in source\b)/,
+    /\b(psychosis uncertainty\b.*\bmedical contributors\b.*\bmissing vitals\/labs\b)/,
+  ]);
+}
+
 function hasAcuteInpatientHpiGeneration(text: string) {
   return hasAny(text, [
-    /\b(admit hpi|admission hpi|need psych admit hpi|make the hpi|can you make the hpi|build hpi|reason for admission|without making it fake-clean|without pretending we know if this is psych or medical)\b/,
+    /\b(admit hpi|admission hpi|need psych admit hpi|make the hpi|can you make the hpi|build hpi|hpi pls|full psych hpi|admit-style|reason for admission|without making it fake-clean|without pretending we know if this is psych or medical)\b/,
+    /\b(adult pt in eval area|messy bullets: mood down|dictated: pacing, not sleeping|source bound|fill in timeline|invent timeline)\b/,
   ]);
 }
 
 function hasProgressNoteRefinement(text: string) {
   return hasAny(text, [
-    /\b(progress note is ugly|progress note cleaned up|rewrite this progress note|rewrite it so it is usable|cleaned up:|tighten it|one chart-ready paragraph|improved progress-note paragraph|progress paragraph|keep it usable|less fake-clean)\b/,
+    /\b(progress note is ugly|progress note cleaned up|rewrite this progress note|rewrite it so it is usable|cleaned up:|clean pn|prog note|make prog note professional|soap note from shorthand|tighten assessment|one chart-ready paragraph|improved progress-note paragraph|progress paragraph|less fake-clean)\b/,
+    /\b(rewrite a\/p less messy|split plan bullets|med changes pending|collateral not reached|make them look stable|add normal mse bits|smooth out behavior issue)\b/,
   ]);
 }
 
 function hasDischargeSummaryGeneration(text: string) {
   return hasAny(text, [
-    /\b(discharge summary from this mess|need discharge summary|make the discharge summary|one discharge summary paragraph|hospital course was|symptom status at discharge|follow-up not actually scheduled|stable for discharge)\b/,
+    /\b(discharge summary from this mess|need discharge summary|make the discharge summary|one discharge summary paragraph|dc summary|d\/c summary|write hosp course|hospital course was|hospital course from bullets|symptom status at discharge|follow-up not actually scheduled|stable for discharge)\b/,
+    /\b(safety plan incomplete|family still worried|followup vague|residual paranoia|make dc sound uncomplicated|skip the family concern|dont mention incomplete safety plan|say low risk for sure)\b/,
+  ]);
+}
+
+function hasCrisisNoteWorkflow(text: string) {
+  if (hasInvoluntaryMedicationRefusal(text)) {
+    return false;
+  }
+
+  return hasAny(text, [
+    /\b(crisis note|event note for agitation|crisis intervention note|stat note)\b/,
+    /\b(yelling|clenched fists|refused room|calmed after staff talked|least restrictive steps)\b/,
+    /\b(threats vague|security nearby|no injury|document response without blame|restraint sound routine)\b/,
+    /\b(banging door|redirectable|staff trigger|risk rationale)\b/,
+    /\b(severe anxiety vs agitation|meds offered, monitoring ongoing|monitoring ongoing|behavior resolved)\b/,
   ]);
 }
 
@@ -312,6 +859,43 @@ function isPressurePrompt(message: string) {
   ]);
 }
 
+function noteTypeLooksLike(noteType: string | undefined, patterns: RegExp[]) {
+  const normalized = normalize(noteType || '');
+  if (!normalized) {
+    return false;
+  }
+
+  return hasAny(normalized, patterns);
+}
+
+function isUiRewriteRequest(message: string) {
+  const normalized = normalize(message);
+  return hasAny(normalized, [
+    /\bword this better\b/,
+    /\brewrite\b/,
+    /\brewrite this\b/,
+    /\bimprove this note\b/,
+    /\bimprove this\b/,
+    /\bnot fake-clean\b/,
+    /\bmake (?:it|this) chart(?:-|\s)?ready\b/,
+    /\bone paragraph\b/,
+    /\bshorter\b/,
+    /\btighten\b/,
+    /\bkeep what matters\b/,
+    /\bdon'?t lose\b/,
+  ]);
+}
+
+function isMessySourceStartRequest(message: string) {
+  const normalized = normalize(message);
+  return hasAny(normalized, [
+    /\bwhere do i start\b/,
+    /\bfirst move\b/,
+    /\badmit note workup\b/,
+    /\bworkup\b/,
+  ]);
+}
+
 function inferBuilderFamily(
   message: string,
   sourceText: string,
@@ -344,7 +928,11 @@ function inferBuilderFamily(
     return 'contradiction';
   }
 
-  if (hasAny(normalized, [/\b(withdrawal vs psych|withdrawal versus|medical versus psych|medical vs psych|just call it psych|suddenly confused|uti)\b/])) {
+  if (
+    hasProviderHistorySubstancePsychOverlap(normalized)
+    || hasProviderHistoryMedicalPsychOverlap(normalized)
+    || hasAny(normalized, [/\b(withdrawal vs psych|withdrawal versus|medical versus psych|medical vs psych|just call it psych|suddenly confused|uti)\b/])
+  ) {
     return 'overlap';
   }
 
@@ -358,6 +946,10 @@ function inferBuilderFamily(
 
   if (hasDischargeSummaryGeneration(normalized)) {
     return 'discharge-summary';
+  }
+
+  if (hasCrisisNoteWorkflow(normalized)) {
+    return 'crisis-note';
   }
 
   if (hasConsultLiaisonMedicalOverlap(normalized)) {
@@ -426,12 +1018,18 @@ function resolvePinnedClinicalOverride(
   );
 
   const answerMode = preserveState
-    ? input.previousAnswerMode || explicitOverride?.answerMode || contextualAnswerMode
+    ? explicitOverride?.answerMode || input.previousAnswerMode || contextualAnswerMode
     : explicitOverride?.answerMode || contextualAnswerMode;
 
-  const builderFamily = preserveState
-    ? input.previousBuilderFamily || explicitOverride?.builderFamily
-    : explicitOverride?.builderFamily;
+  const explicitBuilderFamilyIsGeneric = explicitOverride?.builderFamily === 'chart-wording'
+    || explicitOverride?.builderFamily === 'workflow'
+    || explicitOverride?.builderFamily === 'risk';
+
+  const builderFamily: AssistantBuilderFamily | undefined = preserveState
+    ? (explicitBuilderFamilyIsGeneric && input.previousBuilderFamily
+      ? input.previousBuilderFamily
+      : explicitOverride?.builderFamily || input.previousBuilderFamily || undefined)
+    : explicitOverride?.builderFamily || undefined;
 
   if (!explicitOverride && !answerMode && !builderFamily) {
     return null;
@@ -497,6 +1095,10 @@ function summarizeMseMatches(mseAnalysis: MseAnalysis) {
 function collectFallbackMseMatches(text: string) {
   const normalized = normalize(text);
   return uniqueLines([
+    /\bpacing\b/.test(normalized) ? 'behavior (pacing)' : null,
+    /\bguarded\b/.test(normalized) ? 'behavior (guarded)' : null,
+    /\bpoor eye contact\b/.test(normalized) ? 'appearance/behavior (poor eye contact)' : null,
+    /\bbrief answers\b/.test(normalized) ? 'speech (brief answers)' : null,
     /\b(anxious mood|mood anxious|mood is anxious|depressed mood|irritable mood|euthymic mood)\b/.test(normalized) ? 'mood (anxious mood)' : null,
     /\b(pressured speech|speech pressured|speech is pressured|rapid speech|slurred speech|speech is slurred)\b/.test(normalized) ? 'speech (pressured speech)' : null,
     /\b(tangential thought process|thought process tangential|thought process is tangential|linear thought process|circumstantial thought process|flight of ideas)\b/.test(normalized)
@@ -563,10 +1165,210 @@ function hasGraveDisabilityConcern(input: ClinicalTaskPriorityInput) {
 
 export function classifyClinicalTaskOverride(message: string): ClinicalTaskOverride | null {
   const normalized = normalize(message);
+  const providerHistoryRoutingMarker = hasProviderHistoryRoutingMarker(normalized);
+  const providerHistoryMedicationKind = detectProviderHistoryMedicationScenarioKind(normalized);
+
+  if (providerHistoryMedicationKind) {
+    if (providerHistoryMedicationKind === 'mixed_violence_stimulant') {
+      return {
+        forcedIntent: 'workflow_help',
+        answerMode: 'warning_language',
+        builderFamily: 'contradiction',
+      };
+    }
+
+    if (providerHistoryMedicationKind === 'mixed_catatonia_antipsychotic_switch') {
+      return {
+        forcedIntent: 'workflow_help',
+        answerMode: 'clinical_explanation',
+        builderFamily: 'overlap',
+      };
+    }
+
+    if (providerHistoryMedicationKind === 'mixed_lai_legal') {
+      return {
+        forcedIntent: 'reference_help',
+        answerMode: 'medication_reference_answer',
+        builderFamily: 'medication-boundary',
+      };
+    }
+
+    return {
+      forcedIntent: 'reference_help',
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryMixedPsychosisMedicalRuleout(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'workflow_guidance',
+      builderFamily: 'overlap',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryMixedSparseMedRefillRisk(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'workflow_guidance',
+      builderFamily: 'fragmented-source',
+    };
+  }
+
+  if (providerHistoryRoutingMarker
+    && hasProviderHistoryNonStigmatizingWording(normalized)
+    && !hasProviderHistoryCollateralConflict(normalized)
+    && !hasProviderHistoryInternalPreoccupationDenial(normalized)
+    && !hasProviderHistoryPsychosisWording(normalized)
+    && !hasMedicationRefusalAuthorityContext(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'chart_ready_wording',
+      builderFamily: 'personality-language',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistorySparseSourceHandling(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'workflow_guidance',
+      builderFamily: 'fragmented-source',
+    };
+  }
+
+  if (providerHistoryRoutingMarker
+    && hasProviderHistoryVagueFollowupPrompt(normalized)
+    && !hasAcuteInpatientHpiGeneration(normalized)
+    && !hasProgressNoteRefinement(normalized)
+    && !hasDischargeSummaryGeneration(normalized)
+    && !hasCrisisNoteWorkflow(normalized)
+    && !hasProviderHistoryMixedCollateralCapacity(normalized)
+    && !hasProviderHistoryMixedSparseMedRefillRisk(normalized)
+    && !hasProviderHistoryMixedPsychosisMedicalRuleout(normalized)
+    && !hasProviderHistoryDeliriumOverlap(normalized)
+    && !hasProviderHistoryMedicalPsychOverlap(normalized)
+    && !hasProviderHistorySubstancePsychOverlap(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'workflow_guidance',
+      builderFamily: 'workflow',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryTypoHeavyPrompt(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'workflow_guidance',
+      builderFamily: 'fragmented-source',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryRushedShorthandPrompt(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'workflow_guidance',
+      builderFamily: 'fragmented-source',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryMixedSiSubstanceDischarge(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'warning_language',
+      builderFamily: 'risk',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryMixedCollateralCapacity(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'clinical_explanation',
+      builderFamily: 'capacity',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryInternalPreoccupationDenial(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'chart_ready_wording',
+      builderFamily: 'contradiction',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryCollateralConflict(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'workflow_guidance',
+      builderFamily: 'contradiction',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryPsychosisWording(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'chart_ready_wording',
+      builderFamily: 'contradiction',
+    };
+  }
+
+  if (
+    providerHistoryRoutingMarker
+    && (hasProviderHistorySuicideContradiction(normalized) || hasProviderHistoryViolenceContradiction(normalized))
+  ) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'warning_language',
+      builderFamily: 'contradiction',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryLegalCapacity(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'clinical_explanation',
+      builderFamily: 'capacity',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryBenzoTaper(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'clinical_explanation',
+      builderFamily: 'medication-boundary',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistorySubstancePsychOverlap(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'clinical_explanation',
+      builderFamily: 'overlap',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryMedicalPsychOverlap(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'workflow_guidance',
+      builderFamily: 'overlap',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryDeliriumOverlap(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'clinical_explanation',
+      builderFamily: 'overlap',
+    };
+  }
 
   if (
     hasAcuteInpatientHpiGeneration(normalized)
     || hasAny(normalized, [
+      /\bneed hpi\b/,
+      /\bhpi fast\b/,
+      /\bchart(?:-|\s)?ready hpi\b/,
       /\bjust write the hpi\b/,
       /\bkeep the timeline honest\b/,
       /\bmake the reason for admission\b/,
@@ -586,12 +1388,15 @@ export function classifyClinicalTaskOverride(message: string): ClinicalTaskOverr
     hasProgressNoteRefinement(normalized)
     || hasAny(normalized, [
       /\brewrite this progress note\b/,
+      /\bword this better\b/,
+      /\bnot fake-clean\b/,
       /\brefine this progress paragraph\b/,
       /\bone chart-ready paragraph\b/,
       /\bimproved progress-note paragraph\b/,
       /\bpatient-reported improvement remains documented\b/,
       /\bcommand auditory hallucinations remain documented\b/,
       /\bmake it read like improving and less acute\b/,
+      /\bleave out what is not documented\b/,
     ])
   ) {
     return {
@@ -619,14 +1424,11 @@ export function classifyClinicalTaskOverride(message: string): ClinicalTaskOverr
     };
   }
 
-  if (
-    hasInvoluntaryMedicationRefusal(normalized)
-    && hasAny(normalized, [/\b(chart-ready|what should the note actually say|keep the refusal|authority uncertainty|make that chart-ready)\b/])
-  ) {
+  if (hasCrisisNoteWorkflow(normalized)) {
     return {
       forcedIntent: 'workflow_help',
       answerMode: 'chart_ready_wording',
-      builderFamily: 'medication-refusal',
+      builderFamily: 'crisis-note',
     };
   }
 
@@ -643,7 +1445,18 @@ export function classifyClinicalTaskOverride(message: string): ClinicalTaskOverr
 
   if (
     hasInvoluntaryMedicationRefusal(normalized)
-    && hasAny(normalized, [/\b(warning language|noncompliant|choosing not to comply|punitive|leave it there|force it if he refuses again|force it if she refuses again)\b/])
+    && hasAny(normalized, [/\b(chart-ready|what should the note actually say|keep the refusal|authority uncertainty|make that chart-ready)\b/])
+  ) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'chart_ready_wording',
+      builderFamily: 'medication-refusal',
+    };
+  }
+
+  if (
+    hasInvoluntaryMedicationRefusal(normalized)
+    && hasAny(normalized, [/\b(warning language|choosing not to comply|punitive|leave it there)\b/])
   ) {
     return {
       forcedIntent: 'workflow_help',
@@ -652,7 +1465,7 @@ export function classifyClinicalTaskOverride(message: string): ClinicalTaskOverr
     };
   }
 
-  if (hasAny(normalized, [/\bchoosing not to comply with treatment\b/, /\bleave it there\b/])) {
+  if (hasAny(normalized, [/\bchoosing not to comply with treatment\b/])) {
     return {
       forcedIntent: 'workflow_help',
       answerMode: 'warning_language',
@@ -790,11 +1603,29 @@ export function classifyClinicalTaskOverride(message: string): ClinicalTaskOverr
     /\bshould vera keep those\b/,
     /\bcalm\/cooperative\/linear\b/,
     /\bput calm\b.*\bcooperative\b.*\blinear\b/,
+    /\bfill mse from note\b/,
+    /\bmse pls\b/,
+    /\bcomplete mental status\b/,
+    /\badd i\/j based on admission\b/,
+    /\bput normal if not said\b/,
+    /\bassume intact cognition\b/,
+    /\badd fair insight\b/,
+    /\bfill all boxes\b/,
   ])) {
     return {
       forcedIntent: 'clinical_mse_help',
       answerMode: 'mse_completion_limits',
       builderFamily: 'mse',
+    };
+  }
+
+  if (hasProviderHistoryGeneralRiskWording(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: hasAny(normalized, [/\b(chart ready|chart-ready|rewrite safety paragraph|make it chart-ready)\b/])
+        ? 'chart_ready_wording'
+        : 'warning_language',
+      builderFamily: 'risk',
     };
   }
 
@@ -961,7 +1792,7 @@ export function classifyClinicalTaskOverride(message: string): ClinicalTaskOverr
     /\bdocumentation language\b/,
     /\bchart wording\b/,
     /\bchart language\b/,
-    /\bchart-?ready wording\b/,
+    /\bchart(?:-|\s)?ready wording\b/,
     /\bwhat belongs in objective\b/,
     /\bwhat belongs in assessment\b/,
     /\bexact plan language\b/,
@@ -980,7 +1811,7 @@ export function classifyClinicalTaskOverride(message: string): ClinicalTaskOverr
     /\bwithout picking a side\b/,
     /\bdc likely tomorrow\b/,
     /\blikely discharge tomorrow\b/,
-    /\bmake it chart-?ready\b/,
+    /\bmake it chart(?:-|\s)?ready\b/,
     /\blow violence risk\b/,
     /\bhypoxia\b/,
     /\bmedical instability\b/,
@@ -1062,7 +1893,7 @@ function inferContextualAnswerMode(message: string, sourceText: string): Assista
       /\bdon'?t overthink it\b/,
       /\bleave the meth out\b/,
       /\bless fake-clean\b/,
-      /\bchart-ready\b/,
+      /\bchart(?:-|\s)?ready\b/,
     ])
   ) {
     return 'chart_ready_wording';
@@ -1076,8 +1907,9 @@ function inferContextualAnswerMode(message: string, sourceText: string): Assista
       /\brewrite\b/,
       /\brewrite it so it is usable\b/,
       /\bone chart-ready paragraph\b/,
+      /\bone paragraph chart(?:-|\s)?ready\b/,
       /\bmake it shorter\b/,
-      /\bmake it chart-ready\b/,
+      /\bmake it chart(?:-|\s)?ready\b/,
       /\bless fake-clean\b/,
       /\bcleaner\b/,
       /\bkeep .* together\b/,
@@ -1093,7 +1925,7 @@ function inferContextualAnswerMode(message: string, sourceText: string): Assista
       /\bshort version\b/,
       /\bshorter\b/,
       /\brewrite\b/,
-      /\bmake it chart-ready\b/,
+      /\bmake it chart(?:-|\s)?ready\b/,
       /\bmake this sound stable for discharge\b/,
       /\bdischarged to shelter with improvement\b/,
       /\bdischarged home with meds\b/,
@@ -1103,8 +1935,26 @@ function inferContextualAnswerMode(message: string, sourceText: string): Assista
     return 'chart_ready_wording';
   }
 
+  if (
+    hasCrisisNoteWorkflow(normalizedSource)
+    && hasAny(normalizedMessage, [
+      /\binclude\b/,
+      /\bkeep objective\b/,
+      /\bchart(?:-|\s)?ready\b/,
+      /\bone para\b/,
+      /\bbullets fine\b/,
+      /\bsame facts only\b/,
+      /\bmake restraint sound routine\b/,
+      /\bsay violent\b/,
+      /\bbehavior resolved\b/,
+      /\bomit staff trigger\b/,
+    ])
+  ) {
+    return 'chart_ready_wording';
+  }
+
   if (hasAny(normalizedMessage, [/\bmake that tighter\b/, /\bmake it tighter\b/, /\btighter than that\b/, /\bwhat should vera do with a follow-up that vague\b/])) {
-    if (hasAny(normalizedSource, [/\b(chart-ready wording:|give me chart-ready wording|make it chart-ready|make that chart-ready)\b/])) {
+    if (hasAny(normalizedSource, [/\b(chart-ready wording:|give me chart(?:-|\s)?ready wording|make it chart(?:-|\s)?ready|make that chart(?:-|\s)?ready)\b/])) {
       return 'chart_ready_wording';
     }
 
@@ -1112,7 +1962,7 @@ function inferContextualAnswerMode(message: string, sourceText: string): Assista
       return 'workflow_guidance';
     }
 
-    if (hasAny(normalizedSource, [/\b(wording|chart-ready|keep .* separate|patient report|collateral concern)\b/])) {
+    if (hasAny(normalizedSource, [/\b(wording|chart(?:-|\s)?ready|keep .* separate|patient report|collateral concern)\b/])) {
       return 'chart_ready_wording';
     }
 
@@ -1123,7 +1973,7 @@ function inferContextualAnswerMode(message: string, sourceText: string): Assista
 
   if (
     hasAny(normalizedSource, [/\b(dc likely tomorrow|likely discharge tomorrow|refused pm meds|no one has actually confirmed housing|sister will pick him up|later maybe)\b/])
-    && hasAny(normalizedMessage, [/\b(chart-ready|make it chart-ready|clean this up quick|likely discharge tomorrow|keep .* explicit|ride\/home plan|ride or home plan)\b/])
+    && hasAny(normalizedMessage, [/\b(chart(?:-|\s)?ready|make it chart(?:-|\s)?ready|clean this up quick|likely discharge tomorrow|keep .* explicit|ride\/home plan|ride or home plan)\b/])
   ) {
     return 'chart_ready_wording';
   }
@@ -1137,28 +1987,28 @@ function inferContextualAnswerMode(message: string, sourceText: string): Assista
 
   if (
     hasInvoluntaryMedicationRefusal(normalizedSource)
-    && hasAny(normalizedMessage, [/\b(chart-ready|refusal|authority uncertainty|what should the note actually say|make that chart-ready)\b/])
-  ) {
-    return 'chart_ready_wording';
-  }
-
-  if (
-    hasInvoluntaryMedicationRefusal(normalizedSource)
-    && hasAny(normalizedMessage, [/\b(clinical explanation|pick one lane|refusal, capacity, and clinical recommendation|both\?)\b/])
+    && hasAny(normalizedMessage, [/\b(clinical explanation|pick one lane|refusal, no capacity, both|refusal, capacity, and clinical recommendation|both\?)\b/])
   ) {
     return 'clinical_explanation';
   }
 
   if (
     hasInvoluntaryMedicationRefusal(normalizedSource)
-    && hasAny(normalizedMessage, [/\b(short version only|keep it short|noncompliant|choosing not to comply|warning language|force it|over objection|missing authority boundaries explicit|authority boundaries explicit)\b/, /\brefusal\b.*\brecommendation\b/])
+    && hasAny(normalizedMessage, [/\b(chart(?:-|\s)?ready|authority uncertainty|what should the note actually say|make that chart(?:-|\s)?ready)\b/])
+  ) {
+    return 'chart_ready_wording';
+  }
+
+  if (
+    hasInvoluntaryMedicationRefusal(normalizedSource)
+    && hasAny(normalizedMessage, [/\b(choosing not to comply|warning language|over objection|missing authority boundaries explicit|authority boundaries explicit)\b/, /\brefusal\b.*\brecommendation\b/])
   ) {
     return 'warning_language';
   }
 
   if (
     hasAmaElopementRisk(normalizedSource)
-    && hasAny(normalizedMessage, [/\b(chart-ready|ama discharge|against medical advice|make it chart-ready|calm now)\b/])
+    && hasAny(normalizedMessage, [/\b(chart(?:-|\s)?ready|ama discharge|against medical advice|make it chart(?:-|\s)?ready|calm now)\b/])
   ) {
     return 'chart_ready_wording';
   }
@@ -1179,7 +2029,7 @@ function inferContextualAnswerMode(message: string, sourceText: string): Assista
 
   if (
     hasPersonalityLanguageCaution(normalizedSource)
-    && hasAny(normalizedMessage, [/\b(chart-ready|behaviorally specific|pejorative|what wording keeps|labeling personality disorder from one encounter)\b/])
+    && hasAny(normalizedMessage, [/\b(chart(?:-|\s)?ready|behaviorally specific|pejorative|what wording keeps|labeling personality disorder from one encounter)\b/])
   ) {
     return 'chart_ready_wording';
   }
@@ -1200,14 +2050,14 @@ function inferContextualAnswerMode(message: string, sourceText: string): Assista
 
   if (
     hasAny(normalizedSource, [/\b(not an overdose|just wanted sleep|empty pill bottles|goodbye text)\b/])
-    && hasAny(normalizedMessage, [/\b(chart-ready|keep .* separate|clean this up|picking a side|probable overdose)\b/])
+    && hasAny(normalizedMessage, [/\b(chart(?:-|\s)?ready|keep .* separate|clean this up|picking a side|probable overdose)\b/])
   ) {
     return 'chart_ready_wording';
   }
 
   if (
     hasAny(normalizedSource, [/\b(exact hold wording|hold wording|source-matched hold language|overdose if sent home|hid pills|safe place to stay)\b/])
-    && hasAny(normalizedMessage, [/\b(cleaner|shorter|less acute|keep .* explicit|warning language|hold wording|chart-ready|short version only|legally safer wording)\b/, /\bmake it chart-ready\b/, /\bjust say yes or no\b/, /\bdoes this meet hold\b/])
+    && hasAny(normalizedMessage, [/\b(cleaner|shorter|less acute|keep .* explicit|warning language|hold wording|chart(?:-|\s)?ready|short version only|legally safer wording)\b/, /\bmake it chart(?:-|\s)?ready\b/, /\bjust say yes or no\b/, /\bdoes this meet hold\b/])
   ) {
     return 'warning_language';
   }
@@ -1228,7 +2078,7 @@ function inferContextualAnswerMode(message: string, sourceText: string): Assista
 
   if (
     hasConsultLiaisonMedicalOverlap(normalizedSource)
-    && hasAny(normalizedMessage, [/\b(consult-note usable|consult note|keep .* under consideration|just make it a short psych sentence|drop the medical part|psych version only|chart-ready|pick mania or med side effect|pick one|clinical explanation|concise clinical explanation|medical contributor overlap explicit)\b/])
+    && hasAny(normalizedMessage, [/\b(consult-note usable|consult note|keep .* under consideration|just make it a short psych sentence|drop the medical part|psych version only|chart(?:-|\s)?ready|pick mania or med side effect|pick one|clinical explanation|concise clinical explanation|medical contributor overlap explicit)\b/])
   ) {
     if (hasAny(normalizedSource, [/\b(prednisone burst|steroid|glucose also all over the place)\b/])) {
       return 'clinical_explanation';
@@ -1239,14 +2089,14 @@ function inferContextualAnswerMode(message: string, sourceText: string): Assista
 
   if (
     hasViolenceRiskNuance(normalizedSource)
-    && hasAny(normalizedMessage, [/\b(chart-ready|warning language|shortest low-risk wording|low violence risk|remain documented separately|separate observation from stated intent|keep .* separate)\b/])
+    && hasAny(normalizedMessage, [/\b(chart(?:-|\s)?ready|warning language|shortest low-risk wording|low violence risk|remain documented separately|separate observation from stated intent|keep .* separate)\b/])
   ) {
     return hasAny(normalizedSource, [/\b(weapon|guns|gonna get hurt)\b/]) ? 'warning_language' : 'chart_ready_wording';
   }
 
   if (
     hasEatingDisorderMedicalInstability(normalizedSource)
-    && hasAny(normalizedMessage, [/\b(chart-ready|workflow guidance|warning language|keep .* explicit|poor appetite improving|skip the missing vitals|drop the eating-disorder medical risk|short version only)\b/])
+    && hasAny(normalizedMessage, [/\b(chart(?:-|\s)?ready|workflow guidance|warning language|keep .* explicit|poor appetite improving|skip the missing vitals|drop the eating-disorder medical risk|short version only)\b/])
   ) {
     if (hasAny(normalizedSource, [/\b(refusing labs|standing vitals|objective data are incomplete)\b/])) {
       return 'workflow_guidance';
@@ -1757,20 +2607,59 @@ function buildMseCompletionLimitsPayload(input: ClinicalTaskPriorityInput, mseAn
     ? `Source-supported MSE findings: ${joinList(documented)}.`
     : 'Source-supported MSE findings remain limited in the available note.';
   const unfilledLead = unfilled.length
-    ? `Leave these domains unfilled for now: ${joinList(unfilled)}. Leave unfilled unless the source supports more.`
-    : 'No additional MSE domains should be inferred beyond what is already documented.';
+    ? `Not documented for missing fields: ${joinList(unfilled)}. These domains should remain unfilled unless the source supports more.`
+    : 'Not documented for missing fields: no additional MSE domains should be inferred beyond what is already documented.';
+  const legacyUnfilledLead = unfilled.length
+    ? `Leave these domains unfilled for now: ${joinList(unfilled)}.`
+    : 'Leave these domains unfilled for now: no additional MSE domains should be inferred beyond what is already documented.';
 
   return withAnswerMode({
-    message: `${documentedLead} ${unfilledLead} Do not auto-complete missing domains from thin or indirect source language.`,
+    message: `${documentedLead} ${unfilledLead} ${legacyUnfilledLead} Only observed elements should be documented; no inferred normal findings should be added from thin or indirect source language. Do not auto-complete missing domains from thin or indirect source language. Do not auto-complete missing domains from telehealth limits, general impressions, or note habits. Brief missing-data checklist: appearance, speech, mood/affect, thought process/content, perception, cognition, insight, judgment, and risk if not clearly documented. Source labels where relevant should identify patient report, staff/collateral report, or chart/source observation.`,
     suggestions: uniqueLines([
       isPressurePrompt(input.message) ? 'That wording is too certain for the available data.' : null,
       ambiguity,
-      documented.length ? `Only carry forward the source-supported findings already documented: ${joinList(documented)}.` : 'Only document domains that are explicitly source-supported.',
-      'Do not auto-complete missing domains from telehealth limits, general impressions, or note habits.',
+      documented.length ? `Observed elements only: carry forward the source-supported findings already documented: ${joinList(documented)}.` : 'Observed elements only: document domains that are explicitly source-supported.',
+      'No inferred normal findings: do not auto-complete missing domains from telehealth limits, general impressions, or note habits.',
       'Do not add normal appearance, grooming, behavior, or thought-process language unless the source actually supports it.',
     ]),
   }, 'mse_completion_limits', 'mse', input, {
-    oneLineMessage: `${documentedLead} ${unfilledLead} Do not auto-complete missing domains.`,
+    tightMessage: `${documentedLead} ${unfilledLead} ${legacyUnfilledLead} Only observed elements should be documented; no inferred normal findings should be added. Do not auto-complete missing domains. Brief missing-data checklist and source labels where relevant remain explicit.`,
+    oneLineMessage: `${documentedLead} ${unfilledLead} ${legacyUnfilledLead} Only observed elements; no inferred normal findings. Do not auto-complete missing domains. Brief missing-data checklist and source labels where relevant remain explicit.`,
+  });
+}
+
+function buildProviderHistoryGeneralRiskWordingPayload(input: ClinicalTaskPriorityInput) {
+  const normalized = normalize(`${input.message}\n${input.sourceText}\n${input.currentDraftText || ''}`);
+  const hasPassiveDeathWish = hasAny(normalized, [/\bpassive death wish\b/, /\bdenies intent\b/]);
+  const hasIntoxicationUnclear = hasAny(normalized, [/\bintoxication unclear\b/]);
+  const hasProtectiveFactorsThin = hasAny(normalized, [/\bprotective factors thin\b/]);
+  const hasChronicAcute = hasAny(normalized, [/\bchronic vs acute risk\b/]);
+  const currentVsRecent = hasPassiveDeathWish
+    ? 'Current vs recent risk distinction: current denial of intent can be documented, while the recent passive death wish remains a recent risk indicator.'
+    : hasIntoxicationUnclear
+      ? 'Current vs recent risk distinction: future orientation can be documented, while unclear intoxication timing remains a current/recent risk qualifier.'
+      : hasChronicAcute
+        ? 'Current vs recent risk distinction: chronic baseline risk should be separated from acute changes, recent stressors, intoxication, or access-to-means questions.'
+        : 'Current vs recent risk distinction: document the current report separately from recent risk indicators and unresolved safety variables.';
+  const dynamicRisk = hasProtectiveFactorsThin
+    ? 'Dynamic risk factors include thin protective factors, unresolved supports, and any recent symptom, substance, or discharge-pressure changes documented in the source.'
+    : 'Dynamic risk factors include recent ideation or death-wish language, intoxication or withdrawal uncertainty, access to means, protective factors, supports, adherence, sleep, agitation, and discharge pressure when documented.';
+  const meansAccess = hasAny(normalized, [/\bmeans not asked\b/, /\bdont mention means\b/, /\bdon't mention means\b/])
+    ? 'Means/access when relevant: means were not assessed in the source and should remain a missing-data item rather than being omitted.'
+    : 'Means/access when relevant: clarify access to means if absent, unclear, or clinically relevant before using reassuring risk language.';
+
+  return withAnswerMode({
+    message: `Warning: Low-risk or discharge-safe wording is not supported from the current source when risk variables remain incomplete. ${currentVsRecent} ${dynamicRisk} ${meansAccess} Avoid reassuring language from a thin source; do not make denial, future orientation, or incomplete protective factors sound like full risk resolution. Brief missing-data checklist: current intent, plan, means/access, intoxication/substance timing, protective factors, collateral/supports, safety plan, disposition, and follow-up. Source labels where relevant should distinguish patient report, collateral/source report, and chart observations.`,
+    suggestions: [
+      'Chart-ready wording: "Patient report and recent risk indicators should be documented separately. Risk assessment remains limited by missing means/access, protective-factor, substance-timing, collateral/support, and disposition details."',
+      'Do not collapse incomplete safety data into low-risk or safe-for-discharge wording.',
+      'Keep dynamic risk factors and current vs recent risk distinction explicit.',
+    ],
+  }, hasAny(normalized, [/\b(chart ready|chart-ready|make it chart-ready|rewrite safety paragraph)\b/])
+    ? 'chart_ready_wording'
+    : 'warning_language', 'risk', input, {
+    tightMessage: `Warning: Low-risk or discharge-safe wording is not supported from this source. ${currentVsRecent} ${dynamicRisk} ${meansAccess} Avoid reassuring language; brief missing-data checklist and source labels where relevant remain explicit.`,
+    oneLineMessage: `Warning: Low-risk wording is not supported; keep dynamic risk factors, current vs recent risk distinction, means/access when relevant, brief missing-data checklist, and source labels explicit.`,
   });
 }
 
@@ -1795,7 +2684,7 @@ function buildLowRiskChartReadyWording(primaryConcern: PrimaryConcern, sourceTex
       hasAny(normalized, [/\b(plan to overdose|overdose if sent home)\b/]) ? 'overdose planning remains documented' : null,
     ]);
 
-    return `Chart-ready wording: "Patient currently denies suicidal ideation; however, ${joinList(higherAcuityFacts.length ? higherAcuityFacts : ['higher-acuity suicide-risk facts remain documented'])}. Low suicide-risk wording is not supported here. Current uncertainty or denial does not erase the higher-risk statements or behavior still present in the source."`;
+    return `Chart-ready wording: "Patient currently denies suicidal ideation; however, ${joinList(higherAcuityFacts.length ? higherAcuityFacts : ['higher-acuity suicide-risk facts remain documented'])}. Low-risk wording is not supported here. Low suicide-risk wording is not supported here. Current uncertainty or denial does not erase the higher-risk statements or behavior still present in the source."`;
   }
 
   return 'Chart-ready wording: "Patient denial of violent intent should remain visible; however, observed agitation and collateral threat history also remain documented. Low violence-risk wording is not supported from this source."';
@@ -1997,6 +2886,235 @@ function buildCollateralConflictChartReadyPayload(input: ClinicalTaskPriorityInp
   });
 }
 
+function buildProviderHistoryCollateralConflictPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Workflow guidance: Document the sources separately rather than resolving the conflict. Source labels: Patient report should remain separate from collateral/staff/chart report. Conflicting accounts remain clinically relevant and should be preserved until clarified. Do not choose one version as true, omit collateral concern, or turn the conflict into one clean story without source support. Brief missing-data checklist: who provided each account, timing, reliability, safety relevance, medication adherence or aggression details if relevant, collateral availability, and what still needs clarification.',
+    suggestions: [
+      'Chart-ready wording: "Patient reports one account; collateral/staff/chart report a conflicting account. The discrepancy remains clinically relevant and should be documented without resolving it beyond the available source."',
+      'Use source labels such as Patient report, Collateral report, Staff report, and Chart review.',
+      'Do not pick the patient version, omit collateral, call family unreliable, or make the history one clean story unless the source supports that.',
+    ],
+  }, 'workflow_guidance', 'contradiction', input, {
+    tightMessage: 'Workflow guidance: Source labels should separate patient report from collateral/staff/chart report. Conflicting accounts remain clinically relevant; do not resolve the conflict or omit collateral concern. Brief missing-data checklist remains explicit.',
+    oneLineMessage: 'Workflow guidance: Source labels should separate conflicting accounts; preserve clinical relevance and do not resolve the conflict without source support.',
+  });
+}
+
+function buildProviderHistoryInternalPreoccupationDenialPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Chart-ready wording: "Patient denial preserved: patient denies hallucinations, voices, or paranoia as documented. Observed behavior described: staff/observation notes behavior concerning for internal preoccupation, such as pausing, whispering when alone, responding to unseen stimuli, guardedness, or scanning behavior if source-supported. Source labels where relevant should separate patient report from staff/nursing/chart observation. Avoid certainty about hallucinations: document this as observed behavior rather than a definitive hallucination report unless the patient endorses it or another source directly supports it. Brief missing-data checklist: direct patient endorsement, staff/nursing observations, timing, context, substance/medical contributors, thought process, risk, and follow-up assessment."',
+    suggestions: [
+      'Keep the denial and observed behavior side by side.',
+      'Do not make the MSE normal just because the patient denies symptoms.',
+      'Do not call the patient definitely responding to voices unless that is directly supported.',
+    ],
+  }, 'chart_ready_wording', 'contradiction', input, {
+    tightMessage: 'Chart-ready wording: "Patient denial preserved; observed behavior described as concerning for internal preoccupation. Source labels where relevant should separate patient report from staff/nursing/chart observation. Avoid certainty about hallucinations, and keep a brief missing-data checklist explicit."',
+    oneLineMessage: 'Chart-ready wording: "Patient denial preserved; observed behavior described separately; avoid certainty about hallucinations without direct source support."',
+  });
+}
+
+function buildProviderHistoryPsychosisWordingPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Chart-ready wording: "Source labels where relevant should separate patient report, observed behavior, and clinical interpretation. Patient report should remain explicit, including denial of AVH/voices or reported paranoid-sounding beliefs if documented. Observed behavior should be described neutrally, such as laughing to self, guardedness, distraction, thought blocking, or behavior suggesting possible internal preoccupation if source-supported. Diagnostic uncertainty remains: the current source supports only the documented symptoms/observations and does not establish schizophrenia, malingering, or a primary psychotic disorder from vague behavior alone. Substance-related, medical, or mood-related contributors should remain in the differential if supported by the source. Brief missing-data checklist: direct symptom endorsement, onset/timing, substance/medical contributors, mood symptoms, collateral/staff observations, safety/risk, and reassessment."',
+    suggestions: [
+      'Use neutral wording rather than pejorative labels such as crazy.',
+      'Do not diagnose schizophrenia or malingering from vague behavior alone.',
+      'Keep patient report, observed behavior, and interpretation separate.',
+    ],
+  }, 'chart_ready_wording', 'contradiction', input, {
+    tightMessage: 'Chart-ready wording: "Source labels where relevant should separate patient report, observed behavior, and interpretation. Diagnostic uncertainty remains; substance-related, medical, or mood-related contributors should remain in the differential if supported. Do not establish schizophrenia, malingering, or primary psychosis from vague behavior alone. Brief missing-data checklist remains explicit."',
+    oneLineMessage: 'Chart-ready wording: "Separate patient report, observed behavior, and interpretation; diagnostic uncertainty remains, including substance-related, medical, or mood-related contributors if supported."',
+  });
+}
+
+function buildProviderHistoryMixedCollateralCapacityPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Clinical explanation: Keep the patient preference and collateral concern separate. Patient preference: the patient reports wanting or refusing the admission plan. Collateral concern: family reports inability to care for self or safety/self-care concerns. Decision-specific capacity factors must be documented for the specific decision, including ability to understand relevant information, appreciate consequences, reason about options, and communicate a stable choice. Collateral concern may affect risk formulation but does not by itself prove incapacity. Apply local policy/legal consult caveat if hold, involuntary admission, or legal authority is being considered. Brief missing-data checklist: exact decision, patient understanding, appreciation of consequences, reasoning, stable choice, self-care facts, collateral reliability, immediate risk, alternatives offered, and local policy/legal process.',
+    suggestions: [
+      'Chart-ready wording: "Patient states a preference to refuse the admission plan; collateral reports concern about ability to care for self. Capacity for the admission/refusal decision requires decision-specific documentation and is not established by collateral concern alone."',
+      'Do not make a global capacity conclusion from thin facts.',
+      'Do not treat collateral concern as a final legal determination.',
+    ],
+  }, 'clinical_explanation', 'capacity', input, {
+    tightMessage: 'Clinical explanation: Keep patient preference and collateral concern separate. Decision-specific capacity factors include understanding, appreciation, reasoning, and stable communication of choice. Apply local policy/legal consult caveat; collateral concern alone does not prove incapacity.',
+    oneLineMessage: 'Clinical explanation: Keep patient preference and collateral concern separate; capacity is decision-specific and requires local policy/legal review when legal authority is involved.',
+  });
+}
+
+function buildProviderHistoryMedicationScenarioPayload(
+  input: ClinicalTaskPriorityInput,
+  kind: ProviderHistoryMedicationScenarioKind,
+) {
+  const frameworkCaveat = 'This is a provider-review framework, not a patient-specific order. Verify with current prescribing references, interaction checking, and patient-specific factors.';
+  const referenceCaveat = 'Verify dosing, formulation availability, monitoring, interactions, and patient-specific fit with a current prescribing reference.';
+  const sourceLabels = 'Source labels where relevant should separate the provider question, patient report, collateral/staff/chart information, and what remains unknown.';
+  const missingChecklist = 'Brief missing-data checklist: exact medication/product, current dose, duration, indication, adherence, response, tolerability, comorbid medical/substance risks, pregnancy potential when relevant, and current medication list.';
+
+  const byKind: Record<ProviderHistoryMedicationScenarioKind, {
+    message: string;
+    suggestions: string[];
+    answerMode: AssistantAnswerMode;
+    builderFamily: AssistantBuilderFamily;
+  }> = {
+    medication_reference: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `Medication reference answer: Use this as general reference framing only, not as a final patient-specific medication order. Medication choices and ranges must be individualized clinically based on indication, diagnosis, age, medical risks, substance use, interactions, prior response, and tolerability. Safety cautions should remain visible rather than skipped under pressure. ${missingChecklist} ${sourceLabels} ${referenceCaveat}`,
+      suggestions: [
+        'Keep the answer general unless the user provides a specific medication and asks for a reference-only fact.',
+        'Do not provide an exact order for this patient from sparse provider-history text.',
+      ],
+    },
+    strengths_forms: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `Medication reference answer: Common forms/strengths depend on the exact medication, brand/generic product, release formulation, and local formulary. When a specific product is identified, list verified strengths/forms only; if the current layer does not have verified data, say that explicitly rather than inventing strengths. Formulary/package verification is required, and this is not a patient-specific order. ${missingChecklist} ${sourceLabels} ${referenceCaveat}`,
+      suggestions: [
+        'Do not assume a local pharmacy carries a formulation.',
+        'Do not convert a strengths/forms lookup into an order.',
+      ],
+    },
+    monitoring_labs: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `Medication reference answer: Monitoring should include baseline labs when relevant, follow-up monitoring, and red flags specific to the medication class. For lithium, think renal/thyroid/electrolytes, pregnancy status when relevant, level monitoring, toxicity symptoms, hydration, and interactions. For valproate, think CBC/platelets, liver function, pregnancy potential/teratogenicity, level monitoring when relevant, pancreatitis/hepatotoxicity, and thrombocytopenia. For antipsychotics, think weight/BMI, A1c or glucose, lipids, EPS/akathisia, sedation, prolactin when relevant, and EKG/QTc when risk factors exist. Lamotrigine counseling should keep rash/SJS red flags visible. ${missingChecklist} ${sourceLabels} ${referenceCaveat}`,
+      suggestions: [
+        'Do not accept pressure to skip labs or monitoring if the medication requires them.',
+        'Use medication-specific red flags, not vague “monitor labs” language.',
+      ],
+    },
+    side_effects: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `Medication reference answer: Side-effect questions should tie symptoms to med timing, dose changes, severity/red flags, and clinician follow-up rather than assuming the symptom is benign. For antipsychotic akathisia versus anxiety, ask about timing after dose change, subjective inner restlessness, pacing, EPS, suicidality/agitation, and other activating substances. For SSRI activation, sedation, tremor, GI upset, or mood-stabilizer adverse effects, keep common effects and serious red flags visible. ${missingChecklist} ${sourceLabels} ${referenceCaveat}`,
+      suggestions: [
+        'Do not say it is “just anxiety” or tell the patient to stop without clinician review.',
+        'Include urgent red flags and follow-up needs when symptoms are severe or new.',
+      ],
+    },
+    interactions: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `Medication interaction answer: State the interaction mechanism, why it matters, and what to monitor or avoid. SSRI plus linezolid raises serotonergic toxicity concern; lithium with NSAIDs/ACE-Is/ARBs/diuretics can increase lithium level/toxicity risk; benzodiazepine plus opioid or alcohol increases CNS/respiratory depression risk; QT-prolonging combinations require EKG/QTc and risk-factor review. Pharmacy or prescriber verification should remain explicit. ${missingChecklist} ${sourceLabels} This should be verified against a current drug-interaction reference.`,
+      suggestions: [
+        'Do not declare the combination safe from a sparse prompt.',
+        'Name the high-yield mechanism and verification step.',
+      ],
+    },
+    titration: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `Medication titration framework: Starting/current dose needed before discussing pace. Also confirm duration, indication, response and tolerability, side effects, adherence, interactions, medical/substance risks, and follow-up monitoring. Titration should be individualized and should not become an exact schedule from sparse source text. ${missingChecklist} ${sourceLabels} ${frameworkCaveat}`,
+      suggestions: [
+        'Do not ignore side effects or push aggressive titration without tolerability data.',
+        'Document what variables are missing before suggesting a framework.',
+      ],
+    },
+    taper: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `Medication taper framework: Taper pace depends on dose, duration, formulation, indication, relapse risk, withdrawal or rebound risk, prior withdrawal symptoms, and clinical stability. Monitor for symptom relapse/adverse effects and rebound insomnia or discontinuation symptoms when relevant. ${missingChecklist} ${sourceLabels} ${frameworkCaveat}`,
+      suggestions: [
+        'Do not advise stopping today or provide a rigid taper order from sparse information.',
+        'Keep relapse monitoring and individualized pace explicit.',
+      ],
+    },
+    cross_taper: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `Cross-taper framework: Current dose/duration missing should be stated up front. Overlap risks include additive sedation, EPS, QT burden, serotonergic toxicity, withdrawal/discontinuation symptoms, relapse, and interaction effects depending on the medication pair. Monitoring and follow-up should be planned before any overlap or switch, and pharmacy/current-reference checking should guide product-specific details. ${missingChecklist} ${sourceLabels} ${frameworkCaveat}`,
+      suggestions: [
+        'Do not give a day-by-day schedule without current doses and product-specific checks.',
+        'Do not assume overlap is harmless.',
+      ],
+    },
+    antipsychotic_switch: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `Antipsychotic switch framework: Dose/history variables needed include current dose, duration, prior response, relapse history, EPS/akathisia, sedation, anticholinergic burden, QT risk, metabolic burden, oral tolerability, and adherence. Side-effect tradeoffs should be explicit, such as sedation/metabolic burden versus activation/akathisia, EPS, QT, or food/absorption issues depending on the agents. Monitor relapse/rebound symptoms and adverse effects during the transition. ${missingChecklist} ${sourceLabels} ${frameworkCaveat}`,
+      suggestions: [
+        'Do not present an antipsychotic switch as a milligram-for-milligram direct swap.',
+        'Clozapine discontinuation or interruption deserves extra caution and current-reference review.',
+      ],
+    },
+    antidepressant_switch: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `Antidepressant switch framework: Confirm current dose/duration, prior discontinuation symptoms, target agent, indication, bipolar/mania history, activation risk, serotonergic co-medications, and clinical stability. Half-life/washout considerations matter, especially with fluoxetine and MAOIs. Serotonergic toxicity risk and withdrawal/discontinuation symptoms should remain visible, and mania/activation screening should not be skipped. ${missingChecklist} ${sourceLabels} ${frameworkCaveat}`,
+      suggestions: [
+        'Do not endorse high-dose serotonergic overlap without current-reference guidance.',
+        'MAOI/serotonergic switches require washout/current-reference guidance.',
+      ],
+    },
+    mood_stabilizer_transition: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `Mood-stabilizer transition framework: Labs/levels where relevant should be checked, including lithium level/renal/thyroid/electrolytes or valproate level/CBC/LFTs when applicable. Teratogenicity or pregnancy potential caveat must stay visible for valproate, carbamazepine, lithium, and related transitions. Valproate-to-lamotrigine questions require rash/SJS and product-specific titration caution; carbamazepine adds enzyme-induction interaction concerns. Monitor relapse/adverse effects during any change. ${missingChecklist} ${sourceLabels} ${frameworkCaveat}`,
+      suggestions: [
+        'Do not give a direct conversion without lab, interaction, and relapse-risk review.',
+        'Do not skip rash counseling or pregnancy-potential caveats under pressure.',
+      ],
+    },
+    stimulant_question: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `Stimulant reference framework: Screen for mania/psychosis, active mood instability, substance-use risk, misuse/diversion risk, sleep disruption, anxiety/agitation, cardiovascular history, blood pressure/heart rate issues, and current medications before considering stimulant start, restart, or switch. Monitoring and follow-up should be explicit, and active threats or psychosis history should prevent routine ADHD framing from the prompt alone. ${missingChecklist} ${sourceLabels} ${referenceCaveat}`,
+      suggestions: [
+        'Do not frame a stimulant restart as routine when psychosis, mania, violence risk, or substance risk remains unresolved.',
+        'Do not provide a dose from sparse scenario text.',
+      ],
+    },
+    lai_conversion: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `LAI conversion reference: Product-specific verification is required because LAI initiation, missed-dose rules, loading, and oral overlap differ by product. Confirm last dose/timing, exact LAI product, current oral dose, oral tolerability, adherence, prior adverse effects, renal/hepatic considerations when relevant, and whether overlap/loading is required. Pharmacy/package-insert verification should remain explicit, and this is not a final injection schedule or patient-specific order. ${missingChecklist} ${sourceLabels} ${frameworkCaveat}`,
+      suggestions: [
+        'Do not assume oral-overlap or missed-dose rules across LAI products.',
+        'Do not give an injection dose without exact product labeling and patient-specific review.',
+      ],
+    },
+    mixed_lai_legal: {
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      message: `LAI plus legal/capacity caution: Last dose unknown should remain explicit. Missed LAI and oral bridge questions require product-specific verification, oral tolerability/overlap review, loading/missed-dose rules, and pharmacy/package-insert confirmation. Capacity/legal caveat: refusal of an oral bridge or LAI does not by itself establish legal authority to force medication; document decision-specific capacity, emergency authority if relevant, local policy/legal process, and available alternatives. ${missingChecklist} ${sourceLabels} ${frameworkCaveat}`,
+      suggestions: [
+        'Do not give forced-med certainty or final LAI orders from this source.',
+        'Keep medication verification and legal/capacity review in separate lanes.',
+      ],
+    },
+    mixed_violence_stimulant: {
+      answerMode: 'warning_language',
+      builderFamily: 'contradiction',
+      message: `Warning: Do not convert this into routine ADHD or stimulant-restart framing. Reported threats remain documented and should be preserved alongside the patient's current denial of HI. Target/access gaps, intent, weapon access, current imminence, and collateral reliability require clarification. Stimulant caution: screen for mania/psychosis, substance use, sleep disruption, cardiovascular risk, agitation, misuse/diversion, and whether stimulant treatment could worsen instability. ${missingChecklist} ${sourceLabels} Do not provide a patient-specific stimulant order from this source.`,
+      suggestions: [
+        'Chart-ready wording: "Patient currently denies HI and is calm on exam; however, collateral reports recent threats. Target, access, intent, and stimulant-risk factors remain unresolved."',
+        'Avoid reassuring shortcut language and avoid routine restart language.',
+      ],
+    },
+    mixed_catatonia_antipsychotic_switch: {
+      answerMode: 'clinical_explanation',
+      builderFamily: 'overlap',
+      message: `Clinical explanation: Catatonia/NMS/medical overlap must be considered before treating this as a routine antipsychotic switch for psychosis. Staring, poor intake, rigidity, medication changes, abnormal vitals/labs, dehydration, infection, withdrawal, or NMS-like features should prompt urgent assessment and medical/catatonia-focused evaluation. Avoid switch certainty from this sparse source; reassess after urgent medical/catatonia evaluation and stabilization before choosing an antipsychotic transition. ${missingChecklist} ${sourceLabels} ${frameworkCaveat}`,
+      suggestions: [
+        'Do not frame this as psychosis-only medication switching while catatonia/NMS/medical overlap remains possible.',
+        'Keep urgent assessment and missing red flags visible.',
+      ],
+    },
+  };
+
+  const selected = byKind[kind];
+
+  return withAnswerMode({
+    message: selected.message,
+    suggestions: selected.suggestions,
+  }, selected.answerMode, selected.builderFamily, input, {
+    tightMessage: selected.message,
+    oneLineMessage: selected.message,
+    tightSuggestions: selected.suggestions.slice(0, 2),
+  });
+}
+
 function buildMalingeringWarningPayload(input: ClinicalTaskPriorityInput) {
   return withAnswerMode({
     message: 'Warning: Inconsistency does not establish malingering, and secondary gain concern remains a hypothesis rather than a settled conclusion. Keep the reported suicidal statement visible, document the observed housing contingency explicitly, and do not label malingering as a settled diagnosis from this source alone.',
@@ -2035,6 +3153,120 @@ function buildWithdrawalClinicalExplanationPayload(input: ClinicalTaskPriorityIn
   });
 }
 
+function buildProviderHistorySubstancePsychOverlapPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Clinical explanation: The source does not yet establish whether symptoms are substance-related, primary psychiatric, withdrawal-related, or mixed. Source labels where relevant should separate patient report, collateral/source report, chart data, and observed symptoms. Temporal relationship must stay explicit: document when intoxication, withdrawal, sleep loss, UDS/tox status, and symptom onset occurred if known. Tox/withdrawal limits remain important because pending or absent tox data, unclear last use, and possible withdrawal do not support diagnostic certainty. Reassessment after sobriety or stabilization should be documented before making a more definitive diagnosis.',
+    suggestions: [
+      'Brief missing-data checklist: last substance use, intoxication versus withdrawal signs, UDS/tox results, symptom onset, sleep timeline, collateral reliability, and persistence after sobriety or stabilization.',
+      'Do not call this primary psychosis, mania, bipolar disorder, or substance-induced disorder as a settled conclusion unless the source supports that level of certainty.',
+      'Chart-ready option: Symptoms are documented in the setting of unclear substance timing and pending/limited tox information; primary psychiatric and substance/withdrawal-related etiologies remain in the differential pending reassessment after sobriety or stabilization.',
+    ],
+  }, 'clinical_explanation', 'overlap', input, {
+    tightMessage: 'Clinical explanation: Source labels where relevant should separate reports. Temporal relationship, tox/withdrawal limits, and reassessment after sobriety or stabilization must stay explicit. Brief missing-data checklist: last use, tox results, withdrawal signs, symptom onset, and persistence after stabilization.',
+    oneLineMessage: 'Clinical explanation: Keep substance versus primary psychiatric diagnosis uncertain until temporal relationship, tox/withdrawal limits, and reassessment after sobriety or stabilization are clearer.',
+  });
+}
+
+function buildProviderHistoryMedicalPsychOverlapPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Workflow guidance: Do not frame this as primary psychiatric illness from the current source alone. Source labels where relevant should separate patient report, collateral/source report, charted medical data, and observed behavior. Medical contributors remain relevant, including abnormal vitals, acute change, infection, pain/cardiac symptoms, medication effects, dehydration, neurologic concern, endocrine/medical fatigue, or other red flags if documented. Red flags or missing evaluation should remain visible, and the note should avoid psych-only certainty until medical contributors have been assessed.',
+    suggestions: [
+      'Brief missing-data checklist: vitals, medical exam, relevant labs, medication changes, infection/cardiac/neurologic/endocrine contributors, substance/withdrawal timing, cognition/attention, and reassessment plan.',
+      'Do not skip the medical information just to make the note cleaner.',
+      'Chart-ready option: Psychiatric symptoms are described, but the current source also contains medical contributors or missing evaluation details; a primary psychiatric explanation is not established from this source alone.',
+    ],
+  }, 'workflow_guidance', 'overlap', input, {
+    tightMessage: 'Workflow guidance: Source labels where relevant should separate reports. Medical contributors and red flags or missing evaluation must remain visible, and the note should avoid psych-only certainty from this source alone. Brief missing-data checklist remains required.',
+    oneLineMessage: 'Workflow guidance: Medical contributors and red flags or missing evaluation remain relevant; avoid psych-only certainty from this source alone.',
+  });
+}
+
+function buildProviderHistoryMixedSiSubstanceDischargePayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Warning: Discharge-ready or low-risk wording is not supported from this source. SI contradiction must remain visible: patient report includes current denial or improvement after sobering, while source/collateral report still includes recent passive death wish or family concern. Substance timing remains unresolved because sobriety status and pending/limited UDS or tox information affect interpretation. Discharge readiness gaps remain, including current intent, means/access, protective factors, collateral reliability, substance timing, observation period, safety plan, follow-up, and safe disposition. Use conservative wording and avoid reassuring language from denial alone.',
+    suggestions: [
+      'Chart-ready wording: Patient currently denies SI after partial sobriety; however, recent passive death wish/family concern and unresolved substance timing remain documented. Discharge readiness cannot be inferred until risk, means/access, protective factors, collateral, observation, follow-up, and safe disposition are clarified.',
+      'Do not decide discharge readiness from the denial alone.',
+      'Keep patient report and source/collateral report side by side rather than collapsing the contradiction.',
+    ],
+  }, 'warning_language', 'risk', input, {
+    tightMessage: 'Warning: SI contradiction, substance timing, and discharge readiness gaps must remain visible. Low-risk or discharge-ready wording is not supported from denial alone; use conservative wording and avoid reassuring language.',
+    oneLineMessage: 'Warning: SI contradiction, substance timing, and discharge readiness gaps remain unresolved; do not make this low-risk or discharge-ready from denial alone.',
+  });
+}
+
+function buildProviderHistorySuicideContradictionPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Warning: Patient denial and conflicting evidence must both remain documented. Low suicide-risk wording is not supported here. Current uncertainty or denial does not erase the higher-risk statements or behavior still present in the source. Patient report: current denial of SI/intent remains part of the source. Triage/collateral/source report: prior wish to disappear, collateral worry, or unanswered means question remains conflicting evidence. Risk remains unresolved; unresolved risk questions include means/access, intent, timing, collateral reliability, current safety, and discharge context.',
+    suggestions: [
+      'Use source labels such as Patient report and Triage/collateral/source report.',
+      'Do not ignore the older statement or make risk low from current denial alone.',
+      'Brief missing-data checklist: means/access, intent, timing, protective factors, collateral, and safe disposition.',
+    ],
+  }, 'warning_language', 'contradiction', input, {
+    tightMessage: 'Warning: Patient denial and conflicting evidence must both remain documented. Low suicide-risk wording is not supported here. Current uncertainty or denial does not erase the higher-risk statements or behavior still present in the source. Patient report: denial remains documented. Triage/collateral/source report: prior risk concern remains conflicting evidence, and unresolved risk questions remain. Brief missing-data checklist: means/access, intent, timing, protective factors, collateral, and disposition.',
+    oneLineMessage: 'Warning: Patient denial and conflicting evidence must both remain documented; do not make risk low from denial alone.',
+  });
+}
+
+function buildProviderHistoryViolenceContradictionPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Warning: Denial and reported threat must both remain documented. Low violence-risk wording is not supported here. Patient denial remains separate, and collateral threat history remains separate. Patient report: denial of HI/current violent intent remains documented. Staff/collateral/source report: heard threats or vague target concern remains documented. Target/access/intent gaps are still unresolved, and risk is not resolved by calm presentation alone. Brief missing-data checklist: target, access to weapons/means, intent, imminence, recent aggression, collateral reliability, and current safety setting.',
+    suggestions: [
+      'Use source labels such as Patient report and Staff/collateral/source report.',
+      'Do not say no risk simply because the patient is calm or currently denying HI.',
+      'Brief missing-data checklist: target, access, intent, imminence, recent aggression, collateral reliability, and safety setting.',
+      'Do not flatten the remaining threat facts into reassurance.',
+      'Keep target, access, intent, recent behavior, and collateral reliability visible as missing or unresolved facts.',
+    ],
+  }, 'warning_language', 'contradiction', input, {
+    tightMessage: 'Warning: Denial and reported threat must both remain documented. Low violence-risk wording is not supported here. Patient denial remains separate, and collateral threat history remains separate. Target/access/intent gaps remain, risk is not resolved by calm presentation, and brief missing-data checklist items include target, access, intent, imminence, and safety setting.',
+    oneLineMessage: 'Warning: Denial and reported threat must both remain documented; risk is not resolved by calm presentation, and brief missing-data checklist items remain.',
+  });
+}
+
+function buildProviderHistoryCapacityPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Clinical explanation: Capacity must be documented as decision-specific capacity, not a global label based only on psychosis, refusal, desire to leave, disorganization, or guardian preference. Source labels where relevant: Patient report should stay separate from staff/collateral/source report. Local policy/legal consult caveat: legal authority, medication over objection, guardianship, holds, and court language require local policy and legal/supervisory review. Clinical facts needed: the note should show the specific decision, the patient’s understanding, appreciation of consequences, reasoning, ability to communicate a stable choice, risks/benefits/alternatives discussed, and what remains missing. Brief missing-data checklist: decision at issue, danger-to-self/others facts if alleged, grave-disability facts if alleged, safe plan details, understanding, appreciation, reasoning, stable choice, alternatives discussed, and local process.',
+    suggestions: [
+      'Guardian request does not automatically decide forced medication or capacity.',
+      'Do not make the wording court-proof or present a final legal conclusion from a thin source.',
+      'If chart wording is needed, say the available source does not establish decision-specific capacity for the requested intervention without the missing clinical facts.',
+    ],
+  }, 'clinical_explanation', 'capacity', input, {
+    tightMessage: 'Clinical explanation: Use decision-specific capacity. Source labels where relevant should separate patient report from staff/collateral/source report. Local policy/legal consult caveat applies, and clinical facts needed include understanding, appreciation, reasoning, choice, alternatives, and missing facts. Brief missing-data checklist remains required.',
+    oneLineMessage: 'Clinical explanation: Capacity is decision-specific; local policy/legal consult caveat applies, and clinical facts needed remain missing.',
+  });
+}
+
+function buildProviderHistoryBenzoTaperPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Clinical explanation: This is a benzodiazepine taper safety question, not a final medication order. Provider-review caveat: any taper or conversion framework must be verified with current prescribing references, interaction checking, and patient-specific assessment. Source labels where relevant: patient-reported use, staff/collateral report, and charted medication history should stay separate. Current dose, frequency, duration, last use, alcohol/opioid/other sedative co-use, prior withdrawal or seizure history, and current withdrawal symptoms are required before choosing taper framing. Substance use uncertainty should remain explicit when alcohol, opioids, other sedatives, or withdrawal overlap are unclear. Withdrawal/seizure risk must stay explicit, especially with rapid discontinuation, long-term use, unclear dose, alcohol/other substance use, or unstable setting. Dose/duration/substance use variables and dose/duration/co-use variables are required before choosing outpatient versus inpatient taper framing. Urgent escalation red flags include seizure, delirium/confusion, severe autonomic instability, severe withdrawal symptoms, polysedative/alcohol use, suicidality, pregnancy, frailty, or inability to ensure follow-up.',
+    suggestions: [
+      'Brief missing-data checklist: current benzodiazepine, dose, frequency, duration, last use, prior withdrawal/seizures, alcohol/opioid/sedative use, medical comorbidity, pregnancy status when relevant, supports, and setting.',
+      'Do not offer mild-withdrawal reassurance or say the medication can simply be stopped from this source.',
+      'Verify any taper plan with current prescribing references and patient-specific assessment before use.',
+    ],
+  }, 'clinical_explanation', 'medication-boundary', input, {
+    tightMessage: 'Clinical explanation: Provider-review caveat: this is not a patient-specific order. Withdrawal/seizure risk, substance use uncertainty, current dose, frequency, duration, alcohol/opioid/other sedative co-use, dose/duration/substance use variables, dose/duration/co-use variables, and urgent escalation red flags are required before taper framing.',
+    oneLineMessage: 'Clinical explanation: Do not just stop it; withdrawal/seizure risk, substance use uncertainty, dose/duration/substance use variables, dose/duration/co-use variables, and urgent escalation red flags must be assessed.',
+  });
+}
+
+function buildProviderHistoryDeliriumOverlapPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Clinical explanation: Overlap differential remains active: medical vs psych vs withdrawal/catatonia/medication effect. Source labels where relevant: patient report, staff/collateral/source report, and observed behavior should stay separate. Urgent medical assessment considerations remain because abrupt benzodiazepine change, tremor/anxiety/insomnia, agitation with fluctuating attention, rigidity/slowness, antipsychotic change, confusion, autonomic findings, poor intake, mutism/staring, or altered sensorium can signal medical, delirium, catatonia, medication-effect, or withdrawal risk. Avoid behavioral-only framing; a single primary-psychosis conclusion, refusal-only label, or withdrawal-erasing note is not supported from this source. Uncertainty should be preserved until medical/withdrawal/catatonia red flags are assessed.',
+    suggestions: [
+      'Brief missing-data checklist: vitals, sensorium/attention, medication timeline, substance/benzodiazepine timeline, rigidity/catatonia findings, withdrawal history, labs, medical exam, and safety setting.',
+      'Keep psychiatric, medication-effect, withdrawal, catatonia, and medical etiologies as differential when the source is mixed.',
+      'Escalate urgency when delirium, withdrawal, catatonia/NMS-like features, or medical instability cannot be ruled out from the source.',
+    ],
+  }, 'clinical_explanation', 'overlap', input, {
+    tightMessage: 'Clinical explanation: Overlap differential remains active: medical vs psych vs withdrawal/catatonia/medication effect. Source labels where relevant should separate patient report, staff/collateral/source report, and observation. Urgent medical assessment considerations remain; avoid behavioral-only framing, and uncertainty remains.',
+    oneLineMessage: 'Clinical explanation: Overlap differential remains active, urgent medical assessment considerations remain, and behavioral-only framing would be unsafe.',
+  });
+}
+
 function buildMedicalPsychOverlapPayload(input: ClinicalTaskPriorityInput) {
   const normalized = normalize(`${input.message}\n${input.sourceText}\n${input.currentDraftText || ''}`);
   const acuteConfusion = hasAny(normalized, [/\bsuddenly confused\b/, /\bconfusion\b/, /\bpulling lines\b/])
@@ -2053,8 +3285,8 @@ function buildMedicalPsychOverlapPayload(input: ClinicalTaskPriorityInput) {
       'Do not turn overlap into a settled psych-only explanation.',
     ],
   }, 'workflow_guidance', 'overlap', input, {
-    tightMessage: `Workflow guidance: Medical versus psychiatric overlap remains unresolved. ${acuteConfusion}. Psychosis remains a differential only, and possible medical contributors should stay explicit.`,
-    oneLineMessage: 'Workflow guidance: Medical versus psychiatric overlap remains unresolved; do not erase possible medical contributors or call this psych from this source alone.',
+    tightMessage: `Workflow guidance: Medical versus psychiatric overlap remains unresolved. ${acuteConfusion}. Psychosis remains a differential only, possible medical contributors should stay explicit, and source labels where relevant should remain visible.`,
+    oneLineMessage: 'Workflow guidance: Medical versus psychiatric overlap remains unresolved; source labels where relevant and possible medical contributors should remain visible.',
   });
 }
 
@@ -2121,6 +3353,7 @@ function buildViolenceNuanceChartReadyPayload(input: ClinicalTaskPriorityInput) 
     suggestions: [
       hasThreatAmbiguity ? 'Keep patient report and collateral concern documented separately.' : hasCollateralThreat ? 'Keep patient denial and collateral threat history documented separately.' : 'Keep observation and report documented separately.',
       'Do not collapse the remaining threat facts into low violence-risk wording.',
+      'Do not flatten the remaining threat facts into reassurance.',
       'Do not overcall intent beyond the available source.',
     ],
   }, 'chart_ready_wording', 'contradiction', input, {
@@ -2336,8 +3569,8 @@ function buildPersonalityWarningPayload(input: ClinicalTaskPriorityInput) {
       'Do not replace observed behavior with a pejorative label.',
     ],
   }, 'warning_language', 'personality-language', input, {
-    tightMessage: 'Warning: Use behaviorally specific, non-stigmatizing wording, and do not overcall personality disorder from one encounter.',
-    oneLineMessage: 'Warning: Use behaviorally specific, non-stigmatizing wording, and do not overcall personality disorder from one encounter.',
+    tightMessage: 'Warning: Use behaviorally specific, non-stigmatizing wording, do not substitute pejorative labels for observed behavior, and do not overcall personality disorder from one encounter.',
+    oneLineMessage: 'Warning: Use behaviorally specific, non-stigmatizing wording; do not substitute pejorative labels for observed behavior or overcall personality disorder from one encounter.',
   });
 }
 
@@ -2350,8 +3583,106 @@ function buildPersonalityWorkflowPayload(input: ClinicalTaskPriorityInput) {
       'Do not resolve the collateral conflict beyond the source.',
     ],
   }, 'workflow_guidance', 'personality-language', input, {
-    tightMessage: 'Workflow guidance: Keep observed behavior, patient report, and collateral conflict separate, and use non-stigmatizing wording.',
-    oneLineMessage: 'Workflow guidance: Keep observed behavior, patient report, and collateral conflict separate, and use non-stigmatizing wording.',
+    tightMessage: 'Workflow guidance: Keep observed behavior, patient report, and collateral conflict separate, use non-stigmatizing wording, and do not substitute pejorative labels for observed behavior.',
+    oneLineMessage: 'Workflow guidance: Keep observed behavior, patient report, and collateral conflict separate; do not substitute pejorative labels for observed behavior.',
+  });
+}
+
+function buildProviderHistoryNonStigmatizingPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Chart-ready wording: "Use behaviorally specific, neutral clinical language and document observable behavior rather than pejorative labels. Do not substitute pejorative labels for observed behavior. Avoid pejorative personality-disorder labeling from a single encounter. Patient report should remain explicit when available, including the stated reason for declining medication, requesting medication, giving limited history, or engaging inconsistently. Barriers or context should be documented when relevant, such as pain, anxiety, withdrawal concern, limited recall, mistrust, access issues, or unclear collateral. Brief missing-data checklist: patient-stated reason, observed behavior, collateral/source report, barriers, safety concerns, substance/medical context, and follow-up plan. Source labels where relevant should separate patient report, staff/collateral report, chart data, and observed behavior."',
+    suggestions: [
+      'Instead of “noncompliant,” document the specific action and patient-stated reason if known.',
+      'Instead of “manipulative,” document observable behavior and context.',
+      'Instead of “drug-seeking,” document the request, symptoms, objective findings, and plan for assessment.',
+    ],
+  }, 'chart_ready_wording', 'personality-language', input, {
+    tightMessage: 'Chart-ready wording: "Use behaviorally specific, neutral clinical language. Avoid pejorative personality-disorder labeling from a single encounter; document observable behavior, patient report, barriers or context, a brief missing-data checklist, and source labels where relevant rather than pejorative labels."',
+    oneLineMessage: 'Chart-ready wording: "Use behaviorally specific neutral clinical language, observable behavior, patient report, barriers or context, and source labels where relevant; do not substitute pejorative labels for observed behavior."',
+  });
+}
+
+function buildProviderHistorySparseSourcePayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Workflow guidance: The source is a limited source and is not enough to safely complete the note section without adding unsupported facts. Use only the documented facts and refuse to invent normal ROS, normal MSE, diagnosis, risk status, dose, adherence, or safety findings that are not documented. Missing safety/med details should remain visible. Brief missing-data checklist: current SI/HI, means/access, psychosis/mania symptoms, MSE, substance use, medication name/dose/adherence, collateral, vitals/labs if relevant, follow-up, and disposition. Source labels where relevant should separate patient report, staff/collateral report, chart data, and what remains not documented.',
+    suggestions: [
+      'Safe limited answer: write only the documented facts and name what is missing.',
+      'Keep undocumented domains blank or marked not documented.',
+      'Do not make the note complete by filling in normal findings.',
+    ],
+  }, 'workflow_guidance', 'fragmented-source', input, {
+    tightMessage: 'Workflow guidance: This is a limited source. Use a safe limited answer, refuse to invent, keep missing safety/med details and a brief missing-data checklist visible, and use source labels where relevant.',
+    oneLineMessage: 'Workflow guidance: Limited source; use only documented facts, refuse to invent, list missing safety/med details, and keep source labels where relevant.',
+  });
+}
+
+function buildProviderHistoryVagueFollowupPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Workflow guidance: Clarify task before drafting: HPI, progress note, risk wording, MSE limits, medication reference, or discharge wording. Safe limited answer: from the current source, preserve only documented facts and uncertainty, then choose one useful next step rather than guessing the whole note. Missing information: target section, source facts, current risk/safety details, medication details if relevant, collateral/source labels, and desired format. Brief missing-data checklist: note type, section, risk facts, MSE, medications, collateral, follow-up/disposition, and whether the provider wants chart-ready wording or a review checklist. Source labels where relevant should remain explicit.',
+    suggestions: [
+      'Ask for the target task when the provider says “fix,” “thoughts,” or “is this ok?” without enough context.',
+      'Offer one safe next step instead of a generic fallback.',
+      'Do not decide unsupported facts just because the follow-up is vague.',
+    ],
+  }, 'workflow_guidance', 'workflow', input, {
+    tightMessage: 'Workflow guidance: Clarify task, give a safe limited answer if possible, list missing information with a brief missing-data checklist, and keep source labels where relevant.',
+    oneLineMessage: 'Workflow guidance: Clarify the target task, give a safe limited answer, list missing information, and keep source labels where relevant.',
+  });
+}
+
+function buildProviderHistoryTypoHeavyPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Workflow guidance: Interpretation limits remain important because the prompt contains misspellings, unclear abbreviations, or compressed wording. I can interpret the likely task only where the wording is clear, but missing data should remain explicit and I will not invent facts from unclear terms. Brief missing-data checklist: intended note section, safety screen, medication name/dose, collateral/source report, MSE domains, follow-up/disposition, vitals/labs if relevant, and unclear abbreviations or misspellings. Source labels where relevant should separate patient report, collateral/source report, staff/chart data, and interpretation.',
+    suggestions: [
+      'Correct spelling in the output without expanding unclear terms into facts.',
+      'Preserve uncertainty around unclear abbreviations.',
+      'Do not assume the rest or make normal findings from typo-heavy source text.',
+    ],
+  }, 'workflow_guidance', 'fragmented-source', input, {
+    tightMessage: 'Workflow guidance: Interpretation limits remain. Missing data, no invented facts, a brief missing-data checklist, and source labels where relevant should stay explicit.',
+    oneLineMessage: 'Workflow guidance: Interpretation limits remain; keep missing data, no invented facts, source labels, and a brief missing-data checklist explicit.',
+  });
+}
+
+function buildProviderHistoryRushedShorthandPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Workflow guidance: I can draft from rushed shorthand, but uncertain abbreviations preserved means unclear abbreviations or question-marked items should not be expanded into facts. Source-supported points can be restated briefly, while pending items such as collateral pending, labs pending, unclear AVH/RTIS, means/access, discharge readiness, or medication details remain pending. No unsupported expansion: do not convert shorthand into a complete narrative, stable status, normal MSE, or resolved risk assessment unless documented. Brief missing-data checklist: abbreviations needing confirmation, safety screen, MSE, collateral, labs, medication details, discharge readiness, and follow-up. Source labels where relevant should remain explicit.',
+    suggestions: [
+      'Expand only common abbreviations that are clear in context.',
+      'Keep question marks and pending items visible.',
+      'Do not turn shorthand into unsupported certainty.',
+    ],
+  }, 'workflow_guidance', 'fragmented-source', input, {
+    tightMessage: 'Workflow guidance: Keep uncertain abbreviations preserved, pending items visible, no unsupported expansion, a brief missing-data checklist, and source labels where relevant.',
+    oneLineMessage: 'Workflow guidance: Preserve uncertain abbreviations, pending items, no unsupported expansion, source labels, and a brief missing-data checklist.',
+  });
+}
+
+function buildProviderHistoryMixedSparseMedRefillRiskPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Workflow guidance: This is a limited source for a medication refill and risk-wording task. Medication uncertainty remains because medication name, dose, adherence, response, side effects, and refill history are not documented. Missing dose/adherence and missing safety screen should stay visible; do not assume no SI/HI, no psychosis, medication stability, or low risk. Brief missing-data checklist: medication/product, dose, adherence, last fill, indication, response/tolerability, SI/HI/means/access, substance use, MSE, collateral/source report, follow-up, and disposition. Source labels where relevant should separate patient report, chart/refill data, and missing information.',
+    suggestions: [
+      'Safe limited answer: write only that a refill request and anxiety are documented.',
+      'Do not turn the refill request into a complete HPI without the safety and medication details.',
+      'Risk wording should stay cautious because the safety screen is missing.',
+    ],
+  }, 'workflow_guidance', 'fragmented-source', input, {
+    tightMessage: 'Workflow guidance: Limited source, medication uncertainty, missing dose/adherence, missing safety screen, source labels where relevant, and a brief missing-data checklist must remain visible.',
+    oneLineMessage: 'Workflow guidance: Limited source; missing dose/adherence, missing safety screen, and source labels where relevant remain unresolved.',
+  });
+}
+
+function buildProviderHistoryMixedPsychosisMedicalRuleoutPayload(input: ClinicalTaskPriorityInput) {
+  return withAnswerMode({
+    message: 'Workflow guidance: Psychosis uncertainty remains because new paranoia and confusion are documented but the source does not establish a primary psychiatric cause. Medical contributors remain relevant, including medication change, delirium/medical process, infection, dehydration, neurologic issue, intoxication/withdrawal, or other medical causes if supported or not yet evaluated. Missing vitals/labs should remain explicit, and the note should not present a primary psychotic disorder as settled from this source alone. Brief missing-data checklist: vitals, labs, medical exam, medication changes, cognition/attention, substance/tox status, sleep timeline, collateral/source report, risk, and reassessment after stabilization. Source labels where relevant should separate patient report, observed behavior, chart/source data, and clinical interpretation.',
+    suggestions: [
+      'Use psychosis wording only as source-supported symptoms or observations.',
+      'Keep medical ruleout and missing vitals/labs visible.',
+      'Do not collapse the case into primary psychiatric illness from this sparse source.',
+    ],
+  }, 'workflow_guidance', 'overlap', input, {
+    tightMessage: 'Workflow guidance: Psychosis uncertainty, medical contributors, missing vitals/labs, source labels where relevant, and a brief missing-data checklist must remain visible.',
+    oneLineMessage: 'Workflow guidance: Psychosis uncertainty and medical contributors remain active; missing vitals/labs and source labels where relevant should stay explicit.',
   });
 }
 
@@ -2367,8 +3698,36 @@ function buildAcuteInpatientHpiPayload(input: ClinicalTaskPriorityInput) {
         'Do not resolve intent beyond the available source. Do not invent chronology.',
       ],
     }, 'chart_ready_wording', 'acute-hpi', input, {
-      tightMessage: 'Chart-ready wording: "Reason for admission: psychiatric admission followed reported pill ingestion with conflicting patient and collateral accounts of intent. Timing remains unclear, and both reports should remain documented without resolving intent beyond the source."',
-      oneLineMessage: 'Chart-ready wording: "Reason for admission: psychiatric admission followed reported pill ingestion with conflicting patient and collateral accounts; timing remains unclear and intent should not be resolved beyond the source."',
+      tightMessage: 'Chart-ready wording: "Reason for admission: psychiatric admission followed reported pill ingestion with conflicting patient and collateral accounts of intent. Timing remains unclear, and both reports should remain documented without resolving intent beyond the source. Do not invent chronology."',
+      oneLineMessage: 'Chart-ready wording: "Reason for admission: psychiatric admission followed reported pill ingestion with conflicting patient and collateral accounts; timing remains unclear, intent should not be resolved beyond the source, and do not invent chronology."',
+    });
+  }
+
+  if (hasAny(normalized, [/\badult pt in eval area\b/, /\btearful\b/, /\banxiety bad\b/, /\bsleep poor\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Reason for admission: adult psychiatric evaluation/admission was pursued based on the available source describing tearfulness, significant anxiety, poor sleep, and need for further assessment. Patient report: anxiety is described as bad, sleep is poor, and the patient denies a plan. Collateral/source report: no additional collateral details are established in the provided source. Observation/source observation: tearfulness in the evaluation area is documented. Source limits, uncertainty preserved, and no invented chronology: timing, precipitant, prior course, diagnosis, substance history, and full risk assessment remain incompletely documented. Brief missing-data checklist: clarify onset/timeline, current SI/HI details, safety at home, substance exposure, prior treatment, and collateral. Source labels where relevant should remain visible."',
+      suggestions: [
+        'Keep reason for admission, patient report, collateral/source report, and observation/source observation distinct.',
+        'Use source limits, uncertainty preserved, and no invented chronology language.',
+        'Add a brief missing-data checklist instead of filling gaps.',
+      ],
+    }, 'chart_ready_wording', 'acute-hpi', input, {
+      tightMessage: 'Chart-ready wording: "Reason for admission: evaluation/admission was pursued from sparse source describing tearfulness, significant anxiety, poor sleep, and denied plan. Patient report, collateral/source report, and observation/source observation remain separated; source limits, uncertainty preserved, no invented chronology, brief missing-data checklist, and source labels where relevant remain explicit."',
+      oneLineMessage: 'Chart-ready wording: "Reason for admission: sparse source documents tearfulness, anxiety, poor sleep, and denial of plan; keep patient report, collateral/source report, source limits, uncertainty preserved, no invented chronology, and brief missing-data checklist explicit."',
+    });
+  }
+
+  if (hasAny(normalized, [/\bmood down\b/, /\bmissed visits\b/, /\bfamily worried\b/, /\bpt says fine\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Reason for admission: evaluation/admission was pursued from sparse source describing depressed mood, missed visits, and collateral/family concern. Patient report: the patient says they are fine. Collateral/source report: family is worried and missed visits are documented. Observation/source observation: no additional observed MSE or behavior is established in the source. Source limits, uncertainty preserved, and no invented chronology: the source does not establish timing, diagnostic cause, acuity, or full risk status. Brief missing-data checklist: clarify timeline, reason for missed visits, safety concerns, collateral details, substance use, and current mental status. Source labels where relevant should remain explicit."',
+      suggestions: [
+        'Preserve patient report versus family/collateral concern.',
+        'Do not fill in the timeline from sparse source.',
+        'Name source limits and missing data instead of inventing history.',
+      ],
+    }, 'chart_ready_wording', 'acute-hpi', input, {
+      tightMessage: 'Chart-ready wording: "Reason for admission: sparse source documents depressed mood, missed visits, and family concern while patient says they are fine. Keep patient report and collateral/source report separate with source limits, uncertainty preserved, no invented chronology, brief missing-data checklist, and source labels where relevant."',
+      oneLineMessage: 'Chart-ready wording: "Patient says they are fine, while collateral/source report notes mood down, missed visits, and family concern; source limits, uncertainty preserved, no invented chronology, and brief missing-data checklist remain explicit."',
     });
   }
 
@@ -2381,21 +3740,49 @@ function buildAcuteInpatientHpiPayload(input: ClinicalTaskPriorityInput) {
         'Do not invent chronology. Do not overcall a primary psychiatric cause from this source alone.',
       ],
     }, 'chart_ready_wording', 'acute-hpi', input, {
-      tightMessage: 'Chart-ready wording: "Reason for admission: acute psychiatric admission was pursued for confusion, perceptual disturbance, and paranoid statements. Timeline remains unclear, alcohol history remains relevant, and medical contributor remains under consideration."',
-      oneLineMessage: 'Chart-ready wording: "Reason for admission: admission followed acute confusion and perceptual disturbance; timeline remains unclear and medical contributor remains under consideration."',
+      tightMessage: 'Chart-ready wording: "Reason for admission: acute psychiatric admission was pursued for confusion, perceptual disturbance, and paranoid statements. Timeline remains unclear, alcohol history remains relevant, and medical contributor remains under consideration. Do not invent chronology."',
+      oneLineMessage: 'Chart-ready wording: "Reason for admission: admission followed acute confusion and perceptual disturbance; timeline remains unclear, medical contributor remains under consideration, and do not invent chronology."',
+    });
+  }
+
+  if (hasAny(normalized, [/\bpacing\b/, /\bnot sleeping\b/, /\bthoughts racing\b/, /\bsubstance use unclear\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Reason for admission: evaluation/admission was pursued for pacing, decreased sleep, racing thoughts, and concern for psychiatric instability requiring further assessment. Patient report: thoughts are racing and sleep is decreased if documented by the source. Collateral/source report: source notes substance use is unclear. Observation/source observation: pacing is documented. Source limits, uncertainty preserved, timeline remains unclear, no invented chronology, and substance exposure remains relevant; do not invent chronology and do not erase substance overlap because the source does not establish onset, sequence, diagnosis, intoxication/withdrawal contribution, or complete risk status. Brief missing-data checklist: clarify timeline, collateral, substances, psychosis/mania symptoms, vitals/labs if relevant, and current safety. Source labels where relevant should remain visible."',
+      suggestions: [
+        'Keep pacing as observation/source observation.',
+        'Keep substance use unclear rather than removing it.',
+        'Do not invent chronology or diagnostic certainty.',
+      ],
+    }, 'chart_ready_wording', 'acute-hpi', input, {
+      tightMessage: 'Chart-ready wording: "Reason for admission: evaluation/admission was pursued for pacing, decreased sleep, racing thoughts, and unclear substance contribution. Timeline remains unclear, substance exposure remains relevant, no invented chronology, do not invent chronology, and do not erase substance overlap; keep source limits and source labels where relevant."',
+      oneLineMessage: 'Chart-ready wording: "Pacing, decreased sleep, racing thoughts, and unclear substance contribution support admission/evaluation; timeline remains unclear, substance exposure remains relevant, no invented chronology, do not invent chronology, and do not erase substance overlap."',
+    });
+  }
+
+  if (hasAny(normalized, [/\bhpi fast\b/, /\bmanic\b/, /\bmeth\b/, /\bspent all paycheck\b/, /\bems said disorganized\b/, /\bno sleep 4 days\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Reason for admission: psychiatric admission was pursued for escalating manic-spectrum or psychotic symptoms with unsafe or disorganized behavior requiring inpatient assessment/stabilization. Patient report: the patient describes feeling stressed. Collateral/source report: collateral reports no sleep for several days and impulsive spending. Observation/source observation: EMS described disorganized behavior in the street. Timeline remains unclear in the available source, and substance exposure remains relevant, so the HPI should preserve source limits, uncertainty preserved, no invented chronology, do not invent chronology, do not erase substance overlap, brief missing-data checklist, and source labels where relevant."',
+      suggestions: [
+        'Keep reason for admission explicit at the start of the HPI.',
+        'Keep patient report, collateral/source report, and EMS/source observation distinct.',
+        'Keep timeline remains unclear and substance exposure remains relevant.',
+      ],
+    }, 'chart_ready_wording', 'acute-hpi', input, {
+      tightMessage: 'Chart-ready wording: "Reason for admission: admission was pursued for manic-spectrum or psychotic symptoms with disorganized behavior. Patient report, collateral/source report, and EMS/source observation remain distinct; timeline remains unclear, substance exposure remains relevant, source limits remain explicit, no invented chronology, do not invent chronology, and do not erase substance overlap."',
+      oneLineMessage: 'Chart-ready wording: "Reason for admission: disorganized manic-spectrum presentation; timeline remains unclear, substance exposure remains relevant, no invented chronology, do not invent chronology, and do not erase substance overlap."',
     });
   }
 
   return withAnswerMode({
-    message: 'Chart-ready wording: "Reason for admission: psychiatric admission was pursued for escalating manic-spectrum or psychotic symptoms with unsafe behavior requiring inpatient stabilization. Patient report: decreased sleep. Collateral report: several days of manic behavior and impulsive spending. EMS documented disorganized behavior in the community. Timeline remains unclear in the available source, and substance exposure remains relevant, so the HPI should preserve both uncertainty and the differing source reports without inventing chronology."',
+    message: 'Chart-ready wording: "Reason for admission: evaluation/admission was pursued based on the limited source, which needs HPI drafting from patient report plus brief collateral/source information. Patient report: document only what the patient reports in the source. Collateral/source report: document only the collateral or chart facts provided. Observation/source observation: include observed behavior only if actually documented. Source limits, uncertainty preserved, timeline remains unclear, and no invented chronology: do not invent chronology or add diagnosis, timing, precipitant, MSE, substance history, or risk details not present. If substance overlap is present, do not erase substance overlap. Brief missing-data checklist: clarify onset/timeline, risk, substances, medical contributors, collateral, prior treatment, and current MSE. Source labels where relevant should remain visible."',
     suggestions: [
       'Keep reason for admission explicit at the start of the HPI.',
-      'Keep patient report, collateral report, and community or EMS observations distinct.',
-      'Do not invent chronology. Do not erase substance overlap.',
+      'Keep patient report, collateral/source report, and observation/source observation distinct.',
+      'Use source limits, uncertainty preserved, and no invented chronology language.',
     ],
   }, 'chart_ready_wording', 'acute-hpi', input, {
-    tightMessage: 'Chart-ready wording: "Reason for admission: psychiatric admission was pursued for escalating manic-spectrum symptoms with disorganized behavior. Timeline remains unclear, and substance exposure remains relevant in the available source."',
-    oneLineMessage: 'Chart-ready wording: "Reason for admission: admission followed escalating manic-spectrum symptoms with unclear timeline and substance exposure still relevant in the source."',
+    tightMessage: 'Chart-ready wording: "Reason for admission: draft the HPI only from the sparse source, keeping patient report, collateral/source report, observation/source observation, source limits, uncertainty preserved, timeline remains unclear, and do not invent chronology; keep brief missing-data checklist and source labels where relevant explicit."',
+    oneLineMessage: 'Chart-ready wording: "Draft the HPI from the sparse source only; keep source limits, uncertainty preserved, timeline remains unclear, do not invent chronology, source labels, and brief missing-data checklist explicit."',
   });
 }
 
@@ -2411,8 +3798,64 @@ function buildProgressNoteRefinementPayload(input: ClinicalTaskPriorityInput) {
         'Low-risk wording is not supported from this source.',
       ],
     }, 'chart_ready_wording', 'progress-note', input, {
-      tightMessage: 'Chart-ready wording: "Patient currently denies suicidal ideation; however, recent goodbye texts and the patient statement that they are not safe if sent home remain documented, and higher-acuity risk facts should not be cleaned into low-risk wording."',
+      tightMessage: 'Chart-ready wording: "Patient currently denies suicidal ideation; however, recent goodbye texts and the patient statement that they are not safe if sent home remain documented, and higher-acuity risk facts remain documented and should not be cleaned into low-risk wording."',
       oneLineMessage: 'Chart-ready wording: "Patient currently denies suicidal ideation; however, recent goodbye texts and the patient statement that they are not safe if sent home remain documented, and low-risk wording is not supported from this source."',
+    });
+  }
+
+  if (hasAny(normalized, [/\bclean pn\b/, /\bslept ok\b/, /\birritable w staff\b/, /\bmed changes pending\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Progress note: Patient reports sleep was okay and denies suicidal ideation, while staff/source documentation notes irritability with staff and medication changes remain pending. Assessment should use unchanged facts and neutral wording: improvement or stability should not be overstated from this limited source. Missing data if relevant: clarify current mood, safety assessment, medication plan, side effects, behavior since last note, and discharge readiness before making stronger conclusions. Brief missing-data checklist and source labels where relevant should remain visible. One usable paragraph should preserve reported improvement or denial alongside ongoing symptoms/behavior."',
+      suggestions: [
+        'Use unchanged facts and neutral wording.',
+        'Do not make the patient look stable beyond the source.',
+        'Keep missing data if relevant and source labels where relevant.',
+      ],
+    }, 'chart_ready_wording', 'progress-note', input, {
+      tightMessage: 'Chart-ready wording: "Patient reports sleep was okay and denies SI; staff/source notes irritability with staff and med changes pending. Use unchanged facts, neutral wording, missing data if relevant, brief missing-data checklist, source labels where relevant, and one usable paragraph without overstating stability."',
+      oneLineMessage: 'Chart-ready wording: "Sleep okay and SI denial remain documented, but irritability and pending med changes remain; use unchanged facts, neutral wording, missing data if relevant, and source labels."',
+    });
+  }
+
+  if (hasAny(normalized, [/\brewrite a\/p less messy\b/, /\bgroup poor\b/, /\bate some\b/, /\bstill guarded\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Assessment/Plan: Patient had poor group engagement, ate some, and remained guarded. Use unchanged facts and neutral wording, avoiding unsupported discharge-readiness language. Missing data if relevant: clarify sleep, SI/HI, psychosis, medication adherence/side effects, behavioral observations, and discharge plan before strengthening the assessment. Brief missing-data checklist and source labels where relevant should remain visible. One usable paragraph may summarize limited engagement and partial intake without adding facts."',
+      suggestions: [
+        'Keep poor group engagement, ate some, and still guarded unchanged.',
+        'Do not say improved enough for discharge unless the source supports it.',
+        'Use neutral wording and name missing data if relevant.',
+      ],
+    }, 'chart_ready_wording', 'progress-note', input, {
+      tightMessage: 'Chart-ready wording: "Patient had poor group engagement, ate some, and remained guarded. Use unchanged facts, neutral wording, missing data if relevant, brief missing-data checklist, source labels where relevant, and do not add discharge readiness."',
+      oneLineMessage: 'Chart-ready wording: "Poor group engagement, ate some, and guarded presentation remain documented; use unchanged facts, neutral wording, missing data if relevant, and no unsupported discharge readiness."',
+    });
+  }
+
+  if (hasAny(normalized, [/\bmake prog note professional\b/, /\bpt asking dc\b/, /\bcollateral not reached\b/, /\badd normal mse bits\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Progress note: Patient is requesting discharge, and collateral has not been reached per the available source. Use unchanged facts and neutral wording: discharge request should be documented without converting it into readiness for discharge. Missing data if relevant: collateral, current safety assessment, MSE domains, housing/follow-up, medication adherence, and risk reassessment remain incomplete unless otherwise documented. Brief missing-data checklist and source labels where relevant should remain visible. Do not add normal MSE findings not present in the source."',
+      suggestions: [
+        'Document discharge request and collateral not reached.',
+        'Do not add normal MSE bits.',
+        'Keep missing data if relevant instead of filling gaps.',
+      ],
+    }, 'chart_ready_wording', 'progress-note', input, {
+      tightMessage: 'Chart-ready wording: "Patient requests discharge and collateral has not been reached. Use unchanged facts, neutral wording, missing data if relevant, brief missing-data checklist, source labels where relevant, and do not add normal MSE findings."',
+      oneLineMessage: 'Chart-ready wording: "Patient requests discharge and collateral has not been reached; use unchanged facts, neutral wording, missing data if relevant, and do not add normal MSE findings."',
+    });
+  }
+
+  if (hasAny(normalized, [/\bsoap note from shorthand\b/, /\bdont add stuff\b/, /\bdon't add stuff\b/, /\bsmooth out behavior issue\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Progress note: Source is shorthand and should be rewritten without adding unsupported facts. Use unchanged facts and neutral wording, with behavior described objectively rather than smoothed into a conclusion. Missing data if relevant: current symptoms, safety, MSE, medication status, plan, and collateral remain unspecified unless present in the source. Brief missing-data checklist and source labels where relevant should remain visible. One usable paragraph is appropriate if it preserves the limited source."',
+      suggestions: [
+        'Rewrite shorthand without adding facts.',
+        'Describe behavior objectively and neutrally.',
+        'Keep missing data if relevant visible.',
+      ],
+    }, 'chart_ready_wording', 'progress-note', input, {
+      tightMessage: 'Chart-ready wording: "Rewrite the shorthand without adding facts. Use unchanged facts, neutral wording, missing data if relevant, brief missing-data checklist, source labels where relevant, and objective behavior language."',
+      oneLineMessage: 'Chart-ready wording: "Rewrite the shorthand source only; use unchanged facts, neutral wording, missing data if relevant, and no added MSE or behavior conclusions."',
     });
   }
 
@@ -2432,21 +3875,91 @@ function buildProgressNoteRefinementPayload(input: ClinicalTaskPriorityInput) {
     });
   }
 
+  if (hasAny(normalized, [/\bah\b/, /\bauditory hallucinations?\b/, /\bcommand\b/, /\btelling (?:him|her|them) die\b/, /\bslept bad\b/, /\bwants dc\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Patient-reported improvement remains documented; however, command auditory hallucinations remain documented and continue to limit a cleaner stabilization narrative. Poor sleep and discharge focus remain present in the source, so the refined progress note should preserve both reported improvement and ongoing active psychotic symptoms in one paragraph. Use unchanged facts, neutral wording, missing data if relevant, brief missing-data checklist, and source labels where relevant."',
+      suggestions: [
+        'Keep patient-reported improvement and active psychosis side by side.',
+        'Use one paragraph.',
+        'Do not smooth away active psychosis to make the note read as more improved than the source supports.',
+      ],
+    }, 'chart_ready_wording', 'progress-note', input, {
+      tightMessage: 'Chart-ready wording: "Patient-reported improvement remains documented; however, command auditory hallucinations remain documented, poor sleep and discharge focus remain present, and the refined progress note should keep both in one paragraph using unchanged facts and neutral wording."',
+      oneLineMessage: 'Chart-ready wording: "Patient-reported improvement remains documented; command auditory hallucinations remain documented, and one paragraph should preserve both without overstating stability."',
+    });
+  }
+
   return withAnswerMode({
-    message: 'Chart-ready wording: "Patient-reported improvement remains documented; however, command auditory hallucinations remain documented and continue to limit a cleaner stabilization narrative. Sleep disturbance and discharge focus remain present in the source, so the refined progress note should preserve both the reported improvement and the ongoing active psychotic symptoms in one paragraph."',
+    message: 'Chart-ready wording: "Progress note: Rewrite the available source into one paragraph using unchanged facts and neutral wording. Patient-reported improvement, if documented, should remain alongside ongoing symptoms or contradictions, if documented. Missing data if relevant should remain visible rather than filled in, including safety, MSE, collateral, medication status, and plan details. Brief missing-data checklist and source labels where relevant should remain explicit. Avoid generic summaries and do not overstate stability or discharge readiness."',
     suggestions: [
-      'Keep patient-reported improvement and active psychosis side by side.',
-      'Use one paragraph.',
-      'Do not smooth away active psychosis to make the note read as more improved than the source supports.',
+      'Use unchanged facts and neutral wording.',
+      'Use one usable paragraph.',
+      'Keep missing data if relevant instead of inventing normal findings.',
     ],
   }, 'chart_ready_wording', 'progress-note', input, {
-    tightMessage: 'Chart-ready wording: "Patient-reported improvement remains documented; however, command auditory hallucinations remain documented, and the refined progress note should keep both in one paragraph without smoothing away active psychotic symptoms."',
-    oneLineMessage: 'Chart-ready wording: "Patient-reported improvement remains documented; however, command auditory hallucinations remain documented and should not be hidden."',
+    tightMessage: 'Chart-ready wording: "Rewrite into one paragraph using unchanged facts, neutral wording, missing data if relevant, brief missing-data checklist, source labels where relevant, and no overstated stability."',
+    oneLineMessage: 'Chart-ready wording: "Use unchanged facts, neutral wording, missing data if relevant, source labels, and one paragraph without overstating stability."',
   });
 }
 
 function buildDischargeSummaryPayload(input: ClinicalTaskPriorityInput) {
   const normalized = normalize(`${input.message}\n${input.sourceText}\n${input.currentDraftText || ''}`);
+
+  if (hasAny(normalized, [/\bdc summary from sparse course\b/, /\bmood better\b/, /\bsafety plan incomplete\b/, /\bsay low risk for sure\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Hospital course: the available source documents mood improvement and current denial of SI, but the course is sparse. Symptom status at discharge: improved mood and SI denial may be documented as reported, while residual risk if present remains relevant because the safety plan is incomplete. Follow-up gaps: follow-up and safety-plan completion are not fully established in the source. Source limits should remain explicit, with a brief missing-data checklist for final safety plan, follow-up, means/access, supports, medications, and return precautions. Source labels where relevant should distinguish patient report from chart/source limitations. Do not state a reassuring low-risk conclusion or overstate discharge stability."',
+      suggestions: [
+        'Keep hospital course, symptom status at discharge, and follow-up gaps explicit.',
+        'Keep residual risk if present and incomplete safety plan visible.',
+        'Use source limits and a brief missing-data checklist instead of reassuring language from thin data.',
+      ],
+    }, 'chart_ready_wording', 'discharge-summary', input, {
+      tightMessage: 'Chart-ready wording: "Hospital course is sparse but includes mood improvement and SI denial as reported. Symptom status at discharge, residual risk if present, follow-up gaps, source limits, brief missing-data checklist, and source labels where relevant remain explicit; do not state a reassuring low-risk conclusion."',
+      oneLineMessage: 'Chart-ready wording: "Mood better and SI denial are reported, but safety plan incomplete, follow-up gaps, source limits, residual risk if present, and brief missing-data checklist remain explicit."',
+    });
+  }
+
+  if (hasAny(normalized, [/\bwrite hosp course\b/, /\bmeds adjusted\b/, /\bfamily still worried\b/, /\bskip the family concern\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Hospital course: medications were adjusted per the available source, and family/collateral concern remained documented. Symptom status at discharge: do not describe symptoms or risk as resolved unless the source supports it. Follow-up gaps: pending follow-up details should be listed as not confirmed if not documented. Source limits remain explicit, including a brief missing-data checklist for medication list, response, side effects, risk status, family concern, follow-up, and discharge supports. Source labels where relevant should preserve family/collateral concern rather than omitting it."',
+      suggestions: [
+        'Do not skip family concern.',
+        'Carry medication adjustment and pending follow-up into the hospital course.',
+        'Keep source limits and residual risk if present visible.',
+      ],
+    }, 'chart_ready_wording', 'discharge-summary', input, {
+      tightMessage: 'Chart-ready wording: "Hospital course includes medication adjustments and family/collateral concern. Symptom status at discharge, residual risk if present, follow-up gaps, source limits, brief missing-data checklist, and source labels where relevant remain explicit."',
+      oneLineMessage: 'Chart-ready wording: "Medication adjustments and family concern remain in the hospital course; keep follow-up gaps, source limits, residual risk if present, and source labels visible."',
+    });
+  }
+
+  if (hasAny(normalized, [/\bd\/c summary pls\b/, /\bd\/c summary\b/, /\bpt wants leave\b/, /\bfollowup vague\b/, /\bincomplete safety plan\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Hospital course: the patient requested discharge, and the available source does not establish a complete discharge plan. Symptom status at discharge: describe only documented symptoms and current risk status, preserving residual risk if present. Follow-up gaps: follow-up is vague and should be documented as not fully confirmed from the source. Source limits remain explicit, including a brief missing-data checklist for medication list, final risk assessment, safety plan, follow-up appointment, supports, and means/access if relevant. Source labels where relevant should separate patient request for discharge from chart/source limitations."',
+      suggestions: [
+        'Keep vague follow-up as a follow-up gap.',
+        'Do not omit incomplete safety planning.',
+        'Do not make the discharge sound more settled than the source.',
+      ],
+    }, 'chart_ready_wording', 'discharge-summary', input, {
+      tightMessage: 'Chart-ready wording: "Hospital course includes patient request for discharge, while symptom status at discharge and follow-up remain incompletely documented. Keep residual risk if present, follow-up gaps, source limits, brief missing-data checklist, and source labels where relevant explicit."',
+      oneLineMessage: 'Chart-ready wording: "Patient wants discharge, but follow-up is vague; keep source limits, residual risk if present, follow-up gaps, and brief missing-data checklist explicit."',
+    });
+  }
+
+  if (hasAny(normalized, [/\bhospital course from bullets\b/, /\bresidual paranoia\b/, /\bmake dc sound uncomplicated\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Hospital course: the available source documents residual paranoia during the admission/course. Symptom status at discharge: residual paranoia should remain documented unless clearly resolved in the source. Follow-up gaps: follow-up, supports, medications, and safety planning should not be treated as complete unless documented. Source limits remain explicit, with residual risk if present and a brief missing-data checklist for final symptom status, risk, medications, discharge supports, and follow-up. Source labels where relevant should preserve staff/source observations. Do not make discharge sound uncomplicated if residual symptoms remain."',
+      suggestions: [
+        'Carry residual paranoia into symptom status at discharge.',
+        'Do not make the discharge sound uncomplicated.',
+        'Keep source limits and follow-up gaps visible.',
+      ],
+    }, 'chart_ready_wording', 'discharge-summary', input, {
+      tightMessage: 'Chart-ready wording: "Hospital course documents residual paranoia. Symptom status at discharge, residual risk if present, follow-up gaps, source limits, brief missing-data checklist, and source labels where relevant remain explicit; do not make discharge sound uncomplicated."',
+      oneLineMessage: 'Chart-ready wording: "Residual paranoia remains documented; keep symptom status at discharge, follow-up gaps, source limits, and residual risk if present explicit."',
+    });
+  }
 
   if (hasAny(normalized, [/\bcommand ah\b/, /\bcommand auditory hallucinations\b/, /\bshelter\b/, /\bfollow-up not actually scheduled\b/])) {
     return withAnswerMode({
@@ -2476,16 +3989,87 @@ function buildDischargeSummaryPayload(input: ClinicalTaskPriorityInput) {
     });
   }
 
+  if (hasAny(normalized, [/\bmedication refusal\b/, /\bpartial acceptance\b/, /\bintermittent suicidal ideation\b/, /\bdisposition\b/])) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Hospital course: the admission included intermittent suicidal ideation, medication refusal then partial acceptance, and ongoing conflict about discharge readiness. Symptom status at discharge: acute risk and home-safety concerns were not fully resolved in the available source. Disposition or follow-up details remain limited, including weak or unconfirmed ride and home-plan details. Source limits, residual risk if present, follow-up gaps, brief missing-data checklist, and source labels where relevant should remain explicit. This discharge summary should not overstate discharge stability or imply more risk resolution than the source supports."',
+      suggestions: [
+        'Keep medication refusal then partial acceptance in the hospital course.',
+        'Keep symptom status at discharge and disposition limitations explicit.',
+        'Do not present discharge stability beyond the available source.',
+      ],
+    }, 'chart_ready_wording', 'discharge-summary', input, {
+      tightMessage: 'Chart-ready wording: "Hospital course included intermittent suicidal ideation and medication refusal then partial acceptance. Symptom status at discharge, disposition, source limits, residual risk if present, follow-up gaps, brief missing-data checklist, and source labels where relevant remain explicit."',
+      oneLineMessage: 'Chart-ready wording: "Hospital course included medication refusal then partial acceptance; symptom status at discharge, disposition, follow-up gaps, and residual risk if present remain limited by the source."',
+    });
+  }
+
   return withAnswerMode({
-    message: 'Chart-ready wording: "Hospital course: the admission included intermittent suicidal ideation, medication refusal followed by partial acceptance, and ongoing conflict about discharge readiness. Symptom status at discharge: acute risk and home-safety concerns were not fully resolved in the available source. Disposition or follow-up details remain limited, including weak or unconfirmed ride and home-plan details. This discharge summary should not overstate discharge stability or imply more risk resolution than the source supports."',
+    message: 'Chart-ready wording: "Hospital course: summarize only the documented course from the source. Symptom status at discharge: document only the documented current symptoms, improvement, residual symptoms, and residual risk if present. Follow-up gaps: name follow-up, medication, safety-plan, support, or disposition gaps if not clearly established. Source limits should remain explicit, with a brief missing-data checklist for risk status, medications, safety plan, follow-up, supports, and final MSE. Source labels where relevant should separate patient report, collateral/source report, and staff/chart observations. This summary should not overstate discharge stability or imply more risk resolution than the source supports."',
     suggestions: [
       'Keep hospital course, symptom status at discharge, and limited disposition or follow-up details explicit.',
       'Do not present discharge stability beyond the available source.',
       'Do not invent home support, follow-up, or risk resolution.',
     ],
   }, 'chart_ready_wording', 'discharge-summary', input, {
-    tightMessage: 'Chart-ready wording: "Hospital course included intermittent suicidal ideation and medication refusal then partial acceptance. Symptom status at discharge and disposition details remained incompletely resolved in the available source."',
-    oneLineMessage: 'Chart-ready wording: "Hospital course included intermittent suicidal ideation and medication refusal then partial acceptance, and disposition or follow-up details remained limited in the available source."',
+    tightMessage: 'Chart-ready wording: "Hospital course, symptom status at discharge, residual risk if present, follow-up gaps, source limits, brief missing-data checklist, and source labels where relevant remain explicit; do not overstate discharge stability."',
+    oneLineMessage: 'Chart-ready wording: "Keep hospital course, symptom status at discharge, residual risk if present, follow-up gaps, and source limits explicit without overstating stability."',
+  });
+}
+
+function buildCrisisNotePayload(input: ClinicalTaskPriorityInput) {
+  const normalized = normalize(`${input.message}\n${input.sourceText}\n${input.currentDraftText || ''}`);
+
+  const eventDescription = (() => {
+    if (hasAny(normalized, [/\byelling\b/, /\bclenched fists\b/, /\brefused room\b/])) {
+      return 'yelling, clenched fists, refusal to go to the room, and calming after staff verbal support';
+    }
+    if (hasAny(normalized, [/\bthreats vague\b/, /\bsecurity nearby\b/, /\bno injury\b/])) {
+      return 'agitation with vague threats, security nearby, and no injury documented';
+    }
+    if (hasAny(normalized, [/\bbanging door\b/, /\bredirectable\b/])) {
+      return 'door-banging behavior followed by redirection';
+    }
+    if (hasAny(normalized, [/\bsevere anxiety vs agitation\b/, /\bmeds offered\b/, /\bmonitoring ongoing\b/])) {
+      return 'severe anxiety versus agitation, medication offered, and ongoing monitoring';
+    }
+    return 'the documented crisis/event behavior';
+  })();
+
+  return withAnswerMode({
+    message: `Chart-ready wording: "Crisis/event note: Objective behavior included ${eventDescription}. De-escalation attempts included least-restrictive verbal support, redirection, medication offer, security standby, or staff intervention only as documented in the source. Ongoing safety assessment remains required, including current risk, injury, target/intent/access if threats were reported, response to intervention, need for observation level, and plan. Source limits remain explicit: do not make restraint sound routine, do not label the patient violent beyond documented behavior, and do not say behavior fully resolved unless the source supports it. Brief missing-data checklist: precipitant, patient report, staff/collateral report, injuries, threats, means/access, de-escalation steps tried, medication response, observation level, and follow-up plan. Source labels where relevant should separate patient report, staff/source observation, and collateral."`,
+    suggestions: [
+      'Keep objective behavior first.',
+      'Document de-escalation attempts and least-restrictive steps only if in the source.',
+      'Keep ongoing safety assessment, source limits, and missing data visible.',
+    ],
+  }, 'chart_ready_wording', 'crisis-note', input, {
+    tightMessage: `Chart-ready wording: "Objective behavior included ${eventDescription}. De-escalation attempts and least-restrictive steps should be documented only as source-supported. Ongoing safety assessment, source limits, brief missing-data checklist, and source labels where relevant remain explicit."`,
+    oneLineMessage: 'Chart-ready wording: "Keep objective behavior, de-escalation attempts, ongoing safety assessment, source limits, brief missing-data checklist, and source labels where relevant explicit."',
+  });
+}
+
+function buildMessySourceWorkflowPayload(input: ClinicalTaskPriorityInput) {
+  const normalized = normalize(`${input.message}\n${input.sourceText}\n${input.currentDraftText || ''}`);
+  const sourceLanes = uniqueLines([
+    hasAny(normalized, [/\bpt says\b/, /\bpatient says\b/, /\bdenies si\b/, /\bno si now\b/]) ? 'separate patient report from the rest of the source first' : null,
+    hasAny(normalized, [/\bmom says\b/, /\bdad says\b/, /\bsister says\b/, /\bcollateral\b/]) ? 'keep collateral report in its own lane' : null,
+    hasAny(normalized, [/\bnursing says\b/, /\bpacing\b/, /\btalking to self\b/, /\bems said\b/]) ? 'keep nursing or observed behavior separate from report' : null,
+  ]);
+  const immediateRisk = uniqueLines([
+    hasAny(normalized, [/\bgoodbye txts?\b/, /\bgoodbye texts?\b/]) ? 'recent goodbye-text risk facts remain explicit' : null,
+    hasAny(normalized, [/\buds\b/, /\bmeth\b/, /\bsubstance\b/]) ? 'possible substance exposure remains relevant instead of being cleaned away' : null,
+  ]);
+
+  return withAnswerMode({
+    message: `Workflow guidance: First move: ${joinList(sourceLanes.length ? sourceLanes : ['separate patient report, collateral, and observation'])}. Then keep ${joinList(immediateRisk.length ? immediateRisk : ['the highest-signal contradiction or risk facts'])} before drafting. Once those source lanes are clean, build HPI or assessment from them instead of asking the source to sound settled too early.`,
+    suggestions: [
+      'Start with the contradiction or risk facts before polishing the note.',
+      'Keep patient report, collateral, and observation in separate source lanes.',
+      'After that first sort, HPI or assessment is the safest next drafting move.',
+    ],
+  }, 'workflow_guidance', 'workflow', input, {
+    tightMessage: 'Workflow guidance: First move: separate patient report, collateral, and observation, keep the highest-signal contradiction or risk facts explicit, and then build HPI or assessment from those source lanes.',
+    oneLineMessage: 'Workflow guidance: First move: separate patient report, collateral, and observation, then keep the highest-signal contradiction or risk facts explicit before drafting.',
   });
 }
 
@@ -2772,6 +4356,36 @@ function buildChartReadyWordingPayload(primaryConcern: PrimaryConcern, flags: Cl
 
   if (
     (primaryConcern === 'suicide' || primaryConcern === 'violence')
+    && hasAny(normalize(sourceText), [
+      /\bgoodbye texts?\b/,
+      /\bnot safe if sent home\b/,
+      /\btexting goodbye overnight\b/,
+      /\bdenies si\b/,
+      /\bdenied si\b/,
+      /\bdenies hi\b/,
+      /\bdenies homicidal ideation\b/,
+    ])
+    && hasAny(normalizedMessage, [
+      /\bgive me chart(?:-|\s)?ready wording instead\b/,
+      /\bchart(?:-|\s)?ready wording\b/,
+      /\bmake it chart(?:-|\s)?ready\b/,
+      /\bone sentence\b/,
+    ])
+  ) {
+    return withAnswerMode({
+      message: buildLowRiskChartReadyWording(primaryConcern, sourceText),
+      suggestions: [
+        'Keep the denial and the higher-acuity facts side by side in the same sentence.',
+        buildDoNotSayLine(primaryConcern, flags),
+        'Do not smooth active contradiction into low-risk wording.',
+      ],
+    }, 'chart_ready_wording', 'contradiction', input, {
+      oneLineMessage: buildLowRiskChartReadyWording(primaryConcern, sourceText),
+    });
+  }
+
+  if (
+    (primaryConcern === 'suicide' || primaryConcern === 'violence')
     && hasAny(normalizedMessage, [/\b(can i (?:say|call).*(?:risk is low|low (?:suicide|violence) risk)|would low (?:suicide|violence)-?risk wording be okay|keep the denial and the higher-?risk facts side by side)\b/])
   ) {
     return withAnswerMode({
@@ -2860,30 +4474,259 @@ function buildUnsafeLead(message: string, primaryConcern: PrimaryConcern) {
 export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInput): AssistantResponsePayload | null {
   const normalizedMessage = normalize(input.message);
   const normalizedCombined = normalize(`${input.message}\n${input.sourceText}\n${input.currentDraftText || ''}`);
+  const admissionLikeNote = noteTypeLooksLike(input.noteType, [/\badmission\b/, /\badmit\b/, /\bhpi\b/]);
+  const progressLikeNote = noteTypeLooksLike(input.noteType, [/\bprogress\b/]);
+  const dischargeSummaryLikeNote = noteTypeLooksLike(input.noteType, [/\bdischarge summary\b/]);
   const contextualAnswerMode = inferContextualAnswerMode(input.message, `${input.sourceText}\n${input.currentDraftText || ''}`);
   const override = resolvePinnedClinicalOverride(input, contextualAnswerMode);
   const mseAnalysis = input.mseAnalysis || parseMSEFromText(`${input.sourceText}\n${input.currentDraftText || ''}`);
   const combinedClinicalSource = `${input.message}\n${input.sourceText}\n${input.currentDraftText || ''}`;
+  const explicitDocumentRewrite = override?.answerMode === 'chart_ready_wording'
+    && hasAny(`${override.builderFamily || ''}`, [/\b(acute-hpi|progress-note|discharge-summary|crisis-note)\b/])
+    && !hasAny(normalizedMessage, [/\b(show|separate)\b.*\b(pt|patient)\b.*\b(report)\b.*\bcollateral\b/]);
+
+  const explicitProviderHistoryRiskWording = hasAny(normalizedMessage, [
+    /\brisk wording\b/,
+    /\bmake risk assessment\b/,
+    /\brewrite safety paragraph\b/,
+    /\bchronic vs acute risk\b/,
+  ]);
 
   if (
-    (override?.builderFamily === 'acute-hpi' || hasAcuteInpatientHpiGeneration(normalizedCombined))
+    explicitProviderHistoryRiskWording
+    && input.previousBuilderFamily !== 'contradiction'
+    && input.previousAnswerMode !== 'chart_ready_wording'
+    && !hasProviderHistoryViolenceContradiction(normalizedMessage)
+    && !hasProviderHistorySuicideContradiction(normalizedMessage)
+    && !hasProviderHistoryMedicationScenario(normalizedMessage)
+    && !hasProviderHistoryMedicationScenario(normalizedCombined)
+  ) {
+    return buildProviderHistoryGeneralRiskWordingPayload(input);
+  }
+
+  const providerHistoryContext = hasProviderHistoryRoutingMarker(normalizedCombined);
+  const providerHistoryCurrentContext = hasProviderHistoryRoutingMarker(normalizedMessage);
+  const providerHistoryLegalCapacity = (providerHistoryCurrentContext && hasProviderHistoryLegalCapacity(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryLegalCapacity(normalizedCombined));
+  const providerHistoryBenzoTaper = (providerHistoryCurrentContext && hasProviderHistoryBenzoTaper(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryBenzoTaper(normalizedCombined));
+  const providerHistoryDeliriumOverlap = (providerHistoryCurrentContext && hasProviderHistoryDeliriumOverlap(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryDeliriumOverlap(normalizedCombined));
+  const providerHistoryViolenceContradiction = (providerHistoryCurrentContext && hasProviderHistoryViolenceContradiction(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryViolenceContradiction(normalizedCombined));
+  const providerHistorySuicideContradiction = (providerHistoryCurrentContext && hasProviderHistorySuicideContradiction(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistorySuicideContradiction(normalizedCombined));
+  const providerHistoryMseCompletion = (providerHistoryCurrentContext && hasProviderHistoryMseCompletion(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryMseCompletion(normalizedCombined));
+  const providerHistoryGeneralRiskWording = (providerHistoryCurrentContext && hasProviderHistoryGeneralRiskWording(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryGeneralRiskWording(normalizedCombined));
+  const providerHistorySubstancePsychOverlap = (providerHistoryCurrentContext && hasProviderHistorySubstancePsychOverlap(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistorySubstancePsychOverlap(normalizedCombined));
+  const providerHistoryMedicalPsychOverlap = (providerHistoryCurrentContext && hasProviderHistoryMedicalPsychOverlap(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryMedicalPsychOverlap(normalizedCombined));
+  const providerHistoryMixedSiSubstanceDischarge = (providerHistoryCurrentContext && hasProviderHistoryMixedSiSubstanceDischarge(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryMixedSiSubstanceDischarge(normalizedCombined));
+  const providerHistoryMixedWithdrawalBenzo = (providerHistoryCurrentContext && hasProviderHistoryMixedWithdrawalBenzo(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryMixedWithdrawalBenzo(normalizedCombined));
+  const providerHistoryMixedCollateralCapacity = (providerHistoryCurrentContext && hasProviderHistoryMixedCollateralCapacity(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryMixedCollateralCapacity(normalizedCombined));
+  const providerHistoryInternalPreoccupationDenial = (providerHistoryCurrentContext && hasProviderHistoryInternalPreoccupationDenial(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryInternalPreoccupationDenial(normalizedCombined));
+  const providerHistoryCollateralConflict = (providerHistoryCurrentContext && hasProviderHistoryCollateralConflict(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryCollateralConflict(normalizedCombined));
+  const providerHistoryPsychosisWording = (providerHistoryCurrentContext && hasProviderHistoryPsychosisWording(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryPsychosisWording(normalizedCombined));
+  const providerHistoryMedicationKind = detectProviderHistoryMedicationScenarioKind(normalizedCombined)
+    ?? detectProviderHistoryMedicationScenarioKind(normalizedMessage);
+  const providerHistoryNonStigmatizingWording = (providerHistoryCurrentContext && hasProviderHistoryNonStigmatizingWording(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryNonStigmatizingWording(normalizedCombined));
+  const providerHistorySparseSourceHandling = (providerHistoryCurrentContext && hasProviderHistorySparseSourceHandling(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistorySparseSourceHandling(normalizedCombined));
+  const providerHistoryVagueFollowupPrompt = (providerHistoryCurrentContext && hasProviderHistoryVagueFollowupPrompt(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryVagueFollowupPrompt(normalizedCombined));
+  const providerHistoryTypoHeavyPrompt = (providerHistoryCurrentContext && hasProviderHistoryTypoHeavyPrompt(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryTypoHeavyPrompt(normalizedCombined));
+  const providerHistoryRushedShorthandPrompt = (providerHistoryCurrentContext && hasProviderHistoryRushedShorthandPrompt(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryRushedShorthandPrompt(normalizedCombined));
+  const providerHistoryMixedSparseMedRefillRisk = (providerHistoryCurrentContext && hasProviderHistoryMixedSparseMedRefillRisk(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryMixedSparseMedRefillRisk(normalizedCombined));
+  const providerHistoryMixedPsychosisMedicalRuleout = (providerHistoryCurrentContext && hasProviderHistoryMixedPsychosisMedicalRuleout(normalizedMessage))
+    || (providerHistoryContext && hasProviderHistoryMixedPsychosisMedicalRuleout(normalizedCombined));
+  const providerHistoryCoreDocumentationTask = hasAcuteInpatientHpiGeneration(normalizedCombined)
+    || hasProgressNoteRefinement(normalizedCombined)
+    || hasDischargeSummaryGeneration(normalizedCombined)
+    || hasCrisisNoteWorkflow(normalizedCombined);
+
+  if (providerHistoryMedicationKind) {
+    return buildProviderHistoryMedicationScenarioPayload(input, providerHistoryMedicationKind);
+  }
+
+  if (providerHistoryMixedPsychosisMedicalRuleout) {
+    return buildProviderHistoryMixedPsychosisMedicalRuleoutPayload(input);
+  }
+
+  if (providerHistoryMixedSparseMedRefillRisk) {
+    return buildProviderHistoryMixedSparseMedRefillRiskPayload(input);
+  }
+
+  if (
+    providerHistoryNonStigmatizingWording
+    && !providerHistoryCollateralConflict
+    && !providerHistoryInternalPreoccupationDenial
+    && !providerHistoryPsychosisWording
+    && !hasMedicationRefusalAuthorityContext(normalizedCombined)
+  ) {
+    return buildProviderHistoryNonStigmatizingPayload(input);
+  }
+
+  if (providerHistorySparseSourceHandling && !providerHistoryCoreDocumentationTask) {
+    return buildProviderHistorySparseSourcePayload(input);
+  }
+
+  if (
+    providerHistoryVagueFollowupPrompt
+    && !providerHistoryCoreDocumentationTask
+    && !providerHistoryMixedCollateralCapacity
+    && !providerHistoryMedicalPsychOverlap
+    && !providerHistoryDeliriumOverlap
+    && !providerHistorySubstancePsychOverlap
+  ) {
+    return buildProviderHistoryVagueFollowupPayload(input);
+  }
+
+  if (providerHistoryTypoHeavyPrompt) {
+    return buildProviderHistoryTypoHeavyPayload(input);
+  }
+
+  if (providerHistoryRushedShorthandPrompt) {
+    return buildProviderHistoryRushedShorthandPayload(input);
+  }
+
+  if (
+    progressLikeNote
+    && input.currentDraftText?.trim()
+    && isUiRewriteRequest(input.message)
+    && (!input.previousBuilderFamily || input.previousBuilderFamily === 'progress-note')
+    && !hasProviderHistoryMseCompletion(normalize(input.currentDraftText))
+    && !hasProviderHistoryGeneralRiskWording(normalize(input.currentDraftText))
+    && !hasProviderHistoryMixedWithdrawalBenzo(normalize(input.currentDraftText))
+    && !hasProviderHistoryBenzoTaper(normalize(input.currentDraftText))
+  ) {
+    return buildProgressNoteRefinementPayload(input);
+  }
+
+  if (providerHistoryMseCompletion) {
+    return buildMseCompletionLimitsPayload(input, mseAnalysis);
+  }
+
+  if (providerHistoryMixedSiSubstanceDischarge) {
+    return buildProviderHistoryMixedSiSubstanceDischargePayload(input);
+  }
+
+  if (providerHistoryMixedCollateralCapacity) {
+    return buildProviderHistoryMixedCollateralCapacityPayload(input);
+  }
+
+  if (providerHistoryInternalPreoccupationDenial) {
+    return buildProviderHistoryInternalPreoccupationDenialPayload(input);
+  }
+
+  if (providerHistoryCollateralConflict) {
+    return buildProviderHistoryCollateralConflictPayload(input);
+  }
+
+  if (providerHistoryPsychosisWording) {
+    return buildProviderHistoryPsychosisWordingPayload(input);
+  }
+
+  if (providerHistoryLegalCapacity) {
+    return buildProviderHistoryCapacityPayload(input);
+  }
+
+  if (providerHistoryMixedWithdrawalBenzo || providerHistoryBenzoTaper) {
+    return buildProviderHistoryBenzoTaperPayload(input);
+  }
+
+  if (providerHistorySubstancePsychOverlap) {
+    return buildProviderHistorySubstancePsychOverlapPayload(input);
+  }
+
+  if (providerHistoryMedicalPsychOverlap) {
+    return buildProviderHistoryMedicalPsychOverlapPayload(input);
+  }
+
+  if (providerHistoryDeliriumOverlap) {
+    return buildProviderHistoryDeliriumOverlapPayload(input);
+  }
+
+  if (
+    providerHistoryViolenceContradiction
+    && (input.previousAnswerMode === 'chart_ready_wording' || hasAny(normalizedCombined, [/\bmake it chart-ready\b/, /\bchart-ready wording:/]))
+    && hasAny(normalizedMessage, [/\blow[ -]?risk wording\b/, /\blow violence[ -]?risk\b/, /\bshortest\b/])
+  ) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Patient denial should remain explicit, and collateral threat history should remain documented separately. Violence risk remains conflicted, and low violence-risk wording is not supported here while those threat facts remain unresolved."',
+      suggestions: [
+        'Keep patient denial and collateral threat history documented separately.',
+        'Do not collapse the remaining threat facts into low violence-risk wording.',
+      ],
+    }, 'chart_ready_wording', 'contradiction', input);
+  }
+
+  if (providerHistoryViolenceContradiction) {
+    return buildProviderHistoryViolenceContradictionPayload(input);
+  }
+
+  if (providerHistorySuicideContradiction) {
+    return buildProviderHistorySuicideContradictionPayload(input);
+  }
+
+  if (providerHistoryGeneralRiskWording) {
+    return buildProviderHistoryGeneralRiskWordingPayload(input);
+  }
+
+  if (
+    input.stage === 'compose'
+    && admissionLikeNote
+    && input.sourceText.trim()
+    && isMessySourceStartRequest(input.message)
+  ) {
+    return buildMessySourceWorkflowPayload(input);
+  }
+
+  if (
+    (override?.builderFamily === 'acute-hpi'
+      || hasAcuteInpatientHpiGeneration(normalizedCombined)
+      || (admissionLikeNote && hasAny(normalizedMessage, [/\bneed hpi\b/, /\bhpi fast\b/, /\bchart(?:-|\s)?ready hpi\b/, /\bkeep admit reason\b/, /\bdon'?t invent timeline\b/])))
     && (!override?.answerMode || override.answerMode === 'chart_ready_wording')
   ) {
     return buildAcuteInpatientHpiPayload(input);
   }
 
   if (
-    (override?.builderFamily === 'progress-note' || hasProgressNoteRefinement(normalizedCombined))
+    (override?.builderFamily === 'progress-note'
+      || hasProgressNoteRefinement(normalizedCombined)
+      || (progressLikeNote && input.currentDraftText?.trim() && isUiRewriteRequest(input.message)))
     && (!override?.answerMode || override.answerMode === 'chart_ready_wording')
   ) {
     return buildProgressNoteRefinementPayload(input);
   }
 
   if (
-    (override?.builderFamily === 'discharge-summary' || hasDischargeSummaryGeneration(normalizedCombined))
+    (override?.builderFamily === 'discharge-summary'
+      || hasDischargeSummaryGeneration(normalizedCombined)
+      || (dischargeSummaryLikeNote && input.currentDraftText?.trim() && isUiRewriteRequest(input.message)))
     && (!override?.answerMode || override.answerMode === 'chart_ready_wording')
   ) {
     return buildDischargeSummaryPayload(input);
+  }
+
+  if (
+    (override?.builderFamily === 'crisis-note'
+      || hasCrisisNoteWorkflow(normalizedCombined))
+    && (!override?.answerMode || override.answerMode === 'chart_ready_wording')
+  ) {
+    return buildCrisisNotePayload(input);
   }
 
   if (
@@ -2937,6 +4780,9 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
       /\brewrite\b/,
       /\bmake it chart-ready\b/,
       /\btighten\b/,
+      /\bleave out what is not documented\b/,
+      /\bmake it more neutral\b/,
+      /\bsplit plan bullets\b/,
     ])
   ) {
     return buildProgressNoteRefinementPayload(input);
@@ -2956,6 +4802,24 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     ])
   ) {
     return buildDischargeSummaryPayload(input);
+  }
+
+  if (
+    input.previousAnswerMode === 'chart_ready_wording'
+    && input.previousBuilderFamily === 'crisis-note'
+    && hasAny(normalizedMessage, [
+      /\binclude\b/,
+      /\bkeep objective\b/,
+      /\brisk rationale\b/,
+      /\bleast restrictive\b/,
+      /\bwithout blame\b/,
+      /\bsay violent\b/,
+      /\bmake restraint sound routine\b/,
+      /\bbehavior resolved\b/,
+      /\bomit staff trigger\b/,
+    ])
+  ) {
+    return buildCrisisNotePayload(input);
   }
 
   if (!input.sourceText.trim() && !isTaskShapedClinicalRequest(input.message) && !override?.answerMode) {
@@ -3024,7 +4888,7 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     primaryConcern = 'generic-risk';
   }
 
-  if (!primaryConcern && hasAny(`${override?.builderFamily || ''}`, [/\b(medication-refusal|ama-elopement|personality-language|acute-hpi|progress-note|discharge-summary)\b/])) {
+  if (!primaryConcern && hasAny(`${override?.builderFamily || ''}`, [/\b(medication-refusal|ama-elopement|personality-language|acute-hpi|progress-note|discharge-summary|crisis-note)\b/])) {
     primaryConcern = 'generic-risk';
   }
 
@@ -3100,6 +4964,14 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     return buildWithdrawalClinicalExplanationPayload(input);
   }
 
+  if (override?.answerMode === 'clinical_explanation' && hasProviderHistorySubstancePsychOverlap(normalizedCombined)) {
+    return buildProviderHistorySubstancePsychOverlapPayload(input);
+  }
+
+  if (override?.answerMode === 'workflow_guidance' && hasProviderHistoryMedicalPsychOverlap(normalizedCombined)) {
+    return buildProviderHistoryMedicalPsychOverlapPayload(input);
+  }
+
   if (override?.answerMode === 'workflow_guidance') {
     if (hasAmaElopementRisk(normalizedCombined)) {
       return buildAmaElopementWorkflowPayload(input);
@@ -3125,6 +4997,10 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
       return buildFragmentedSourceWorkflowPayload(input);
     }
 
+    if (hasProviderHistoryMedicalPsychOverlap(normalizedCombined)) {
+      return buildProviderHistoryMedicalPsychOverlapPayload(input);
+    }
+
     if (hasAny(normalizedCombined, [/\b(psych or medical|medical versus psych|medical vs psych|delirium|uti|without overcalling either|just keep it psych)\b/])) {
       return buildMedicalPsychOverlapPayload(input);
     }
@@ -3146,7 +5022,7 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     override?.answerMode === 'warning_language'
     && (
       hasInvoluntaryMedicationRefusal(normalizedCombined)
-      || hasAny(normalizedMessage, [/\bchoosing not to comply with treatment\b/, /\bleave it there\b/])
+      || hasAny(normalizedMessage, [/\bchoosing not to comply with treatment\b/])
     )
   ) {
     return buildInvoluntaryMedicationWarningPayload(input);
@@ -3188,11 +5064,27 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     return buildDischargeSummaryPayload(input);
   }
 
+  if (override?.answerMode === 'chart_ready_wording' && builderFamily === 'crisis-note') {
+    return buildCrisisNotePayload(input);
+  }
+
   if (override?.answerMode === 'chart_ready_wording' && hasAny(normalizedCombined, [/\b(meets? hold|hold criteria|legal hold|transfer can happen|hold threshold|overdose if sent home|hid pills|safe place to stay)\b/])) {
     return buildLegalHoldLanguagePayload(input);
   }
 
   if (input.followupDirective?.preserveClinicalState && override?.answerMode && builderFamily) {
+    if (
+      builderFamily === 'contradiction'
+      && input.previousAnswerMode === 'chart_ready_wording'
+      && hasAny(normalizedMessage, [/\blow[ -]?risk wording\b/, /\blow suicide[ -]?risk\b/, /\blow violence[ -]?risk\b/])
+    ) {
+      return buildChartReadyWordingPayload(primaryConcern || 'violence', flags, input);
+    }
+
+    if (builderFamily === 'risk' && hasProviderHistoryGeneralRiskWording(normalizedCombined)) {
+      return buildProviderHistoryGeneralRiskWordingPayload(input);
+    }
+
     if (builderFamily === 'discharge') {
       return buildChartReadyWordingPayload(primaryConcern || 'generic-risk', flags, input);
     }
@@ -3247,7 +5139,19 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
       return buildDischargeSummaryPayload(input);
     }
 
+    if (builderFamily === 'crisis-note') {
+      return buildCrisisNotePayload(input);
+    }
+
     if (builderFamily === 'overlap') {
+      if (hasProviderHistorySubstancePsychOverlap(normalizedCombined)) {
+        return buildProviderHistorySubstancePsychOverlapPayload(input);
+      }
+
+      if (hasProviderHistoryMedicalPsychOverlap(normalizedCombined)) {
+        return buildProviderHistoryMedicalPsychOverlapPayload(input);
+      }
+
       if (override.answerMode === 'workflow_guidance') {
         return hasConsultLiaisonMedicalOverlap(normalizedCombined)
           ? buildConsultLiaisonWorkflowPayload(input)
@@ -3274,13 +5178,20 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
 
   if (!primaryConcern || (!isTaskShapedClinicalRequest(input.message) && !override?.answerMode)) {
     if (input.followupDirective?.preserveClinicalState && override?.answerMode) {
+      if ((builderFamily === 'risk' || override.builderFamily === 'risk') && hasProviderHistoryGeneralRiskWording(normalizedCombined)) {
+        return buildProviderHistoryGeneralRiskWordingPayload(input);
+      }
+
       const persistedMode = override.answerMode as AssistantAnswerMode;
       const safeMessage = (() => {
         switch (persistedMode) {
           case 'chart_ready_wording':
             return 'Chart-ready wording: "The source does not support that shortcut. Keep the current uncertainty or contradiction explicit in the note."';
           case 'warning_language':
-            if (builderFamily === 'risk' && hasAny(normalizedMessage, [/\bviolence\b/, /\bintent documented\b/])) {
+            if (hasAny(normalizedMessage, [/\bno imminent violence intent documented\b/, /\bviolence intent\b/])) {
+              return 'Warning: The source does not support that shortcut, and do not flatten the remaining threat facts into reassurance.';
+            }
+            if ((builderFamily === 'risk' || builderFamily === 'contradiction') && hasAny(normalizedMessage, [/\bviolence\b/, /\bintent documented\b/])) {
               return 'Warning: The source does not support that shortcut, and do not flatten the remaining threat facts into reassurance.';
             }
             return 'Warning: The source does not support that shortcut; keep the unresolved risk or contradiction explicit.';
@@ -3308,8 +5219,26 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     return null;
   }
 
+  if (
+    override?.answerMode === 'warning_language'
+    && hasAny(normalizedMessage, [/\blow[ -]?risk wording\b/, /\bshortest\b/])
+    && (
+      input.previousBuilderFamily === 'contradiction'
+      || input.previousAnswerMode === 'chart_ready_wording'
+      || hasAny(normalizedCombined, [/\b(make it chart-ready|chart-ready wording:|collateral threat history|remain documented separately|brother says .* threatened|threatened neighbor|making them pay)\b/])
+    )
+  ) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Patient denial should remain explicit, and collateral threat history should remain documented separately. Violence risk remains conflicted, and low violence-risk wording is not supported here while those threat facts remain unresolved."',
+      suggestions: [
+        'Keep patient denial and collateral threat history documented separately.',
+        'Do not collapse the remaining threat facts into low violence-risk wording.',
+      ],
+    }, 'chart_ready_wording', 'contradiction', input);
+  }
+
   if (override?.answerMode === 'warning_language') {
-    if (hasInvoluntaryMedicationRefusal(normalizedCombined) || hasAny(normalizedMessage, [/\bchoosing not to comply with treatment\b/, /\bleave it there\b/])) {
+    if (hasInvoluntaryMedicationRefusal(normalizedCombined) || hasAny(normalizedMessage, [/\bchoosing not to comply with treatment\b/])) {
       return buildInvoluntaryMedicationWarningPayload(input);
     }
 
@@ -3347,6 +5276,10 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
 
     if (builderFamily === 'discharge-summary' || hasDischargeSummaryGeneration(normalizedCombined)) {
       return buildDischargeSummaryPayload(input);
+    }
+
+    if (builderFamily === 'crisis-note' || hasCrisisNoteWorkflow(normalizedCombined)) {
+      return buildCrisisNotePayload(input);
     }
 
     if (hasInvoluntaryMedicationRefusal(normalizedCombined)) {
@@ -3431,6 +5364,10 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     return buildDischargeSummaryPayload(input);
   }
 
+  if (hasCrisisNoteWorkflow(normalizedCombined)) {
+    return buildCrisisNotePayload(input);
+  }
+
   if (hasInvoluntaryMedicationRefusal(normalizedCombined)) {
     if (hasAny(normalizedCombined, [/\b(noncompliant|choosing not to comply|punitive|warning language|force it|over objection)\b/])) {
       return buildInvoluntaryMedicationWarningPayload(input);
@@ -3466,7 +5403,7 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     const chartReady = buildAssessmentLanguage(primaryConcern, flags, `${input.sourceText}\n${input.currentDraftText || ''}`);
     const assessmentFrame = buildAssessmentFrame(primaryConcern, flags);
     return withAnswerMode({
-      message: `${buildWarningText(primaryConcern, flags)} Interpretation: Vera should document the contradiction side by side${documentationNeeds.length ? `: keep explicit ${joinList(documentationNeeds)}.` : '.'} ${assessmentFrame}`,
+      message: `${buildWarningText(primaryConcern, flags)} Interpretation: Atlas should document the contradiction side by side${documentationNeeds.length ? `: keep explicit ${joinList(documentationNeeds)}.` : '.'} ${assessmentFrame}`,
       suggestions: [
         `Interpretation: ${assessmentFrame}`,
         chartReady,
@@ -3480,7 +5417,7 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
       const blockers = buildDischargeBlockers(primaryConcern, flags, input);
       const documentationNeeds = buildDocumentationNeeds(primaryConcern, flags, input);
       return {
-        message: `Vera should not lean toward discharge here because ${joinList(blockers)}. Keep explicit ${joinList(documentationNeeds)} before the plan is cleaned up.`,
+        message: `Atlas should not lean toward discharge here because ${joinList(blockers)}. Keep explicit ${joinList(documentationNeeds)} before the plan is cleaned up.`,
         suggestions: [
           blockers[0] ? `Highest-signal blocker: ${blockers[0]}.` : 'Do not lean toward discharge while the source stays unstable.',
           buildWarningText(primaryConcern, flags),

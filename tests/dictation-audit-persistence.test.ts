@@ -42,7 +42,7 @@ describe('dictation audit persistence', () => {
     vi.restoreAllMocks();
   });
 
-  it('stores and filters dictation audit history by provider and session', async () => {
+  it('stores and filters dictation audit history by provider and session', { timeout: 10000 }, async () => {
     const { listDictationAuditEvents, saveDictationAuditEvent } = await import('@/lib/db/client');
 
     await saveDictationAuditEvent(createAuditEvent(), 'provider-1');

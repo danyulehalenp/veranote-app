@@ -705,7 +705,7 @@ function buildRequestedRevisionHelp(normalizedMessage: string, rawMessage: strin
     suggestions: [
       `Suggested revision: ${revisionText}`,
       'Use this when you forgot to include a source-supported detail after the draft was generated.',
-      'If this kind of addition repeats often, Vera can help turn it into a reusable workflow preference later.',
+      'If this kind of addition repeats often, Atlas can help turn it into a reusable workflow preference later.',
     ],
     actions: [
       {
@@ -1166,7 +1166,7 @@ function buildConversationalHelp(normalizedMessage: string, context?: AssistantA
     };
   }
 
-  if (hasKeyword(normalizedMessage, ['hello', 'hi vera', 'hey vera', 'good morning', 'good afternoon', 'good evening'])) {
+  if (hasKeyword(normalizedMessage, ['hello', 'hi vera', 'hey vera', 'hi atlas', 'hey atlas', 'good morning', 'good afternoon', 'good evening'])) {
     return {
       message: `Hi${providerName ? `, ${providerName}` : ''}. What do you need help with right now?`,
       suggestions: [
@@ -1186,7 +1186,7 @@ function buildConversationalHelp(normalizedMessage: string, context?: AssistantA
 
   if (hasKeyword(normalizedMessage, ['who are you', 'what can you do', 'what do you do'])) {
     return {
-      message: 'I’m Vera, your Veranote assistant. I can help with source organization, draft review, section rewrites, workflow preferences, and trusted reference lookups. If I do not know a trusted answer yet, I should say so and show you the safest next path.',
+      message: 'I’m Atlas, your Veranote assistant. I can help with source organization, draft review, section rewrites, workflow preferences, and trusted reference lookups. If I do not know a trusted answer yet, I should say so and show you the safest next path.',
       suggestions: [
         'Ask me to explain a warning, tighten a section, or look up a coding or documentation reference.',
       ],
@@ -1783,7 +1783,7 @@ function buildPromptBuilderHelp(stage: AssistantStage, rawMessage: string, conte
 
   if (stage === 'review') {
     return {
-      message: `In review${noteLine}, use prompt preferences only for repeat patterns you actually want Vera to remember later, like overly polished wording or destination-specific cleanup.`,
+      message: `In review${noteLine}, use prompt preferences only for repeat patterns you actually want Atlas to remember later, like overly polished wording or destination-specific cleanup.`,
       suggestions: [
         'Capture repeatable review edits as reusable note preferences.',
         'Avoid preferences that hide source ambiguity.',
@@ -1794,7 +1794,7 @@ function buildPromptBuilderHelp(stage: AssistantStage, rawMessage: string, conte
   }
 
   return {
-    message: `Use the prompt builder${noteLine} to tell Vera how you want this note lane to behave. Focus on tone, section structure, destination formatting, and how conservative the wording should be.`,
+    message: `Use the prompt builder${noteLine} to tell Atlas how you want this note lane to behave. Focus on tone, section structure, destination formatting, and how conservative the wording should be.`,
     suggestions: [
       'Describe the note lane, not one patient.',
       'Say what to keep brief, what to keep literal, and what should stay uncertain.',
@@ -1835,16 +1835,16 @@ function buildUnknownQuestionFallback(message: string): AssistantResponsePayload
   return {
     message: "I don't have a safe Veranote answer for that yet.",
     suggestions: [
-      'Send this through Beta Feedback if you want it added as a teachable Vera skill.',
+      'Send this through Beta Feedback if you want it added as a teachable Atlas skill.',
     ],
     actions: [
       {
         type: 'send-beta-feedback',
-        label: 'Teach Vera this',
-        instructions: 'Send this unanswered question into the Vera gaps queue so it can be reviewed and added to Vera’s abilities.',
+        label: 'Teach Atlas this',
+        instructions: 'Send this unanswered question into the Atlas gaps queue so it can be reviewed and added to Atlas’s abilities.',
         feedbackCategory: 'feature-request',
-        pageContext: 'Vera assistant gap',
-        feedbackMessage: `Vera could not answer this provider question: ${message}`,
+        pageContext: 'Atlas assistant gap',
+        feedbackMessage: `Atlas could not answer this provider question: ${message}`,
       },
     ],
   };
@@ -2212,6 +2212,10 @@ function shouldIgnoreStaleClinicalContext(message: string) {
 
 function isStandaloneMedicationDocumentationPrompt(message: string) {
   const normalized = message.trim().toLowerCase();
+  if (/\b(capacity|no capacity|consent|legal authority|over objection|both\?|clinical recommendation|can .*refuse)\b/.test(normalized)) {
+    return false;
+  }
+
   return /\b(chart wording|wording|document|documentation|note)\b/.test(normalized)
     && /\b(refused|declined|stopped|nonadherence|non adherence|punitive|without sounding punitive|because of tremor)\b/.test(normalized)
     && /\b(abilify|aripiprazole|lithium|zoloft|sertraline|depakote|divalproex|lamotrigine|trileptal|oxcarbazepine|med)\b/.test(normalized)
@@ -2957,7 +2961,7 @@ export async function POST(request: Request) {
       knowledgeAwarePayload = knowledgeSupportPayload;
     } else if (!suppressGlobalSuggestions && !bundleHasKnowledge(filteredKnowledgeBundle) && knowledgeIntent !== 'draft_support') {
       knowledgeAwarePayload = appendUniqueSuggestions(learnedPayload, [
-        'No structured psychiatry knowledge match was found here, so Vera should stay source-only and avoid guessing.',
+        'No structured psychiatry knowledge match was found here, so Atlas should stay source-only and avoid guessing.',
       ]);
     } else if (!suppressGlobalSuggestions && knowledgeIntent === 'diagnosis_help' && filteredKnowledgeBundle.diagnosisConcepts.length) {
       knowledgeAwarePayload = appendUniqueSuggestions(learnedPayload, [

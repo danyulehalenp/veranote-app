@@ -71,8 +71,8 @@ export function buildVeraIntro(input: {
       : 'Hi,';
 
   const roleLine = input.stage === 'compose'
-    ? 'I am Vera. I can help you move through compose, shape prompt and note preferences, and keep your note lane aligned with how you like to work.'
-    : 'I am Vera. I can help you work through review, explain trust flags, and tighten note wording without losing source fidelity.';
+    ? 'I am Atlas. I can help you move through compose, shape prompt and note preferences, and keep your note lane aligned with how you like to work.'
+    : 'I am Atlas. I can help you work through review, explain trust flags, and tighten note wording without losing source fidelity.';
 
   const proactivityLine = input.proactivityLevel === 'anticipatory'
     ? 'I will also surface patterns and next steps more proactively when I see them.'

@@ -45,8 +45,14 @@ export function assemblePrompt(input: AssemblePromptInput) {
       : constraints.sourceIsSparse
         ? 'Sparse-input mode: the source is thin. Keep sections short, avoid filler, and do not translate thin input into a full-looking visit.'
         : null,
+    constraints.sourceIsSparse
+      ? 'When a template contains many sections, keep only the sections that carry grounded clinical value for this source. Do not pad the draft by rendering a long run of empty history domains or repeated "Not documented in source" lines just to satisfy a template silhouette.'
+      : null,
     !constraints.sourceHasExplicitPlan
       ? 'No explicit plan is documented in the source. In the Plan section, say only that plan details were not documented in the source, or leave the section minimal. Do not invent monitoring, supportive care, follow-up actions, refill actions, coping strategies, or safety-management steps.'
+      : null,
+    constraints.sourceHasExplicitPlan
+      ? 'If the source documents plan-shaped actions such as safety planning, reviewed crisis resources, support-person involvement, med adjustments, monitoring, or follow-up timing, carry those details into the Plan section instead of leaving Plan generic.'
       : null,
     constraints.sourceOnlyHasRefillOrContinuePlan
       ? 'Plan content is minimal. Do not broaden a refill request, continue-current-plan statement, or simple follow-up interval into a fuller management plan.'
@@ -59,6 +65,9 @@ export function assemblePrompt(input: AssemblePromptInput) {
       : null,
     constraints.sourceIsVerySparse
       ? 'For required sections with no supported content, prefer an empty/minimal section or a very short statement like "Not documented in source." Do not pad with explanatory filler such as "No new symptom details were provided" or "Assessment details were not provided in the source."'
+      : null,
+    constraints.sourceIsSparse
+      ? 'If a brief documentation-gaps line would make the draft more useful, use one short gap statement in Assessment or Plan rather than repeating the same missing-information sentence across multiple sections.'
       : null,
     constraints.sourceHasTherapyInterventionWithoutClearEffect
       ? 'An intervention was attempted without clear or certain benefit. Preserve the attempted intervention and the reported lack of help or uncertainty about benefit in the main note. Do not imply progress, symptom improvement, or future coping work unless explicitly documented.'

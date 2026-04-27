@@ -11,7 +11,7 @@ import { summarizeBetaFeedbackQueue } from '@/lib/beta/vera-gaps';
 import type { BetaFeedbackItem } from '@/types/beta-feedback';
 
 const primaryLinks = [
-  { href: '/', label: 'Workspace' },
+  { href: '/dashboard/new-note', label: 'Workspace' },
   { href: '/dashboard/drafts', label: 'Saved Drafts' },
 ];
 
@@ -23,7 +23,8 @@ const secondaryLinks = [
 
 export function TopNav() {
   const pathname = usePathname();
-  const feedbackHref = `${pathname === '/' ? '' : pathname}#beta-feedback`;
+  const workspacePath = '/dashboard/new-note';
+  const feedbackHref = `${pathname === workspacePath ? workspacePath : pathname}#beta-feedback`;
   const [feedbackSummary, setFeedbackSummary] = useState<ReturnType<typeof summarizeBetaFeedbackQueue> | null>(null);
 
   useEffect(() => {
@@ -63,7 +64,7 @@ export function TopNav() {
     <header className="sticky top-0 z-40 border-b border-cyan-200/10 bg-[rgba(4,12,24,0.82)] backdrop-blur-xl">
       <div className="flex w-full flex-col gap-3 px-3 py-3 md:px-4 lg:flex-row lg:items-center lg:justify-between lg:px-5">
         <div className="shrink-0">
-          <Link href="/" className="inline-flex rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-300/40 focus:ring-offset-2 focus:ring-offset-[rgba(4,12,24,0.82)]">
+          <Link href={workspacePath} className="inline-flex rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-300/40 focus:ring-offset-2 focus:ring-offset-[rgba(4,12,24,0.82)]">
             <BrandLockup variant="nav" subtitle="Clinical Note Intelligence Workspace" />
           </Link>
         </div>

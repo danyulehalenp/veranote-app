@@ -413,7 +413,7 @@ function buildReassessmentOrWhyNowHelp(noteText: string): AssistantResponsePaylo
         combinedCues[0]
           ? `Still worth tightening: ${combinedCues[0].label}.`
           : 'Keep today’s reassessment frame and the lower-level-care boundary explicit when you finalize the note.',
-        'This remains documentation support, not a final utilization-review command from Vera.',
+        'This remains documentation support, not a final utilization-review command from Atlas.',
       ],
     );
   }
@@ -449,7 +449,7 @@ function buildMonitoringDocumentationHelp(noteText: string): AssistantResponsePa
         combinedCues[0]
           ? `Still worth tightening: ${combinedCues[0].label}.`
           : 'Keep the current risk picture and why-now monitoring rationale explicit when you finalize it.',
-        'This stays as documentation support, not a legal or disposition command from Vera.',
+        'This stays as documentation support, not a legal or disposition command from Atlas.',
       ],
     );
   }
@@ -484,7 +484,7 @@ function buildGapSummaryHelp(noteText: string): AssistantResponsePayload {
         support.louisianaBoosts[0]
           ? `Louisiana-specific support already visible: ${support.louisianaBoosts[0]}`
           : 'Keep the why-now timeline, current reassessment, and 24-hour-care rationale explicit when you finalize it.',
-        'This is still a documentation-support read, not a final utilization-review command from Vera.',
+        'This is still a documentation-support read, not a final utilization-review command from Atlas.',
       ],
     );
   }

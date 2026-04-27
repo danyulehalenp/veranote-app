@@ -32,12 +32,237 @@ describe('section profiles', () => {
     const plan = planSections({
       noteType: 'Inpatient psych progress note',
       requestedScope: 'selected-sections',
-      requestedSections: ['intervalUpdate', 'assessment', 'plan'],
+      requestedSections: ['progressIntervalHistoryPatientReport', 'assessmentClinicalFormulation', 'progressPlanContinuedHospitalization'],
     });
 
     expect(plan.scope).toBe('selected-sections');
-    expect(plan.sections).toEqual(['intervalUpdate', 'assessment', 'plan']);
+    expect(plan.sections).toEqual(['progressIntervalHistoryPatientReport', 'assessmentClinicalFormulation', 'progressPlanContinuedHospitalization']);
     expect(plan.requiresStandaloneMse).toBe(false);
+  });
+
+  it('uses progress-note-specific sections for inpatient psych progress notes', () => {
+    const plan = planSections({
+      noteType: 'Inpatient Psych Progress Note',
+      requestedScope: 'full-note',
+    });
+
+    expect(plan.profile?.id).toBe('inpatient-psych-progress');
+    expect(plan.sections).toEqual([
+      'progressReasonIntervalConcern',
+      'sourceOfInformation',
+      'progressIntervalHistoryPatientReport',
+      'progressStaffNursingCollateralObservations',
+      'mentalStatusExamObservations',
+      'riskAssessment',
+      'progressMedicationsTreatmentAdherence',
+      'assessmentClinicalFormulation',
+      'progressPlanContinuedHospitalization',
+      'sourceLimitations',
+    ]);
+    expect(plan.requiresStandaloneMse).toBe(true);
+  });
+
+  it('uses crisis-specific sections for psychiatric crisis notes', () => {
+    const plan = planSections({
+      noteType: 'Psychiatric Crisis Note',
+      requestedScope: 'full-note',
+    });
+
+    expect(plan.profile?.id).toBe('psychiatric-crisis-note');
+    expect(plan.sections).toEqual([
+      'reasonForCrisisEvaluation',
+      'sourceOfInformation',
+      'crisisEventsObjectiveBehavior',
+      'patientReport',
+      'safetyRisk',
+      'interventionsProvided',
+      'patientResponseToIntervention',
+      'assessmentClinicalImpression',
+      'planMonitoringDisposition',
+      'sourceLimitations',
+    ]);
+    expect(plan.requiresStandaloneMse).toBe(true);
+  });
+
+  it('uses risk-heavy-specific sections for risk-heavy notes', () => {
+    const plan = planSections({
+      noteType: 'Risk-Heavy Note',
+      requestedScope: 'full-note',
+    });
+
+    expect(plan.profile?.id).toBe('risk-heavy-note');
+    expect(plan.sections).toEqual([
+      'reasonForRiskReview',
+      'sourceOfInformation',
+      'currentPatientReport',
+      'recentCollateralRiskEvidence',
+      'mentalStatusBehavioralObservations',
+      'riskAssessment',
+      'protectiveFactorsSupports',
+      'assessmentClinicalFormulation',
+      'planSafetyMonitoring',
+      'sourceLimitations',
+    ]);
+    expect(plan.requiresStandaloneMse).toBe(true);
+  });
+
+  it('uses discharge-summary-specific sections for inpatient psych discharge summaries', () => {
+    const plan = planSections({
+      noteType: 'Inpatient Psych Discharge Summary',
+      requestedScope: 'full-note',
+    });
+
+    expect(plan.profile?.id).toBe('inpatient-psych-discharge-summary');
+    expect(plan.sections).toEqual([
+      'reasonForAdmission',
+      'sourceOfInformation',
+      'hospitalCourse',
+      'behavioralSymptomCourse',
+      'mentalStatusAtDischarge',
+      'riskAssessmentAtDischarge',
+      'safetyPlanDischargeReadiness',
+      'dischargeCondition',
+      'dischargeMedications',
+      'followUpAftercare',
+      'dischargeInstructionsReturnPrecautions',
+      'sourceLimitations',
+    ]);
+    expect(plan.requiresStandaloneMse).toBe(true);
+  });
+
+  it('uses substance-vs-psych-specific sections for overlap notes', () => {
+    const plan = planSections({
+      noteType: 'Substance-vs-Psych Overlap Note',
+      requestedScope: 'full-note',
+    });
+
+    expect(plan.profile?.id).toBe('substance-vs-psych-overlap-note');
+    expect(plan.sections).toEqual([
+      'reasonForEvaluationPresentingConcern',
+      'sourceOfInformation',
+      'substanceUseExposureTimeline',
+      'psychiatricSymptomsBehavioralObservations',
+      'medicalWithdrawalToxicologyInformation',
+      'mentalStatusExamObservations',
+      'riskAssessment',
+      'diagnosticUncertaintyDifferential',
+      'assessmentClinicalFormulation',
+      'planMonitoringReassessment',
+      'sourceLimitations',
+    ]);
+    expect(plan.requiresStandaloneMse).toBe(true);
+  });
+
+  it('uses medical-vs-psych-specific sections for overlap notes', () => {
+    const plan = planSections({
+      noteType: 'Medical-vs-Psych Overlap Note',
+      requestedScope: 'full-note',
+    });
+
+    expect(plan.profile?.id).toBe('medical-vs-psych-overlap-note');
+    expect(plan.sections).toEqual([
+      'reasonForEvaluationConsult',
+      'sourceOfInformation',
+      'presentingSymptomsClinicalConcern',
+      'medicalContributorsRedFlags',
+      'psychiatricSymptomsBehavioralObservations',
+      'medicalWorkupMissingEvaluation',
+      'mentalStatusExamObservations',
+      'riskAssessment',
+      'diagnosticUncertaintyDifferential',
+      'assessmentClinicalFormulation',
+      'planMonitoringWorkup',
+      'sourceLimitations',
+    ]);
+    expect(plan.requiresStandaloneMse).toBe(true);
+  });
+
+  it('uses collateral-heavy-specific sections for collateral-heavy notes', () => {
+    const plan = planSections({
+      noteType: 'Collateral-Heavy Note',
+      requestedScope: 'full-note',
+    });
+
+    expect(plan.profile?.id).toBe('collateral-heavy-note');
+    expect(plan.sections).toEqual([
+      'reasonForReviewPresentingConcern',
+      'sourceOfInformation',
+      'patientReport',
+      'collateralReport',
+      'chartOrStaffReport',
+      'mentalStatusBehavioralObservations',
+      'riskAssessment',
+      'assessmentClinicalFormulation',
+      'planFollowUpVerification',
+      'sourceLimitations',
+    ]);
+    expect(plan.requiresStandaloneMse).toBe(true);
+  });
+
+  it('uses sparse-source-specific sections for sparse source notes', () => {
+    const plan = planSections({
+      noteType: 'Sparse Source Note',
+      requestedScope: 'full-note',
+    });
+
+    expect(plan.profile?.id).toBe('sparse-source-note');
+    expect(plan.sections).toEqual([
+      'sparseReasonLimitedSourceContext',
+      'sourceOfInformation',
+      'sparseDocumentedFacts',
+      'patientReport',
+      'sparseCollateralStaffChartInformation',
+      'mentalStatusExamObservations',
+      'riskAssessment',
+      'assessmentClinicalFormulation',
+      'sparsePlanNextSteps',
+      'sourceLimitations',
+    ]);
+    expect(plan.requiresStandaloneMse).toBe(true);
+  });
+
+  it('uses outpatient-follow-up-specific sections for outpatient psych follow-up notes', () => {
+    const plan = planSections({
+      noteType: 'Outpatient Psych Follow-Up',
+      requestedScope: 'full-note',
+    });
+
+    expect(plan.profile?.id).toBe('outpatient-psych-follow-up');
+    expect(plan.sections).toEqual([
+      'outpatientReasonFollowUpFocus',
+      'sourceOfInformation',
+      'progressIntervalHistoryPatientReport',
+      'outpatientSymptomsFunctionalStatus',
+      'mentalStatusExamObservations',
+      'riskAssessment',
+      'outpatientMedicationsAdherenceSideEffects',
+      'assessmentClinicalFormulation',
+      'outpatientPlanFollowUp',
+      'sourceLimitations',
+    ]);
+    expect(plan.requiresStandaloneMse).toBe(true);
+  });
+
+  it('uses medical-consult-specific sections for medical consultation notes', () => {
+    const plan = planSections({
+      noteType: 'Medical Consultation Note',
+      requestedScope: 'full-note',
+    });
+
+    expect(plan.profile?.id).toBe('medical-consult-note');
+    expect(plan.sections).toEqual([
+      'consultReasonForConsultation',
+      'sourceOfInformation',
+      'consultQuestionClinicalConcern',
+      'consultRelevantHistoryHpi',
+      'consultPertinentExamObservations',
+      'mentalStatusBehavioralObservations',
+      'consultPertinentLabsVitalsDiagnostics',
+      'consultAssessmentMedicalImpression',
+      'consultRecommendationsPlan',
+      'sourceLimitations',
+    ]);
+    expect(plan.requiresStandaloneMse).toBe(true);
   });
 
   it('includes larger adult eval structure for psych initial adult eval full-note scope', () => {

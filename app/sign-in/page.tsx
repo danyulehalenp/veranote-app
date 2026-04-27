@@ -69,20 +69,20 @@ function SignInCard() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="workspace-kpi rounded-[22px] p-4">
+              <div className="workspace-card-static rounded-[22px] p-4">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Source first</div>
                 <div className="mt-2 text-lg font-semibold text-white">Capture stays visible</div>
                 <p className="mt-2 text-sm text-cyan-50/68">Providers can verify against source instead of jumping between disconnected screens.</p>
               </div>
-              <div className="workspace-kpi rounded-[22px] p-4">
+              <div className="workspace-card-static rounded-[22px] p-4">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Trust review</div>
                 <div className="mt-2 text-lg font-semibold text-white">Evidence stays close</div>
                 <p className="mt-2 text-sm text-cyan-50/68">Warnings, review status, and finishing actions stay structured around fidelity.</p>
               </div>
-              <div className="workspace-kpi rounded-[22px] p-4">
+              <div className="workspace-card-static rounded-[22px] p-4">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Provider memory</div>
                 <div className="mt-2 text-lg font-semibold text-white">Learns your workflow</div>
-                <p className="mt-2 text-sm text-cyan-50/68">Vera is moving toward a remembered, provider-specific assistant instead of a reset-every-time tool.</p>
+                <p className="mt-2 text-sm text-cyan-50/68">Atlas is moving toward a remembered, provider-specific assistant instead of a reset-every-time tool.</p>
               </div>
             </div>
           </div>

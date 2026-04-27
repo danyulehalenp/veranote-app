@@ -7,7 +7,7 @@ import { summarizeMseSupport } from '@/lib/ai/mse-support';
 import { buildDiagnosisProfilePromptLines } from '@/lib/note/diagnosis-profile';
 import { buildEncounterSupportPromptLines } from '@/lib/note/encounter-support';
 import { buildMedicationProfilePromptLines } from '@/lib/note/medication-profile';
-import { planSections } from '@/lib/note/section-profiles';
+import { planSections, SECTION_LABELS } from '@/lib/note/section-profiles';
 import { GenerateNoteResponseSchema, type GenerateNoteResult } from '@/lib/ai/response-schema';
 import type { EncounterSupport, NoteClaim, SourceSections, StructuredPsychDiagnosisProfileEntry, StructuredPsychMedicationProfileEntry } from '@/types/session';
 
@@ -50,6 +50,12 @@ export type GenerateNoteWithMetaResult = GenerateNoteResult & {
  copilotSuggestions: ReturnType<typeof buildCopilotSuggestions>;
  mode: 'live' | 'fallback';
  warning?: string;
+ generationMeta: {
+ pathUsed: 'live' | 'fallback';
+ provider: 'openai' | 'none';
+ model: string | null;
+ reason: 'live' | 'missing_api_key' | 'runtime_error';
+ };
 };
 
 function templateFileForNoteType(noteType: string) {
@@ -75,23 +81,47 @@ function templateFileForNoteType(noteType: string) {
  return 'inpatient-psych-initial-adolescent-eval.md';
  }
 
- if (normalized.includes('day two')) {
- return 'inpatient-psych-day-two-note.md';
+	 if (normalized.includes('day two')) {
+	 return 'inpatient-psych-day-two-note.md';
+	 }
+
+	 if (normalized.includes('outpatient psych follow-up') || normalized.includes('outpatient psych followup') || normalized.includes('outpatient psychiatry follow-up') || normalized.includes('outpatient psychiatric follow-up')) {
+	 return 'outpatient-psych-followup.md';
+	 }
+
+	 if (normalized.includes('risk-heavy') || normalized.includes('risk heavy')) {
+	 return 'risk-heavy-note.md';
  }
+
+ if (normalized.includes('substance-vs-psych') || normalized.includes('substance vs psych')) {
+ return 'substance-vs-psych-overlap-note.md';
+ }
+
+ if (normalized.includes('medical-vs-psych') || normalized.includes('medical vs psych')) {
+ return 'medical-vs-psych-overlap-note.md';
+ }
+
+	 if (normalized.includes('collateral-heavy') || normalized.includes('collateral heavy')) {
+	 return 'collateral-heavy-note.md';
+	 }
+
+	 if (normalized.includes('sparse source') || normalized.includes('limited source')) {
+	 return 'sparse-source-note.md';
+	 }
 
  if (normalized.includes('discharge')) {
  return 'inpatient-psych-discharge-summary.md';
  }
 
  if (normalized.includes('crisis')) {
- return 'psychiatry-follow-up.md';
+ return 'psychiatric-crisis-note.md';
  }
 
  if (normalized.includes('medical h&p')) {
  return 'psych-admission-medical-hp.md';
  }
 
- if (normalized.includes('consultation')) {
+ if (normalized.includes('medical consultation') || normalized.includes('medical consult')) {
  return 'medical-consultation-note.md';
  }
 
@@ -129,11 +159,51 @@ function mergeFlags(input: GenerateNoteInput, flags: string[]) {
 }
 
 function buildSuggestions(input: GenerateNoteInput) {
- return buildCopilotSuggestions({
- sourceInput: input.sourceInput,
- noteType: input.noteType,
- sourceSections: input.sourceSections,
- });
+  return buildCopilotSuggestions({
+   sourceInput: input.sourceInput,
+   noteType: input.noteType,
+   sourceSections: input.sourceSections,
+  });
+}
+
+function escapeRegExp(value: string) {
+ return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const progressNoteRequiredHeadings = [
+ 'Reason for Follow-Up / Interval Concern',
+ 'Source of Information',
+ 'Interval Events / Patient Report (Subjective)',
+ 'Staff / Nursing / Collateral Observations (Objective)',
+ 'Mental Status Exam / Observations',
+ 'Safety / Risk',
+ 'Medications / Treatment Adherence',
+ 'Assessment / Clinical Formulation',
+ 'Plan / Continued Hospitalization',
+ 'Source Limitations / Missing Information',
+];
+
+function hasProgressHeading(note: string, heading: string) {
+ const aliases: Record<string, RegExp[]> = {
+ 'Interval Events / Patient Report (Subjective)': [/^\s*Interval (?:Events|History).*Subjective\s*:/im, /^\s*Subjective\s*:/im],
+ 'Staff / Nursing / Collateral Observations (Objective)': [/^\s*Staff \/ Nursing \/ Collateral Observations.*Objective\s*:/im, /^\s*Objective\s*:/im],
+ 'Mental Status Exam / Observations': [/^\s*Mental Status(?: Exam)? \/ Observations\s*:/im, /^\s*MSE\s*:/im],
+ 'Safety / Risk': [/^\s*Safety \/ Risk\s*:/im, /^\s*Risk Assessment\s*:/im],
+ 'Assessment / Clinical Formulation': [/^\s*Assessment(?: \/ Clinical Formulation)?\s*:/im],
+ 'Plan / Continued Hospitalization': [/^\s*Plan(?: \/ Continued Hospitalization)?\s*:/im],
+ };
+
+ return (aliases[heading] ?? [new RegExp(`^\\s*${escapeRegExp(heading)}\\s*:`, 'im')]).some((pattern) => pattern.test(note));
+}
+
+function enforceProgressNoteHeadings(note: string, noteType: string) {
+ if (!/inpatient psych progress/i.test(noteType)) return note;
+
+ const missingHeadings = progressNoteRequiredHeadings.filter((heading) => !hasProgressHeading(note, heading));
+ if (!missingHeadings.length) return note;
+
+ const additions = missingHeadings.map((heading) => `${heading}:\nNot documented in source.`);
+ return `${note.trim()}\n\n${additions.join('\n\n')}`;
 }
 
 export async function generateNote(input: GenerateNoteInput): Promise<GenerateNoteWithMetaResult> {
@@ -149,6 +219,12 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
  copilotSuggestions: buildSuggestions(input),
  mode: 'fallback',
  warning: 'No OpenAI API key found, so the app used the local fallback draft.',
+ generationMeta: {
+ pathUsed: 'fallback',
+ provider: 'none',
+ model: model || null,
+ reason: 'missing_api_key',
+ },
  };
  }
 
@@ -172,13 +248,21 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
  });
 
  const scopeGuidanceLines = sectionPlan.profile
- ? [
- `Output scope: ${sectionPlan.scope}.`,
- `Planned note profile: ${sectionPlan.profile.label}.`,
- `Render only these sections unless the source or requested scope clearly requires less: ${sectionPlan.sections.join(', ') || 'none specified'}.`,
- sectionPlan.requiresStandaloneMse
- ? 'A standalone Mental Status / Observations section is required for this output scope.'
- : 'Do not force a standalone Mental Status / Observations section for this output scope. If pertinent psych observations belong in HPI/assessment, include them there without inventing a full MSE block.',
+	 ? [
+	 `Output scope: ${sectionPlan.scope}.`,
+	 `Planned note profile: ${sectionPlan.profile.label}.`,
+	 sectionPlan.profile.id === 'inpatient-psych-progress'
+	 ? `Render these exact sections in order, even when the source is sparse: ${sectionPlan.sections.map((section) => SECTION_LABELS[section]).join(', ') || 'none specified'}. If a progress-note section has no supported content, keep the heading and write a brief not documented, unclear, not provided, or gap statement. Do not omit Plan / Continued Hospitalization.`
+	 : sectionPlan.profile.id === 'sparse-source-note'
+	   ? `Render these exact sections in order, even when nearly every domain is missing: ${sectionPlan.sections.map((section) => SECTION_LABELS[section]).join(', ') || 'none specified'}. This note type is specifically for sparse input, so do not omit required headings because the source is thin. Use brief not documented, unclear, not provided, or needs verification statements for unsupported domains.`
+	 : sectionPlan.profile.id === 'outpatient-psych-follow-up'
+	   ? `Render these exact sections in order for the outpatient follow-up note: ${sectionPlan.sections.map((section) => SECTION_LABELS[section]).join(', ') || 'none specified'}. Keep medication response, side effects, safety/risk limits, and follow-up plan explicit. If a required outpatient section has no supported content, keep the heading and write a brief not documented, unclear, not provided, or gap statement.`
+	 : sectionPlan.profile.id === 'medical-consult-note'
+	   ? `Render these exact sections in order for the medical consult note: ${sectionPlan.sections.map((section) => SECTION_LABELS[section]).join(', ') || 'none specified'}. Keep the consult question, relevant history, pertinent findings, uncertainty-bound medical impression, recommendations, and source limitations explicit. If a consult section has no supported content, keep the heading and write a brief not documented, unclear, not provided, pending, or needs verification statement.`
+	 : `Render only these sections unless the source or requested scope clearly requires less: ${sectionPlan.sections.map((section) => SECTION_LABELS[section]).join(', ') || 'none specified'}.`,
+	 sectionPlan.requiresStandaloneMse
+	 ? 'A standalone Mental Status / Observations section is required for this output scope.'
+	 : 'Do not force a standalone Mental Status / Observations section for this output scope. If pertinent psych observations belong in HPI/assessment, include them there without inventing a full MSE block.',
  ]
  : [
  `Output scope: ${input.outputScope ?? 'full-note'}.`,
@@ -268,12 +352,18 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
  const parsed = JSON.parse(outputText);
  const validated = GenerateNoteResponseSchema.parse(parsed);
 
- return {
- note: validated.note,
+	 return {
+	 note: enforceProgressNoteHeadings(validated.note, input.noteType),
  flags: mergeFlags(input, validated.flags),
  claims: stubClaims,
  copilotSuggestions: buildSuggestions(input),
  mode: 'live',
+ generationMeta: {
+ pathUsed: 'live',
+ provider: 'openai',
+ model,
+ reason: 'live',
+ },
  };
  } catch (error) {
  const fallback = generateMockNote(input.sourceInput, input.noteType, input.flagMissingInfo);
@@ -285,6 +375,12 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
  copilotSuggestions: buildSuggestions(input),
  mode: 'fallback',
  warning: asMessage(error),
+ generationMeta: {
+ pathUsed: 'fallback',
+ provider: 'openai',
+ model,
+ reason: 'runtime_error',
+ },
  };
  }
 }

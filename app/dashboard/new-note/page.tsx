@@ -6,7 +6,7 @@ export default function NewNotePage() {
   return (
     <AppShell
       title="New Note Workspace"
-      subtitle="Build one patient note inside a calmer, modern workspace: compose the source, generate a draft, and finish review without the workflow feeling fragmented."
+      subtitle="Choose a note type, paste your rough source, and generate a draft to review."
     >
       <Suspense fallback={null}>
         <NewNoteForm />

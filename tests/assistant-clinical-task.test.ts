@@ -248,7 +248,7 @@ describe('assistant clinical task response shaping', () => {
       triageSuggestion: makeTriage(),
     });
 
-    expect(payload?.message).toContain('Vera should document the contradiction side by side');
+    expect(payload?.message).toContain('Atlas should document the contradiction side by side');
     expect(payload?.message).toContain('keep explicit the denial alongside observed agitation and collateral threat history');
     expect(payload?.message).toContain('Violence risk remains conflicted');
   });

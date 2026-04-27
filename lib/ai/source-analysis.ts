@@ -38,12 +38,12 @@ export function summarizeSourceConstraints(sourceInput: string): SourceConstrain
   const wordCount = normalizedSource ? normalizedSource.split(' ').filter(Boolean).length : 0;
   const sourceIsSparse = wordCount > 0 && wordCount <= 90;
   const sourceIsVerySparse = wordCount > 0 && wordCount <= 45;
-  const sourceHasExplicitPlan = /(plan:|follow up|follow-up|return in|rtc|continue current plan|continue current precautions|continue current regimen|refill|needs refill|will call|crisis line|support resources|monitor)/i.test(sourceInput);
+  const sourceHasExplicitPlan = /(plan:|follow up|follow-up|return in|rtc|continue current plan|continue current precautions|continue current regimen|refill|needs refill|will call|crisis line|support resources|monitor|safety planning|safety plan|reviewed|discussed|escalation threshold|mobile crisis|accompanied|stayed with)/i.test(sourceInput);
   const sourceHasRefillRequest = /(needs refill|refill requested|requests? (?:a )?refill)/i.test(sourceInput);
   const sourceOnlyHasRefillOrContinuePlan = !/(increase|decrease|start|stop|switch|taper|recommend|encourage|reviewed coping|homework|safety planning|hospitali[sz]|labs?|therapy weekly|precautions)/i.test(sourceInput)
     && /(needs refill|refill|continue current plan|continue current regimen|follow up|follow-up|return in|rtc|will call aunt|will call .* crisis line|crisis line)/i.test(sourceInput);
-  const sourceHasSupportivePlanVerbs = /(monitor|encourage|supportive care|hydration|coping strategies|future sessions|safety plan|use supports|return precautions)/i.test(sourceInput);
-  const sourceHasSafetySupportLanguage = /(will call|crisis line|aunt|support resources|if thoughts intensify)/i.test(sourceInput);
+  const sourceHasSupportivePlanVerbs = /(monitor|encourage|supportive care|hydration|coping strategies|future sessions|safety plan|safety planning|use supports|return precautions|mobile crisis|reviewed|discussed|escalation threshold)/i.test(sourceInput);
+  const sourceHasSafetySupportLanguage = /(will call|crisis line|aunt|support resources|if thoughts intensify|support person|stayed with|accompanied|mobile crisis)/i.test(sourceInput);
   const sourceHasTherapyInterventionWithoutClearEffect = /(grounding|breathing|coping skill|intervention|exercise|reframing)/i.test(sourceInput)
     && /(didn[’']?t really help|did not really help|wasn[’']?t doing much|without clear benefit|not helpful|didn[’']?t help much|did not help much|not sure it helped|unclear benefit)/i.test(sourceInput);
   const sourceHasMinimalStatusLanguage = /("about the same"|about the same|nothing major changed|no major change)/i.test(sourceInput);

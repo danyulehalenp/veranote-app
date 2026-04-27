@@ -297,6 +297,6 @@
     "vera_response_shape": "Return a cleaned note plus a short list of what still looks missing or under-supported.",
     "should_use_reference_lookup": false,
     "should_be_vera_lab_case": true,
-    "safety_notes": "Vera should flag uncertainty instead of filling narrative gaps with unsupported details."
+    "safety_notes": "Atlas should flag uncertainty instead of filling narrative gaps with unsupported details."
   }
 ]

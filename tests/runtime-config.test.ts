@@ -7,6 +7,7 @@ describe('runtime config guard', () => {
       NODE_ENV: 'production',
       AUTH_SECRET: 'super-secret',
       VERANOTE_BETA_ACCESS_CODE: 'beta-code',
+      NEXTAUTH_URL: 'https://app.veranote.org',
       NEXT_PUBLIC_VERANOTE_INTERNAL_MODE: 'false',
       VERANOTE_INTERNAL_MODE: 'false',
     })).not.toThrow();

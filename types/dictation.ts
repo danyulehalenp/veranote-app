@@ -42,6 +42,18 @@ export type DictationReviewFlagType =
   | 'low_confidence'
   | 'other';
 
+export type DictationCommandAction =
+  | 'insert_template'
+  | 'insert_text'
+  | 'navigate_target';
+
+export type DictationCommandScope =
+  | 'veranote_source'
+  | 'desktop_overlay'
+  | 'ehr_field';
+
+export type DictationVoicePacing = 'natural' | 'measured' | 'slow_clear';
+
 export type DictationCommitMode = 'manual_accept' | 'auto_insert_final_segments';
 
 export type DictationStopReason =
@@ -85,6 +97,27 @@ export type DictationRetentionConfig = {
   audioRetentionDays: number;
   storeInterimTranscripts: boolean;
   finalTranscriptRetention: DictationTranscriptRetention;
+};
+
+export type DictationCommandDefinition = {
+  id: string;
+  label: string;
+  spokenPhrases: string[];
+  action: DictationCommandAction;
+  scope: DictationCommandScope;
+  description: string;
+  outputText?: string;
+};
+
+export type DictationVoiceProfile = {
+  baselineCompletedAt?: string;
+  preferredPacing: DictationVoicePacing;
+  pronunciationHints: string;
+  vocabularyBoost: string[];
+  starterPhrases: string[];
+  rescuePhrases: string[];
+  lowConfidencePromptThreshold: number;
+  promptWhenSystemStruggles: boolean;
 };
 
 export type DictationEditorConfig = {

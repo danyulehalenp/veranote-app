@@ -15,7 +15,7 @@ const internalTools = [
     title: 'Feedback Inbox',
     href: '/dashboard/feedback',
     status: 'Internal only',
-    body: 'Review provider feedback, Vera gaps, and taught-versus-planned triage work in one operational queue.',
+    body: 'Review provider feedback, Atlas gaps, and taught-versus-planned triage work in one operational queue.',
   },
   {
     title: 'Templates and Profiles',
@@ -48,7 +48,7 @@ const internalTools = [
     body: 'Saved scorecards, output snapshots, and historical evaluation review.',
   },
   {
-    title: 'Vera Lab',
+    title: 'Atlas Lab',
     href: '/admin/vera-lab',
     status: 'Internal only',
     body: 'Real-time internal QA loop: interrogator, judge, repair queue, and regression gate for realistic provider questions.',

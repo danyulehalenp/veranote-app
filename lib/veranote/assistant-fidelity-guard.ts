@@ -76,6 +76,9 @@ function ensureAvailableInformationLanguage(text: string) {
 }
 
 export function enforceFidelity(input: FidelityGuardInput): AssistantResponsePayload {
+  const suppressClinicalGapSuggestions = input.output.answerMode === 'medication_reference_answer'
+    || input.output.answerMode === 'general_health_reference'
+    || input.output.answerMode === 'direct_reference_answer';
   const guardedMessage = ensureAvailableInformationLanguage(
     enforceRiskRestraint(
       blockUnsupportedNormals(
@@ -103,11 +106,12 @@ export function enforceFidelity(input: FidelityGuardInput): AssistantResponsePay
   const contradictionSuggestions = input.contradictions.contradictions.length
     ? [`Contradiction flagged: ${input.contradictions.contradictions[0]?.detail}`]
     : [];
-  const mseSuggestions = input.mseAnalysis.missingDomains.length
+  const mseSuggestions = !suppressClinicalGapSuggestions && input.mseAnalysis.missingDomains.length
     ? ['MSE is incomplete based on available information; do not auto-complete missing domains.']
     : [];
-  const riskSuggestions = (!input.riskAnalysis.suicide.length && !input.riskAnalysis.violence.length && !input.riskAnalysis.graveDisability.length)
-    ? ['Risk data is limited in the source, so Vera should state insufficient data rather than no risk.']
+  const riskSuggestions = !suppressClinicalGapSuggestions
+    && (!input.riskAnalysis.suicide.length && !input.riskAnalysis.violence.length && !input.riskAnalysis.graveDisability.length)
+    ? ['Risk data is limited in the source, so Atlas should state insufficient data rather than no risk.']
     : [];
 
   return {

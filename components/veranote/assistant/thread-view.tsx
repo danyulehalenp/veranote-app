@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AssistantMessage, AssistantStage } from '@/types/assistant';
 
@@ -19,6 +20,7 @@ type ThreadViewProps = {
   compactReviewMode?: boolean;
   onToggleCompactReviewMode?: () => void;
   focusedSectionHeading?: string;
+  renderAssistantFeedback?: (message: AssistantMessage, isLatestAssistant: boolean) => ReactNode;
 };
 
 export function ThreadView({
@@ -33,8 +35,8 @@ export function ThreadView({
   compactReviewMode = false,
   onToggleCompactReviewMode,
   focusedSectionHeading,
+  renderAssistantFeedback,
 }: ThreadViewProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const [showOlderMessages, setShowOlderMessages] = useState(false);
 
@@ -70,27 +72,12 @@ export function ThreadView({
   const hiddenCount = Math.max(messages.length - visibleMessages.length, 0);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) {
-      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      return;
-    }
-
-    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    const shouldAutoScroll = distanceFromBottom < 140 || messages.length < 2 || isLoading;
-
-    if (shouldAutoScroll) {
-      container.scrollTo({
-        top: container.scrollHeight,
-        behavior: 'smooth',
-      });
-    }
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [isLoading, messages]);
 
   return (
     <div
-      ref={containerRef}
-      className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto overscroll-contain rounded-[16px] bg-[rgba(6,15,27,0.34)] px-0.5 py-1.5 scroll-smooth sm:rounded-[18px] sm:px-1"
+      className="flex min-h-0 flex-col gap-4 rounded-[16px] bg-[rgba(6,15,27,0.34)] px-0.5 py-1.5 sm:rounded-[18px] sm:px-1"
     >
       {stage === 'review' && onToggleCompactReviewMode ? (
         <div className="sticky top-0 z-10 flex justify-end px-1">
@@ -115,8 +102,8 @@ export function ThreadView({
         </div>
       ) : null}
       {!messages.length && !isLoading ? (
-        <div className="rounded-[22px] border border-cyan-200/10 bg-[linear-gradient(180deg,rgba(12,27,45,0.84),rgba(8,19,33,0.88))] px-4 py-4 text-cyan-50 shadow-[0_16px_36px_rgba(4,12,24,0.18)]">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/70">Vera</div>
+        <div className="rounded-[20px] border border-cyan-200/10 bg-[linear-gradient(180deg,rgba(12,27,45,0.84),rgba(8,19,33,0.88))] px-3.5 py-3.5 text-cyan-50 shadow-[0_16px_36px_rgba(4,12,24,0.18)]">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/70">Atlas</div>
           <div className="mt-2 text-base font-semibold text-white">{emptyStateTitle}</div>
           <div className="mt-2 text-sm leading-6 text-cyan-50/76">{emptyStateDescription}</div>
           {starterPrompts.length ? (
@@ -152,12 +139,12 @@ export function ThreadView({
         const isOlderAssistant = message.role === 'assistant' && !isLatestAssistant;
         const messageWrapperClassName = `flex py-2 ${message.role === 'assistant' ? 'justify-start' : 'justify-end'} ${isOlderAssistant ? 'opacity-72' : ''}`;
         const messageCardClassName = message.role === 'assistant'
-          ? `w-full max-w-[min(100%,78rem)] rounded-[18px] border px-3 py-3 text-sm leading-6 text-cyan-50 sm:px-4 ${
+          ? `w-full max-w-[min(100%,78rem)] rounded-[16px] border px-3 py-2.5 text-sm leading-6 text-cyan-50 sm:px-3.5 ${
             isLatestAssistant
               ? 'border-cyan-300/14 bg-[rgba(7,17,30,0.88)] shadow-[0_18px_34px_rgba(4,12,24,0.16)]'
               : 'border-cyan-200/8 bg-[rgba(8,18,31,0.7)] shadow-[0_10px_18px_rgba(4,12,24,0.08)]'
           }`
-          : 'max-w-[92%] rounded-[18px] border border-cyan-200/12 bg-[rgba(18,181,208,0.1)] px-3 py-3 text-sm leading-6 text-cyan-50/86 sm:max-w-[82%] sm:px-4 lg:max-w-[74%]';
+          : 'max-w-[92%] rounded-[16px] border border-cyan-200/12 bg-[rgba(18,181,208,0.1)] px-3 py-2.5 text-sm leading-6 text-cyan-50/86 sm:max-w-[82%] sm:px-3.5 lg:max-w-[74%]';
 
         return (
           <div key={message.id} className={messageWrapperClassName}>
@@ -166,7 +153,7 @@ export function ThreadView({
                 <div className="text-[11px] font-semibold uppercase tracking-[0.14em] opacity-75">
                   {message.role === 'assistant'
                     ? isLatestAssistant
-                      ? 'Vera'
+                      ? 'Atlas'
                       : 'Earlier note'
                     : 'You'}
                 </div>
@@ -225,14 +212,15 @@ export function ThreadView({
                   </div>
                 </div>
               ) : null}
+              {message.role === 'assistant' && renderAssistantFeedback ? renderAssistantFeedback(message, isLatestAssistant) : null}
             </div>
           </div>
         );
       })}
       {isLoading ? (
         <div className="flex justify-start">
-          <div className="w-full max-w-[min(100%,78rem)] rounded-[18px] border border-cyan-200/10 bg-[rgba(9,20,35,0.78)] px-3 py-3 text-sm text-cyan-50/72 shadow-[0_14px_24px_rgba(4,12,24,0.12)] sm:px-4">
-            <div className="text-sm font-medium text-cyan-50/88">Vera is reviewing this with you.</div>
+          <div className="w-full max-w-[min(100%,78rem)] rounded-[16px] border border-cyan-200/10 bg-[rgba(9,20,35,0.78)] px-3 py-2.5 text-sm text-cyan-50/72 shadow-[0_14px_24px_rgba(4,12,24,0.12)] sm:px-3.5">
+            <div className="text-sm font-medium text-cyan-50/88">Atlas is reviewing this with you.</div>
             <div className="mt-1 text-xs text-cyan-100/62">Checking source support, wording strength, and what matters most next.</div>
           </div>
         </div>
@@ -287,8 +275,8 @@ function AssistantMessageBody({
 
   return (
     <div className="mt-2">
-      <div className="rounded-[18px] border border-cyan-200/10 bg-[rgba(11,24,40,0.62)] px-4 py-4 shadow-[0_12px_26px_rgba(4,12,24,0.12)]">
-        <div className="space-y-3">
+      <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(11,24,40,0.62)] px-3 py-3 shadow-[0_12px_26px_rgba(4,12,24,0.12)]">
+        <div className="space-y-2.5">
           {displaySections.map((section, sectionIndex) => (
             <div
               key={`${section.title || 'body'}-${sectionIndex}`}
@@ -312,12 +300,12 @@ function AssistantMessageBody({
                   return bulletMatch ? (
                     <div key={`${sectionIndex}-${lineIndex}`} className="flex gap-2 text-cyan-50/92">
                       <span className="mt-[2px] text-cyan-100/60">•</span>
-                      <span className="leading-6">{displayLine}</span>
+                      <span className="leading-5">{displayLine}</span>
                     </div>
                   ) : (
                     <div
                       key={`${sectionIndex}-${lineIndex}`}
-                      className={`whitespace-pre-wrap leading-6 ${isRiskSection(section.title) ? 'text-[15px] text-rose-50/96' : 'text-cyan-50/92'}`}
+                      className={`whitespace-pre-wrap leading-5 ${isRiskSection(section.title) ? 'text-[14px] text-rose-50/96' : 'text-cyan-50/92'}`}
                     >
                       {displayLine}
                     </div>
@@ -430,19 +418,19 @@ function getSectionToneClassName(title?: string) {
   }
 
   if (isRiskSection(title)) {
-    return 'space-y-2 rounded-[16px] border-2 border-rose-300/34 bg-[rgba(98,24,39,0.26)] px-4 py-3 shadow-[0_14px_28px_rgba(58,13,25,0.18)]';
+    return 'space-y-2 rounded-[14px] border-2 border-rose-300/34 bg-[rgba(98,24,39,0.26)] px-3 py-2.5 shadow-[0_14px_28px_rgba(58,13,25,0.18)]';
   }
 
   const normalized = normalizeSectionTitle(title);
   if (normalized.includes('suggested actions')) {
-    return 'space-y-2 rounded-[16px] border border-cyan-200/12 bg-[rgba(10,27,45,0.48)] px-4 py-3';
+    return 'space-y-2 rounded-[14px] border border-cyan-200/12 bg-[rgba(10,27,45,0.48)] px-3 py-2.5';
   }
 
   if (normalized.includes('clinical interpretation')) {
-    return 'space-y-2 rounded-[16px] border border-cyan-200/10 bg-[rgba(9,21,36,0.44)] px-4 py-3';
+    return 'space-y-2 rounded-[14px] border border-cyan-200/10 bg-[rgba(9,21,36,0.44)] px-3 py-2.5';
   }
 
-  return 'space-y-2 rounded-[16px] border border-cyan-200/8 bg-[rgba(8,18,31,0.42)] px-4 py-3';
+  return 'space-y-2 rounded-[14px] border border-cyan-200/8 bg-[rgba(8,18,31,0.42)] px-3 py-2.5';
 }
 
 function getSectionEvidenceLabel(title?: string) {

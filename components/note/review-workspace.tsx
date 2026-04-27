@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { InlineFeedbackControl } from '@/components/veranote/feedback/inline-feedback-control';
 import { findProviderProfile } from '@/lib/constants/provider-profiles';
 import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '@/lib/constants/settings';
 import { describePopulatedSourceSections, EMPTY_SOURCE_SECTIONS, normalizeSourceSections } from '@/lib/ai/source-sections';
@@ -76,6 +77,22 @@ function isDictationTargetSection(value: string): value is DictationTargetSectio
 
 function flattenDictationInsertions(insertions: DraftSession['dictationInsertions']) {
   return Object.values(insertions || {}).flatMap((records) => records || []);
+}
+
+function formatAmbientSourceLabel(sourceLabel: string, sourceKey: keyof SourceSections, ambientTranscriptHandoff?: DraftSession['ambientTranscriptHandoff']) {
+  if (sourceKey === 'patientTranscript' && ambientTranscriptHandoff) {
+    return 'Ambient transcript / patient conversation';
+  }
+
+  return sourceLabel;
+}
+
+function formatAmbientSourceHint(sourceKey: keyof SourceSections, fallbackHint: string, ambientTranscriptHandoff?: DraftSession['ambientTranscriptHandoff']) {
+  if (sourceKey === 'patientTranscript' && ambientTranscriptHandoff) {
+    return 'Reviewed ambient transcript handoff plus direct patient wording and interview chronology.';
+  }
+
+  return fallbackHint;
 }
 
 function extractFirstReviewSentence(text: string | null | undefined) {
@@ -783,7 +800,7 @@ function CompactMetric(props: {
   detail?: string;
 }) {
   return (
-    <div className="workspace-kpi rounded-[18px] px-4 py-3">
+    <div className="workspace-card-static rounded-[18px] px-4 py-3">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-cyan-100/62">{props.label}</div>
       <div className="mt-1 text-xl font-semibold text-white">{props.value}</div>
       {props.detail ? <div className="mt-0.5 text-xs text-cyan-50/66">{props.detail}</div> : null}
@@ -796,7 +813,7 @@ function InlineMetric(props: {
   value: React.ReactNode;
 }) {
   return (
-    <div className="workspace-chip rounded-full px-3 py-1.5 text-xs font-medium text-cyan-50/76">
+    <div className="workspace-badge-static rounded-full px-3 py-1.5 text-xs font-medium text-cyan-50/76">
       <span className="text-white">{props.value}</span> {props.label}
     </div>
   );
@@ -2224,7 +2241,7 @@ export function ReviewWorkspace({
         const nextDraft = nextLines.join('\n').replace(/\n{3,}/g, '\n\n');
         setDraftText(nextDraft);
         focusDraftMatch(normalizedRevision);
-        setRewriteMessage(`Applied Vera revision in ${targetSectionHeading}. Please review it before final use.`);
+        setRewriteMessage(`Applied Atlas revision in ${targetSectionHeading}. Please review it before final use.`);
         window.setTimeout(() => setRewriteMessage(''), 3200);
         return;
       }
@@ -2233,20 +2250,29 @@ export function ReviewWorkspace({
     const nextDraft = `${draftText.trim()}\n\n${normalizedRevision}`.trim();
     setDraftText(nextDraft);
     focusDraftMatch(normalizedRevision);
-    setRewriteMessage('Applied Vera revision to the current draft. Please review it before final use.');
+    setRewriteMessage('Applied Atlas revision to the current draft. Please review it before final use.');
     window.setTimeout(() => setRewriteMessage(''), 3200);
   }
 
   const flagItems = useMemo(() => session?.flags ?? [], [session]);
   const { contradictionFlags, missingInfoFlags } = useMemo(() => splitFlags(flagItems), [flagItems]);
   const sourceSections = useMemo(() => normalizeSourceSections(session?.sourceSections || EMPTY_SOURCE_SECTIONS), [session]);
+  const ambientTranscriptHandoff = useMemo(() => session?.ambientTranscriptHandoff || null, [session]);
   const dictationInsertions = useMemo(() => session?.dictationInsertions || {}, [session]);
   const totalDictationInsertionCount = useMemo(
     () => flattenDictationInsertions(dictationInsertions).length,
     [dictationInsertions],
   );
   const sourceSectionLabels = useMemo(() => describePopulatedSourceSections(sourceSections), [sourceSections]);
-  const sourcePanels = useMemo(() => sourceSectionMeta.map((meta) => ({ ...meta, value: sourceSections[meta.key].trim() })), [sourceSections]);
+  const sourcePanels = useMemo(
+    () => sourceSectionMeta.map((meta) => ({
+      ...meta,
+      label: formatAmbientSourceLabel(meta.label, meta.key, ambientTranscriptHandoff || undefined),
+      hint: formatAmbientSourceHint(meta.key, meta.hint, ambientTranscriptHandoff || undefined),
+      value: sourceSections[meta.key].trim(),
+    })),
+    [ambientTranscriptHandoff, sourceSections],
+  );
   const activeSourcePanel = useMemo(() => {
     if (activeSourceKey === 'combined') {
       return {
@@ -2263,7 +2289,13 @@ export function ReviewWorkspace({
       value: panel?.value || '',
     };
   }, [activeSourceKey, session?.sourceInput, sourcePanels]);
-  const sourceBlocks = useMemo(() => buildSourceBlocks(sourceSections), [sourceSections]);
+  const sourceBlocks = useMemo(
+    () => buildSourceBlocks(sourceSections).map((block) => ({
+      ...block,
+      sourceLabel: formatAmbientSourceLabel(block.sourceLabel, block.sourceKey, ambientTranscriptHandoff || undefined),
+    })),
+    [ambientTranscriptHandoff, sourceSections],
+  );
   const activeDictationInsertions = useMemo(() => {
     if (activeSourceKey === 'combined') {
       return flattenDictationInsertions(dictationInsertions);
@@ -2276,6 +2308,20 @@ export function ReviewWorkspace({
     () => (isDischargeNote ? buildDischargeTimelineBuckets(sourceBlocks) : []),
     [isDischargeNote, sourceBlocks],
   );
+  const ambientTranscriptSummary = useMemo(() => {
+    if (!ambientTranscriptHandoff) {
+      return null;
+    }
+
+    return {
+      transcriptEventCount: ambientTranscriptHandoff.transcriptEventCount,
+      reviewFlagCount: ambientTranscriptHandoff.reviewFlagCount,
+      unresolvedSpeakerTurnCount: ambientTranscriptHandoff.unresolvedSpeakerTurnCount,
+      transcriptReadyForSource: ambientTranscriptHandoff.transcriptReadyForSource,
+      committedAtLabel: new Date(ambientTranscriptHandoff.committedAt).toLocaleString(),
+      sourceBlocks: sourceBlocks.filter((block) => block.sourceKey === 'patientTranscript').length,
+    };
+  }, [ambientTranscriptHandoff, sourceBlocks]);
   const sectionEvidenceMap = useMemo(() => buildSectionEvidenceMap(draftSections, sourceSections), [draftSections, sourceSections]);
   const focusedSectionEvidence = focusedSectionAnchor ? sectionEvidenceMap[focusedSectionAnchor] : null;
   const focusedEvidenceBlock = useMemo(
@@ -2896,9 +2942,19 @@ export function ReviewWorkspace({
       needsReviewCount: reviewCounts.needsReview,
       unreviewedCount: reviewCounts.unreviewed,
       destinationConstraintActive,
+      ambientSessionState: ambientTranscriptHandoff?.sessionState,
+      ambientTranscriptEventCount: ambientTranscriptSummary?.transcriptEventCount,
+      ambientReviewFlagCount: ambientTranscriptSummary?.reviewFlagCount,
+      ambientUnresolvedSpeakerTurnCount: ambientTranscriptSummary?.unresolvedSpeakerTurnCount,
+      ambientTranscriptReadyForSource: ambientTranscriptSummary?.transcriptReadyForSource,
     });
   }, [
     activeProviderProfile,
+    ambientTranscriptHandoff?.sessionState,
+    ambientTranscriptSummary?.reviewFlagCount,
+    ambientTranscriptSummary?.transcriptEventCount,
+    ambientTranscriptSummary?.transcriptReadyForSource,
+    ambientTranscriptSummary?.unresolvedSpeakerTurnCount,
     contradictionFlags.length,
     draftText,
     destinationConstraintActive,
@@ -3010,7 +3066,7 @@ export function ReviewWorkspace({
               label="open"
               value={reviewCounts.unreviewed + reviewCounts.needsReview}
             />
-            <div className="workspace-chip rounded-full px-3 py-1.5 text-xs font-medium text-cyan-50/74">
+            <div className="workspace-badge-static rounded-full px-3 py-1.5 text-xs font-medium text-cyan-50/74">
               {currentSession.mode === 'live' ? 'Live generation' : 'Draft output. Clinician review required before use.'}
             </div>
           </div>
@@ -3020,7 +3076,7 @@ export function ReviewWorkspace({
             Keep missing or uncertain facts visibly missing or uncertain.
           </span>
           {focusedSectionHeading ? (
-            <span className="workspace-chip rounded-full px-3 py-1 font-medium text-cyan-50">
+            <span className="workspace-badge-static rounded-full px-3 py-1 font-medium text-cyan-50">
               Focus: {focusedSectionHeading}
             </span>
           ) : null}
@@ -3263,6 +3319,9 @@ export function ReviewWorkspace({
                             className={`rounded-lg border px-3 py-2 text-left text-xs ${evidenceSignalClasses[link.signal]} ${focusedEvidenceBlockId === link.blockId ? 'ring-2 ring-sky-200' : ''}`}
                           >
                             <div className="font-semibold">{block.sourceLabel}</div>
+                            {ambientTranscriptSummary && block.sourceKey === 'patientTranscript' ? (
+                              <div className="mt-1">Ambient transcript source</div>
+                            ) : null}
                             <div className="mt-1">{getSignalLabel(link.signal)}</div>
                             {link.overlapTerms.length ? <div className="mt-1 opacity-80">Matches: {link.overlapTerms.join(', ')}</div> : null}
                           </button>
@@ -3311,6 +3370,9 @@ export function ReviewWorkspace({
                                     className="w-full text-left"
                                   >
                                     <div className="font-semibold">{block.sourceLabel}</div>
+                                    {ambientTranscriptSummary && block.sourceKey === 'patientTranscript' ? (
+                                      <div className="mt-1">Ambient transcript source</div>
+                                    ) : null}
                                     <div className="mt-1">{getSignalLabel(link.signal)}</div>
                                     {link.overlapTerms.length ? <div className="mt-1 opacity-80">Matches: {link.overlapTerms.join(', ')}</div> : null}
                                   </button>
@@ -3448,6 +3510,9 @@ export function ReviewWorkspace({
                               <div className="flex items-start justify-between gap-3">
                                 <div>
                                   <div className="text-xs font-semibold uppercase tracking-wide text-violet-900">{block.sourceLabel}</div>
+                                  {ambientTranscriptSummary && block.sourceKey === 'patientTranscript' ? (
+                                    <div className="mt-1 text-[11px] font-medium text-sky-900">Ambient transcript source</div>
+                                  ) : null}
                                   <div className="mt-1 text-sm text-ink whitespace-pre-wrap">{block.text}</div>
                                 </div>
                                 <button
@@ -3679,14 +3744,14 @@ export function ReviewWorkspace({
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-100/82">Ready for EHR paste</div>
                 <div className="mt-1 text-lg font-semibold text-white">Review is clear enough to copy into {activeDestinationMeta.summaryLabel} now.</div>
                 <div className="mt-1 text-sm leading-6 text-emerald-50/86">
-                  Use the primary copy action if you want destination-safe formatting, or choose plain text / field targets if your workflow needs a different paste style.
+                  Copy the final note when review is complete. Use the main copy action first, then use plain text or field targets only if your workflow needs them.
                 </div>
               </div>
               <button
                 onClick={() => void handleCopy('ehr-safe')}
                 className="rounded-[16px] bg-white px-5 py-3 font-semibold text-emerald-900 shadow-[0_16px_34px_rgba(255,255,255,0.16)]"
               >
-                Copy note into EHR now
+                Copy Final Note
               </button>
             </div>
           </div>
@@ -3697,7 +3762,7 @@ export function ReviewWorkspace({
             disabled={!exportReadiness.ready}
             className={`rounded-[16px] px-5 py-3 font-medium shadow-[0_16px_34px_rgba(18,181,208,0.2)] ${exportReadiness.ready ? 'bg-accent text-white ring-2 ring-emerald-300/32' : 'bg-accent text-white disabled:cursor-not-allowed disabled:opacity-60'}`}
           >
-            {exportReadiness.ready ? 'Copy EHR-safe' : 'Copy EHR-safe'}
+            {exportReadiness.ready ? 'Copy Final Note (Best Default)' : 'Copy Final Note'}
           </button>
           <button
             onClick={() => void handleCopy('plain-text')}
@@ -3722,8 +3787,8 @@ export function ReviewWorkspace({
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-3">
           <div className={`rounded-[16px] border px-4 py-3 text-sm ${exportReadiness.ready ? 'border-emerald-200/20 bg-[rgba(20,83,45,0.18)] text-emerald-50/92' : 'border-cyan-200/10 bg-[rgba(13,30,50,0.48)] text-cyan-50/78'}`}>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Copy EHR-safe</div>
-            <div className="mt-2 leading-6">{exportReadiness.ready ? 'This is the main “paste now” action. It matches the selected destination profile and is the fastest path into the chart.' : 'Use this when the destination profile matters and formatting cleanup should match the selected EHR behavior.'}</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Copy Final Note</div>
+            <div className="mt-2 leading-6">{exportReadiness.ready ? 'This is the main paste action for most users. It matches the selected destination profile and is the fastest path into the chart.' : 'Use this as the default copy action when the destination profile matters and formatting cleanup should match the selected EHR behavior.'}</div>
           </div>
           <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3 text-sm text-cyan-50/78">
             <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Copy plain text</div>
@@ -3744,6 +3809,19 @@ export function ReviewWorkspace({
             {renderRecentActions()}
           </div>
         ) : null}
+        <InlineFeedbackControl
+          pageContext={`Note builder review • ${session?.noteType || 'Unknown note type'}`}
+          workflowArea="note_builder"
+          noteType={session?.noteType}
+          routeTaken={`note-builder-${session?.mode || 'unknown'}`}
+          promptSummary={session?.sourceInput}
+          responseSummary={draftText}
+          providerId={resolvedProviderIdentityId}
+          providerProfileId={providerSettings.providerProfileId}
+          providerProfileName={activeProviderProfile?.name}
+          stage="review"
+          promptLabel="Was this draft useful?"
+        />
         <div className="mt-4 rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3 text-sm text-cyan-50/78">
           Active paste profile: <span className="font-semibold text-cyan-50">{activeDestinationMeta.summaryLabel}</span>. {activeDestinationMeta.pasteExpectation}
         </div>
@@ -3870,7 +3948,7 @@ export function ReviewWorkspace({
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <button onClick={() => void handleCopy('ehr-safe')} disabled={!exportReadiness.ready} className="rounded-lg bg-accent px-5 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">Copy EHR-safe</button>
+              <button onClick={() => void handleCopy('ehr-safe')} disabled={!exportReadiness.ready} className="rounded-lg bg-accent px-5 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">Copy Final Note</button>
               <button onClick={handleSaveDraft} className="rounded-lg border border-border bg-white px-5 py-3 font-medium">Save Draft</button>
               {onBackToEdit ? (
                 <button onClick={onBackToEdit} className="rounded-lg border border-border bg-white px-5 py-3 font-medium">Back to Edit</button>
@@ -4073,19 +4151,19 @@ export function ReviewWorkspace({
               </div>
             ) : null}
             <div className="mt-4 flex flex-wrap gap-2">
-              <div className="workspace-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
+              <div className="workspace-badge-static rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
                 {session.noteType}
               </div>
-              <div className="workspace-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
+              <div className="workspace-badge-static rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
                 {session.specialty}
               </div>
-              <div className="workspace-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
+              <div className="workspace-badge-static rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
                 {activeDestinationMeta.summaryLabel}
               </div>
             </div>
           </div>
           <div className="grid gap-3">
-            <div className="workspace-kpi rounded-[20px] p-4">
+            <div className="workspace-card-static rounded-[20px] p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Session status</div>
               <div className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-white">
                 {exportReadiness.ready ? 'Ready to finish' : 'Review in progress'}
@@ -5561,7 +5639,7 @@ export function ReviewWorkspace({
                 You have finalized this {session.noteType.toLowerCase()} lane with the same section setup {lanePreferenceSuggestion.count} times. If that is intentional, Veranote can send it back into compose as a reusable note preference instead of making you rebuild it each time.
               </p>
             </div>
-            <div className="workspace-chip rounded-full px-3 py-1 text-xs font-medium text-cyan-50">
+            <div className="workspace-badge-static rounded-full px-3 py-1 text-xs font-medium text-cyan-50">
               Finalized pattern
             </div>
           </div>
@@ -5628,7 +5706,7 @@ export function ReviewWorkspace({
               <p className="mt-1 text-sm text-cyan-50/68">Suggested evidence only. Use this to inspect likely source blocks for the section you are reviewing.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <div className="workspace-chip rounded-full px-3 py-1 text-xs font-medium text-cyan-50/72">Reference only</div>
+              <div className="workspace-badge-static rounded-full px-3 py-1 text-xs font-medium text-cyan-50/72">Reference only</div>
               <InlineMetric label="blocks" value={sourceBlocks.length} />
               {focusedSectionEvidence ? <InlineMetric label="focused links" value={focusedSectionEvidence.links.length} /> : null}
             </div>
@@ -5638,6 +5716,14 @@ export function ReviewWorkspace({
               <div>
                 <div className="text-sm font-semibold text-white">{activeSourcePanel.label}</div>
                 <p className="mt-1 text-xs text-cyan-50/62">{activeSourcePanel.hint}</p>
+                {activeSourceKey === 'patientTranscript' && ambientTranscriptSummary ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <ProvenanceChip label="Ambient transcript source" />
+                    <span className="rounded-full border border-sky-300/18 bg-[rgba(56,189,248,0.12)] px-2.5 py-1 text-[11px] font-medium text-sky-50">
+                      {ambientTranscriptSummary.transcriptEventCount} captured turn{ambientTranscriptSummary.transcriptEventCount === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                ) : null}
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button onClick={() => setActiveSourceKey('combined')} className={`rounded-full px-3 py-1.5 text-xs font-medium ${activeSourceKey === 'combined' ? 'bg-accent text-white shadow-[0_10px_24px_rgba(2,8,18,0.22)]' : 'workspace-chip text-cyan-50/74'}`}>Combined</button>
                   {sourcePanels.map((panel) => (
@@ -5720,6 +5806,66 @@ export function ReviewWorkspace({
               </div>
             ) : null}
 
+            {ambientTranscriptSummary ? (
+              <div className="mt-3 rounded-[18px] border border-sky-300/18 bg-[rgba(56,189,248,0.1)] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-100/78">Ambient transcript provenance</div>
+                    <div className="mt-1 text-sm text-sky-50">
+                      Reviewed ambient transcript material was loaded into the patient conversation source lane before draft generation.
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <ProvenanceChip label="Ambient transcript handoff" />
+                    <InlineMetric label="events" value={ambientTranscriptSummary.transcriptEventCount} />
+                    <InlineMetric label="source blocks" value={ambientTranscriptSummary.sourceBlocks} />
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                  <div className="rounded-[14px] border border-white/10 bg-white/5 p-3 text-sm text-cyan-50/78">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-100/74">Trust state at handoff</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <span className={`rounded-full border px-2 py-1 text-[11px] font-medium ${
+                        ambientTranscriptSummary.transcriptReadyForSource
+                          ? 'border-emerald-300/18 bg-[rgba(16,185,129,0.14)] text-emerald-50'
+                          : 'border-amber-300/18 bg-[rgba(245,158,11,0.14)] text-amber-50'
+                      }`}>
+                        {ambientTranscriptSummary.transcriptReadyForSource ? 'Ready for source at handoff' : 'Transcript still constrained at handoff'}
+                      </span>
+                      {ambientTranscriptSummary.reviewFlagCount ? (
+                        <span className="rounded-full border border-amber-300/18 bg-[rgba(245,158,11,0.14)] px-2 py-1 text-[11px] font-medium text-amber-50">
+                          {ambientTranscriptSummary.reviewFlagCount} review flag{ambientTranscriptSummary.reviewFlagCount === 1 ? '' : 's'}
+                        </span>
+                      ) : null}
+                      {ambientTranscriptSummary.unresolvedSpeakerTurnCount ? (
+                        <span className="rounded-full border border-rose-300/18 bg-[rgba(244,63,94,0.12)] px-2 py-1 text-[11px] font-medium text-rose-50">
+                          {ambientTranscriptSummary.unresolvedSpeakerTurnCount} unresolved speaker turn{ambientTranscriptSummary.unresolvedSpeakerTurnCount === 1 ? '' : 's'}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 text-xs text-cyan-50/62">
+                      Loaded into source on {ambientTranscriptSummary.committedAtLabel}.
+                    </div>
+                  </div>
+                  <div className="rounded-[14px] border border-white/10 bg-white/5 p-3 text-sm text-cyan-50/78">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-100/74">Review cue</div>
+                    <div className="mt-2 leading-6">
+                      Treat patient-transcript evidence as ambient-derived where it appears below. If draft wording feels too clean, jump back to the transcript-derived source blocks first.
+                    </div>
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={() => setActiveSourceKey('patientTranscript')}
+                        className="rounded-full border border-sky-300/18 bg-[rgba(56,189,248,0.16)] px-3 py-1.5 text-xs font-medium text-sky-50"
+                      >
+                        Focus transcript source blocks
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             {activeSourceKey === 'combined' ? (
               <div className="mt-3 space-y-3 max-h-[540px] overflow-auto">
                 {sourceBlocks.length ? sourceBlocks.map((block) => {
@@ -5742,6 +5888,11 @@ export function ReviewWorkspace({
                       >
                         <div className="flex flex-wrap items-center gap-2">
                           <div className="text-xs font-semibold uppercase tracking-wide text-cyan-50/62">{block.sourceLabel}</div>
+                          {ambientTranscriptSummary && block.sourceKey === 'patientTranscript' ? (
+                            <div className="rounded-full border border-sky-300/18 bg-[rgba(56,189,248,0.12)] px-2 py-1 text-[11px] font-medium text-sky-50">
+                              Ambient transcript
+                            </div>
+                          ) : null}
                           {matchingLink ? (
                             <div className={`rounded-full border px-2 py-1 text-[11px] font-medium ${evidenceSignalClasses[matchingLink.signal]}`}>
                               {getSignalLabel(matchingLink.signal)}
@@ -5789,6 +5940,11 @@ export function ReviewWorkspace({
                       >
                         <div className="flex flex-wrap items-center gap-2">
                           <div className="text-xs font-semibold uppercase tracking-wide text-cyan-50/62">{block.sourceLabel}</div>
+                          {ambientTranscriptSummary && block.sourceKey === 'patientTranscript' ? (
+                            <div className="rounded-full border border-sky-300/18 bg-[rgba(56,189,248,0.12)] px-2 py-1 text-[11px] font-medium text-sky-50">
+                              Ambient transcript
+                            </div>
+                          ) : null}
                           {matchingLink ? (
                             <div className={`rounded-full border px-2 py-1 text-[11px] font-medium ${evidenceSignalClasses[matchingLink.signal]}`}>
                               {getSignalLabel(matchingLink.signal)}

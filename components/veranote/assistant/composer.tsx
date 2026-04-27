@@ -6,9 +6,10 @@ type ComposerProps = {
   disabled?: boolean;
   placeholder?: string;
   onSend: (message: string) => Promise<void> | void;
+  compact?: boolean;
 };
 
-export function Composer({ disabled, placeholder, onSend }: ComposerProps) {
+export function Composer({ disabled, placeholder, onSend, compact = false }: ComposerProps) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -51,7 +52,9 @@ export function Composer({ disabled, placeholder, onSend }: ComposerProps) {
         onKeyDown={handleKeyDown}
         disabled={disabled}
         placeholder={placeholder || 'Ask your own question about this warning, this section, your note preferences, privacy, or your workflow...'}
-        className="min-h-[96px] w-full rounded-[18px] border border-border bg-white p-3 text-sm leading-6 text-slate-900 disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-[84px]"
+        className={`w-full rounded-[16px] border border-border bg-white px-3 py-2.5 text-sm leading-6 text-slate-900 disabled:cursor-not-allowed disabled:opacity-60 ${
+          compact ? 'min-h-[68px] sm:min-h-[60px]' : 'min-h-[82px] sm:min-h-[72px]'
+        }`}
       />
       <div className="flex justify-stretch sm:justify-end">
         <button

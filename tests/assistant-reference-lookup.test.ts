@@ -61,7 +61,7 @@ describe('assistant reference lookup', () => {
 
   it('classifies not-yet-taught answers correctly', () => {
     const meta = buildExternalAnswerMeta(
-      "I don't have a trusted reference answer for that yet. Use Teach Vera this if you want me to learn this lookup next.",
+      "I don't have a trusted reference answer for that yet. Use Teach Atlas this if you want me to learn this lookup next.",
       [{ label: 'CDC ICD-10-CM site search', url: 'https://search.cdc.gov/search/?query=test&affiliate=cdc-main' }],
     );
 

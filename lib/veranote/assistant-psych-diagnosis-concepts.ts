@@ -190,6 +190,20 @@ export function buildPsychDiagnosisConceptHelp(normalizedMessage: string): Assis
     return null;
   }
 
+  if (
+    /\b(gas[- ]station|smoke[- ]shop|corner store)\b/.test(normalized)
+    && /\b(product name is unknown|unknown product|unknown drug)\b/.test(normalized)
+  ) {
+    return {
+      message: 'This could reflect intoxication, withdrawal, or toxicity from an unknown gas-station or smoke-shop product, but the exact substance remains unknown from the source provided. Keep the product identity uncertain, document the reported symptoms literally, and do not name a specific drug or contaminant from this source alone.',
+      suggestions: [
+        'If the exact package name, brand, route, or timing becomes available, document that wording directly rather than guessing the substance class.',
+        'This remains based on available information.',
+      ],
+      answerMode: 'direct_reference_answer',
+    };
+  }
+
   const comparisonHelp = buildComparisonConceptHelp(normalized);
   if (comparisonHelp) {
     return comparisonHelp;
@@ -251,7 +265,7 @@ export function buildPsychDiagnosisConceptHelp(normalizedMessage: string): Assis
   }
 
   const ambiguousLead = findAmbiguousFamilyLead(normalized);
-  const summary = conceptMatch.summary || `${conceptMatch.diagnosisName} is a psychiatry diagnosis Vera can help explain at a high level.`;
+  const summary = conceptMatch.summary || `${conceptMatch.diagnosisName} is a psychiatry diagnosis Atlas can help explain at a high level.`;
   const timeframe = conceptMatch.timeframeSummary;
   const differential = conceptMatch.commonConfusionWithOtherDiagnoses?.length
     ? `Common diagnostic confusion points include ${conceptMatch.commonConfusionWithOtherDiagnoses.slice(0, 4).join(', ')}.`

@@ -44,8 +44,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const appBaseUrl = getAppBaseUrl();
 
   return (
-    <html lang="en">
-      <body className={`${manrope.variable} ${spaceGrotesk.variable}`}>
+    <html lang="en" suppressHydrationWarning>
+      <body suppressHydrationWarning className={`${manrope.variable} ${spaceGrotesk.variable}`}>
         <AuthSessionProvider>
           <AuthSessionSync key={appBaseUrl} />
           {children}

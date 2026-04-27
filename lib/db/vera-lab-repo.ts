@@ -18,7 +18,7 @@ import type {
 function getClient() {
   const client = getSupabaseAdminClient();
   if (!client) {
-    throw new Error('Supabase admin client is unavailable for Vera Lab.');
+    throw new Error('Supabase admin client is unavailable for Atlas Lab.');
   }
 
   return client;

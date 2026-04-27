@@ -8,7 +8,12 @@ import { buildDraftRecoveryState, getDraftPriorityScore } from '@/lib/veranote/d
 import { createEmptyAssistantLearningStore, type AssistantLearningStore } from '@/lib/veranote/assistant-learning';
 import { buildVeraMemoryLedger } from '@/lib/veranote/vera-memory-ledger';
 import type { DraftSession, PersistedDraftSession } from '@/types/session';
-import type { BetaFeedbackCategory, BetaFeedbackItem, BetaFeedbackMetadata } from '@/types/beta-feedback';
+import type {
+  BetaFeedbackCategory,
+  BetaFeedbackItem,
+  BetaFeedbackMetadata,
+  BetaFeedbackStatus,
+} from '@/types/beta-feedback';
 import type { VeranoteBuildTask } from '@/types/task';
 import type { VeraMemoryLedger } from '@/types/vera-memory';
 import type { DictationAuditEvent } from '@/types/dictation';
@@ -30,8 +35,12 @@ type PrototypeDb = {
   betaFeedback: BetaFeedbackItem[];
 };
 
-const DATA_DIR = path.join(process.cwd(), '.prototype-data');
-const DB_PATH = path.join(DATA_DIR, 'prototype-db.json');
+const DATA_DIR = process.env.PROTOTYPE_DATA_DIR
+  ? path.resolve(process.env.PROTOTYPE_DATA_DIR)
+  : path.join(process.cwd(), '.prototype-data');
+const DB_PATH = process.env.PROTOTYPE_DB_PATH
+  ? path.resolve(process.env.PROTOTYPE_DB_PATH)
+  : path.join(DATA_DIR, 'prototype-db.json');
 
 const defaultDb: PrototypeDb = {
   drafts: [],
@@ -155,7 +164,7 @@ async function readDb(): Promise<PrototypeDb> {
             }),
           },
       veranoteBuildTasks: Array.isArray(parsed.veranoteBuildTasks) ? parsed.veranoteBuildTasks : [],
-      betaFeedback: Array.isArray(parsed.betaFeedback) ? parsed.betaFeedback : [],
+      betaFeedback: Array.isArray(parsed.betaFeedback) ? parsed.betaFeedback.map((item) => normalizeBetaFeedbackItem(item as Partial<BetaFeedbackItem>)) : [],
     };
   } catch {
     return defaultDb;
@@ -173,6 +182,34 @@ function createDraftId() {
 
 function createFeedbackId() {
   return `feedback_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizeBetaFeedbackItem(rawFeedback: Partial<BetaFeedbackItem>): BetaFeedbackItem {
+  return {
+    id: typeof rawFeedback.id === 'string' && rawFeedback.id ? rawFeedback.id : createFeedbackId(),
+    createdAt: typeof rawFeedback.createdAt === 'string' ? rawFeedback.createdAt : new Date().toISOString(),
+    pageContext: typeof rawFeedback.pageContext === 'string' && rawFeedback.pageContext ? rawFeedback.pageContext : 'General feedback',
+    category: typeof rawFeedback.category === 'string' ? rawFeedback.category as BetaFeedbackCategory : 'general',
+    message: typeof rawFeedback.message === 'string' && rawFeedback.message ? rawFeedback.message : 'Beta feedback submitted.',
+    status: typeof rawFeedback.status === 'string' ? rawFeedback.status as BetaFeedbackStatus : 'new',
+    workflowArea: rawFeedback.workflowArea,
+    noteType: rawFeedback.noteType,
+    feedbackLabel: rawFeedback.feedbackLabel,
+    severity: rawFeedback.severity,
+    answerMode: rawFeedback.answerMode,
+    builderFamily: rawFeedback.builderFamily,
+    routeTaken: rawFeedback.routeTaken,
+    model: rawFeedback.model,
+    promptSummary: rawFeedback.promptSummary,
+    responseSummary: rawFeedback.responseSummary,
+    userComment: rawFeedback.userComment,
+    desiredBehavior: rawFeedback.desiredBehavior,
+    phiRiskFlag: rawFeedback.phiRiskFlag,
+    adminNotes: rawFeedback.adminNotes,
+    convertedToRegression: rawFeedback.convertedToRegression,
+    regressionCaseId: rawFeedback.regressionCaseId,
+    metadata: rawFeedback.metadata,
+  };
 }
 
 function normalizeDraftRecord(rawDraft: Partial<DraftRecord>): DraftRecord {
@@ -550,6 +587,22 @@ export async function saveBetaFeedback(feedback: {
   pageContext: string;
   category: BetaFeedbackCategory;
   message: string;
+  workflowArea?: BetaFeedbackItem['workflowArea'];
+  noteType?: string;
+  feedbackLabel?: BetaFeedbackItem['feedbackLabel'];
+  severity?: BetaFeedbackItem['severity'];
+  answerMode?: string;
+  builderFamily?: string;
+  routeTaken?: string;
+  model?: string;
+  promptSummary?: string;
+  responseSummary?: string;
+  userComment?: string;
+  desiredBehavior?: string;
+  phiRiskFlag?: boolean;
+  adminNotes?: string;
+  convertedToRegression?: boolean;
+  regressionCaseId?: string;
   metadata?: BetaFeedbackMetadata;
 }) {
   const db = await readDb();
@@ -560,6 +613,22 @@ export async function saveBetaFeedback(feedback: {
     category: feedback.category,
     message: feedback.message,
     status: 'new',
+    workflowArea: feedback.workflowArea,
+    noteType: feedback.noteType,
+    feedbackLabel: feedback.feedbackLabel,
+    severity: feedback.severity,
+    answerMode: feedback.answerMode,
+    builderFamily: feedback.builderFamily,
+    routeTaken: feedback.routeTaken,
+    model: feedback.model,
+    promptSummary: feedback.promptSummary,
+    responseSummary: feedback.responseSummary,
+    userComment: feedback.userComment,
+    desiredBehavior: feedback.desiredBehavior,
+    phiRiskFlag: feedback.phiRiskFlag,
+    adminNotes: feedback.adminNotes,
+    convertedToRegression: feedback.convertedToRegression,
+    regressionCaseId: feedback.regressionCaseId,
     metadata: feedback.metadata,
   };
 
@@ -570,8 +639,14 @@ export async function saveBetaFeedback(feedback: {
 }
 
 export async function updateBetaFeedbackStatus(id: string, status: BetaFeedbackItem['status']) {
+  return updateBetaFeedback(id, { status });
+}
+
+export async function updateBetaFeedback(id: string, patch: Partial<Pick<
+  BetaFeedbackItem,
+  'status' | 'adminNotes' | 'convertedToRegression' | 'regressionCaseId'
+>>) {
   const db = await readDb();
-  const nextStatus = status || 'new';
   let updated: BetaFeedbackItem | null = null;
 
   db.betaFeedback = db.betaFeedback.map((item) => {
@@ -581,7 +656,10 @@ export async function updateBetaFeedbackStatus(id: string, status: BetaFeedbackI
 
     updated = {
       ...item,
-      status: nextStatus,
+      status: patch.status || item.status || 'new',
+      adminNotes: patch.adminNotes ?? item.adminNotes,
+      convertedToRegression: patch.convertedToRegression ?? item.convertedToRegression,
+      regressionCaseId: patch.regressionCaseId ?? item.regressionCaseId,
     };
     return updated;
   });

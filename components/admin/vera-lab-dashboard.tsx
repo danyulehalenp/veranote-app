@@ -88,11 +88,11 @@ export function VeraLabDashboard() {
       const response = await fetch('/api/admin/vera-lab/summary', { cache: 'no-store' });
       const payload = await response.json();
       if (!response.ok) {
-        throw new Error(payload.error || 'Unable to load Vera Lab summary.');
+        throw new Error(payload.error || 'Unable to load Atlas Lab summary.');
       }
       setSummary(payload);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load Vera Lab summary.');
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load Atlas Lab summary.');
     } finally {
       setIsLoading(false);
     }
@@ -126,12 +126,12 @@ export function VeraLabDashboard() {
       });
       const payload = await response.json();
       if (!response.ok) {
-        throw new Error(payload.error || 'Unable to run Vera Lab batch.');
+        throw new Error(payload.error || 'Unable to run Atlas Lab batch.');
       }
       setRunResult(payload);
       await loadSummary();
     } catch (runError) {
-      setError(runError instanceof Error ? runError.message : 'Unable to run Vera Lab batch.');
+      setError(runError instanceof Error ? runError.message : 'Unable to run Atlas Lab batch.');
     } finally {
       setIsRunning(false);
     }
@@ -159,12 +159,12 @@ export function VeraLabDashboard() {
       });
       const payload = await response.json();
       if (!response.ok) {
-        throw new Error(payload.error || 'Unable to run repeated Vera Lab cycles.');
+        throw new Error(payload.error || 'Unable to run repeated Atlas Lab cycles.');
       }
       setRepeatedRunResult(payload);
       await loadSummary();
     } catch (runError) {
-      setError(runError instanceof Error ? runError.message : 'Unable to run repeated Vera Lab cycles.');
+      setError(runError instanceof Error ? runError.message : 'Unable to run repeated Atlas Lab cycles.');
     } finally {
       setIsRunningRepeated(false);
     }
@@ -223,10 +223,10 @@ export function VeraLabDashboard() {
       <section className="aurora-panel rounded-[28px] p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-sm font-semibold uppercase tracking-[0.16em] text-cyan-100">Vera Lab</div>
+            <div className="text-sm font-semibold uppercase tracking-[0.16em] text-cyan-100">Atlas Lab</div>
             <h2 className="mt-1 text-2xl font-semibold text-white">Internal interrogator, judge, and repair queue</h2>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-cyan-50/82">
-              Run real provider-style batches against the live Vera endpoint, classify failures into repairable layers, and keep a regression gate attached to each fix task.
+              Run real provider-style batches against the live Atlas endpoint, classify failures into repairable layers, and keep a regression gate attached to each fix task.
             </p>
           </div>
           <div className="rounded-[18px] border border-cyan-200/10 bg-[rgba(12,27,45,0.5)] px-4 py-3 text-sm text-cyan-50/78">
@@ -369,7 +369,7 @@ export function VeraLabDashboard() {
                 disabled={isRunning || !selectedPackIds.length}
                 className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-60"
               >
-                {isRunning ? 'Running Vera Lab…' : 'Run test batch'}
+                {isRunning ? 'Running Atlas Lab…' : 'Run test batch'}
               </button>
               <button
                 type="button"

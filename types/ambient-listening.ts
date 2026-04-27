@@ -29,6 +29,16 @@ export type AmbientSessionState =
   | 'finalized'
   | 'discarded';
 
+export type AmbientTranscriptSourceKind = 'none' | 'mock_seeded' | 'live_stream_adapter';
+export type AmbientTranscriptDeliveryTransport = 'none' | 'polling_pull' | 'stream_push';
+export type AmbientTranscriptEventType = 'interim_turn' | 'final_turn';
+export type AmbientTranscriptTransportPhase =
+  | 'idle'
+  | 'streaming_live'
+  | 'replaying_buffered'
+  | 'flushing_after_stop'
+  | 'awaiting_draft_generation';
+
 export type AmbientParticipantRole =
   | 'patient'
   | 'provider'
@@ -191,6 +201,58 @@ export type AmbientTranscriptTurn = {
   exclusionReason?: string | null;
   clinicalConcepts: string[];
   riskMarkers: string[];
+};
+
+export type AmbientTranscriptReviewHints = {
+  severityBadges?: string[];
+  attributionNeedsReview?: boolean;
+  textNeedsReview?: boolean;
+  linkedDraftSentenceIds?: string[];
+  providerConfirmed?: boolean;
+};
+
+export type AmbientTranscriptEventEnvelope = {
+  id: string;
+  eventType: AmbientTranscriptEventType;
+  occurredAt: string;
+  sourceKind: Exclude<AmbientTranscriptSourceKind, 'none'>;
+  deliveryTransport?: Exclude<AmbientTranscriptDeliveryTransport, 'none'>;
+  turn: AmbientTranscriptTurn;
+  reviewHints?: AmbientTranscriptReviewHints;
+};
+
+export type AmbientTranscriptAdapterDescriptor = {
+  adapterId: string;
+  adapterLabel: string;
+  sourceKind: Exclude<AmbientTranscriptSourceKind, 'none'>;
+  defaultDeliveryTransport: Exclude<AmbientTranscriptDeliveryTransport, 'none'>;
+  supportsBufferedReplay: boolean;
+  supportsStreamPush: boolean;
+};
+
+export type AmbientTranscriptIngressTurn = {
+  id?: string;
+  startMs: number;
+  endMs: number;
+  speakerRole?: AmbientParticipantRole;
+  speakerLabel?: string | null;
+  speakerConfidence?: number;
+  text: string;
+  normalizedText?: string | null;
+  textConfidence?: number;
+  isFinal: boolean;
+  excludedFromDraft?: boolean;
+  exclusionReason?: string | null;
+  clinicalConcepts?: string[];
+  riskMarkers?: string[];
+  reviewHints?: AmbientTranscriptReviewHints;
+};
+
+export type AmbientTranscriptIngressEvent = {
+  id?: string;
+  eventType?: AmbientTranscriptEventType;
+  occurredAt?: string;
+  turn: AmbientTranscriptIngressTurn;
 };
 
 export type AmbientEvidenceAnchor = {

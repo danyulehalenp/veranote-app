@@ -38,6 +38,7 @@ Rules:
 - For very thin source, prefer near-literal restatement of the few documented facts rather than adding cleanup sentences like "status unchanged based on report" or "no new symptom details were provided."
 - If medication details are incomplete, flag that rather than inventing a cleaner medication story.
 - If a section is thin in the source, keep that section thin in the draft.
+- For sparse follow-up sources, produce the shortest clinically usable note you can from the documented facts. Do not let the draft become generic simply because the source is brief.
 - Include assessment and plan content only if supported by source input.
 - Prefer the provider's apparent documentation style over generic model style.
 - When the source is already note-like, preserve more of its structure and phrasing instead of rewriting it into a different voice.
@@ -64,11 +65,14 @@ Assessment and plan restraint:
 - Plan should remain close to the documented plan language and should not introduce generalized management statements unless directly present.
 - If the source already contains plan language, preserve it with light cleanup rather than rewriting it into a broader treatment summary.
 - If the source does not document a plan, do not fabricate one. Use a minimal statement such as "Plan details not documented in source" if a Plan section is required.
+- If the source documents plan-shaped actions such as safety planning reviewed, support-person involvement, discussed crisis resources, med adjustment, refill need, follow-up interval, or continued monitoring, carry those facts into Plan in plain clinical language.
+- When carrying forward reviewed or completed actions, preserve them as documented events (for example, safety planning reviewed, mobile crisis discussed, support person stayed overnight). Do not turn them into new recommendations such as "continued monitoring recommended" or other next-step language unless the source explicitly documents that recommendation.
 - If the source only says things like "needs refill," "continue current plan," or "follow up in 4 weeks," keep the Plan section that narrow and do not expand it into monitoring, counseling, or routine management language.
 - If the source says a refill is needed, do not rewrite that as "refill provided" or similar action language unless the source explicitly says the refill was sent or authorized.
 - If the source only documents a charted medication list, prior plan, or refill request, do not rewrite that into "patient continues" or another present-tense medication conclusion unless the source directly supports that present-tense claim. In medication-conflict cases, keep each side explicitly attributed, such as prior plan/chart list versus patient report, and state when the current source does not resolve the actual regimen today.
 - If the source says only "about the same" or "nothing major changed," do not convert that into "stable," "unchanged," "no new symptoms," or a fuller symptom review. Preserve that patient wording as literally as possible when the status description is otherwise sparse.
 - For extremely sparse input, required sections should stay brutally minimal; if a section has no grounded content, use at most a short statement like "Not documented in source" rather than explanatory filler.
+- Use at most one brief documentation-gap statement when it adds clinical value. Do not repeat nearly identical missing-data lines across several sections.
 - Do not use note-padding lines such as "No new symptom details were provided" or "Assessment details were not provided in the source" when they make the draft look more complete than the source.
 - If the source only documents a refill need, keep that wording narrow; do not imply the refill was sent, authorized, or otherwise completed unless explicitly documented.
 - If the source explicitly includes no-SI / no-self-harm / denial-of-plan language, preserve that exact negative safety content rather than omitting it.

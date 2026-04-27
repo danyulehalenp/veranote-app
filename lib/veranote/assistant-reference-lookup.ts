@@ -41,7 +41,7 @@ export function buildExternalAnswerMeta(message: string, references: AssistantRe
     return {
       level: 'not-yet-taught',
       label: 'Not yet taught',
-      detail: 'Vera does not have a trusted reference answer for this yet and should not guess.',
+      detail: 'Atlas does not have a trusted reference answer for this yet and should not guess.',
     };
   }
 
@@ -67,7 +67,7 @@ export function buildExternalAnswerMeta(message: string, references: AssistantRe
   return {
     level: 'not-yet-taught',
     label: 'Not yet taught',
-    detail: 'Vera should stay cautious here because she does not have a direct approved source answer yet.',
+    detail: 'Atlas should stay cautious here because it does not have a direct approved source answer yet.',
   };
 }
 

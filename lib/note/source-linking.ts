@@ -28,10 +28,10 @@ export type SectionEvidenceMap = Record<
 >;
 
 const SOURCE_LABELS: Record<keyof SourceSections, string> = {
-  clinicianNotes: 'Clinician raw notes',
-  intakeCollateral: 'Intake / collateral',
-  patientTranscript: 'Patient conversation / transcript',
-  objectiveData: 'Objective data',
+  intakeCollateral: 'Pre-Visit Data',
+  clinicianNotes: 'Live Visit Notes',
+  patientTranscript: 'Ambient Transcript',
+  objectiveData: 'Provider Add-On',
 };
 
 const STOP_WORDS = new Set([

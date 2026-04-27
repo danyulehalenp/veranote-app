@@ -17,10 +17,10 @@ export default async function FeedbackPage() {
   return (
     <AppShell
       title="Feedback Inbox"
-      subtitle="Review provider beta feedback in one place so workflow pain points, wording issues, and accessibility requests can be triaged daily."
+      subtitle="Review beta feedback, mark what needs regression coverage, and copy a safe scaffold for Atlas Lab follow-up."
       fullWidth
     >
-      <InternalSurfaceNotice body="This inbox is an internal triage surface for reviewing provider feedback and Vera gaps. Providers should submit feedback from the in-flow Beta Feedback entry point rather than treat this page as part of their normal workflow." />
+      <InternalSurfaceNotice body="This inbox is an internal beta triage surface. Providers should submit in-flow feedback from the note builder or Atlas response area rather than use this page directly." />
       <BetaFeedbackInbox feedback={feedback} />
     </AppShell>
   );

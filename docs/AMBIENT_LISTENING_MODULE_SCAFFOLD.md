@@ -38,4 +38,7 @@ When future implementation starts, the primary planning docs are:
 
 - [/Users/danielhale/.openclaw/workspace/VERANOTE_AMBIENT_LISTENING_IMPLEMENTATION_SPEC.md](/Users/danielhale/.openclaw/workspace/VERANOTE_AMBIENT_LISTENING_IMPLEMENTATION_SPEC.md)
 - [/Users/danielhale/.openclaw/workspace/VERANOTE_RESEARCH_IMPORTS_LOG.md](/Users/danielhale/.openclaw/workspace/VERANOTE_RESEARCH_IMPORTS_LOG.md)
+- [/Users/danielhale/.openclaw/workspace/app-prototype/docs/VERANOTE_AMBIENT_LISTENING_PRODUCT_DIRECTION_2026-04-24.md](/Users/danielhale/.openclaw/workspace/app-prototype/docs/VERANOTE_AMBIENT_LISTENING_PRODUCT_DIRECTION_2026-04-24.md)
+- [/Users/danielhale/.openclaw/workspace/app-prototype/docs/VERANOTE_AMBIENT_LISTENING_V1_IMPLEMENTATION_SPEC_2026-04-24.md](/Users/danielhale/.openclaw/workspace/app-prototype/docs/VERANOTE_AMBIENT_LISTENING_V1_IMPLEMENTATION_SPEC_2026-04-24.md)
+- [/Users/danielhale/.openclaw/workspace/app-prototype/docs/VERANOTE_AMBIENT_LISTENING_UI_IMPLEMENTATION_PLAN_2026-04-24.md](/Users/danielhale/.openclaw/workspace/app-prototype/docs/VERANOTE_AMBIENT_LISTENING_UI_IMPLEMENTATION_PLAN_2026-04-24.md)
 - this scaffold doc

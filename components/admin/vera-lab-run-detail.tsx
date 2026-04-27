@@ -550,14 +550,14 @@ export function VeraLabRunDetailView({
             <div className="text-sm font-semibold uppercase tracking-[0.16em] text-cyan-100">Run detail</div>
             <h2 className="mt-1 text-2xl font-semibold text-white">Persisted batch inspection</h2>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-cyan-50/80">
-              Review one Vera Lab batch across the full chain: test case, judged result, repair task, and regression gate output.
+              Review one Atlas Lab batch across the full chain: test case, judged result, repair task, and regression gate output.
             </p>
           </div>
           <Link
             href="/admin/vera-lab"
             className="aurora-secondary-button inline-flex rounded-xl px-4 py-2 text-sm font-semibold"
           >
-            Back to Vera Lab
+            Back to Atlas Lab
           </Link>
         </div>
 
@@ -864,7 +864,7 @@ export function VeraLabRunDetailView({
                         {item.result ? (
                           <div className="space-y-4 text-sm text-cyan-50/84">
                             <div>
-                              <div className="text-[11px] uppercase tracking-[0.12em] text-cyan-100/58">Vera response</div>
+                              <div className="text-[11px] uppercase tracking-[0.12em] text-cyan-100/58">Atlas response</div>
                               <div className="mt-1 whitespace-pre-wrap leading-7 text-white">{item.result.vera_response}</div>
                             </div>
                             <div className="grid gap-3 md:grid-cols-2">

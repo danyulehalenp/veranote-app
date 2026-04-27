@@ -103,6 +103,46 @@ describe('assistant knowledge helper', () => {
     expect(payload.message).not.toContain('Eating disorder involving restriction');
   });
 
+  it('keeps medication identity across a pronoun follow-up in the live endpoint', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'compose',
+        mode: 'workflow-help',
+        message: 'is it an antidepressant?',
+        recentMessages: [
+          { role: 'provider', content: 'what is Lamictal used for?' },
+          { role: 'assistant', content: 'lamotrigine is a mood stabilizer / anticonvulsant.' },
+        ],
+        context: { providerAddressingName: 'Daniel Hale', noteType: 'Inpatient Psych Progress Note' },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.message.toLowerCase()).toContain('lamotrigine');
+    expect(payload.message.toLowerCase()).toContain('mood stabilizer');
+    expect(payload.message).not.toContain('Antidepressants for depression commonly include SSRIs');
+  });
+
+  it('keeps simple medication reference answers free of unrelated risk and workflow suggestion clutter', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'compose',
+        mode: 'workflow-help',
+        message: 'what are common side effects of Zoloft?',
+        context: { providerAddressingName: 'Daniel Hale', noteType: 'Inpatient Psych Progress Note' },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.message.toLowerCase()).toContain('sertraline');
+    expect((payload.suggestions || []).join(' ')).not.toContain('No structured psychiatry knowledge match');
+    expect((payload.suggestions || []).join(' ')).not.toContain('Risk remains insufficiently described');
+  });
+
   it('answers broad anxiety concept questions through the live endpoint', async () => {
     const response = await POST(new Request('http://localhost/api/assistant/respond', {
       method: 'POST',
@@ -2278,6 +2318,7 @@ describe('assistant knowledge helper', () => {
 
     expect(response?.message).toContain('weight gain');
     expect(response?.references?.[0]?.url).toContain('medlineplus.gov');
+    expect(response?.answerMode).toBe('medication_reference_answer');
   });
 
   it('returns trusted references in reference lookup mode', () => {
@@ -2388,7 +2429,7 @@ describe('assistant knowledge helper', () => {
     expect(payload.message).toBe("No, but I'll find out how I can learn how to.");
     expect(payload.suggestions?.[0]).toContain('Beta Feedback');
     expect(payload.actions?.[0]?.type).toBe('send-beta-feedback');
-    expect(payload.actions?.[0]?.label).toBe('Teach Vera this');
+    expect(payload.actions?.[0]?.label).toBe('Teach Atlas this');
   });
 
   it('recognizes abbreviation-heavy route questions through the live endpoint', async () => {

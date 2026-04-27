@@ -93,10 +93,10 @@ export const VERANOTE_INTERNAL_DOCUMENTS: VeranoteDocument[] = [
   {
     id: 'louisiana-pec-cec-workflow',
     title: 'Louisiana PEC and CEC Workflow Boundaries',
-    summary: 'PEC and CEC questions should be treated as Louisiana workflow-reference support, not automatic disposition advice. The safer Vera role is to help providers document the risk picture, reassessment, and legal-workflow rationale clearly when they explicitly ask.',
+    summary: 'PEC and CEC questions should be treated as Louisiana workflow-reference support, not automatic disposition advice. The safer Atlas role is to help providers document the risk picture, reassessment, and legal-workflow rationale clearly when they explicitly ask.',
     bullets: [
-      'If a patient is already under PEC or CEC workflow, Vera should not volunteer keep-versus-discharge advice without a direct provider question.',
-      'When asked, Vera should focus on documentation support: current risk, why-now changes, reassessment findings, monitoring rationale, and any concrete facts supporting continued hold or transition decisions.',
+      'If a patient is already under PEC or CEC workflow, Atlas should not volunteer keep-versus-discharge advice without a direct provider question.',
+      'When asked, Atlas should focus on documentation support: current risk, why-now changes, reassessment findings, monitoring rationale, and any concrete facts supporting continued hold or transition decisions.',
       'PEC and CEC answers should stay conservative, Louisiana-specific, and clearly framed as workflow/documentation support rather than legal command or final disposition authority.',
     ],
     keywords: ['louisiana', 'pec', 'cec', 'physician emergency certificate', 'coroner emergency certificate', 'emergency certificate', 'hold workflow', 'hold documentation', 'already pecd', 'already pec\'d', 'already on pec', 'louisiana hold'],
@@ -104,14 +104,14 @@ export const VERANOTE_INTERNAL_DOCUMENTS: VeranoteDocument[] = [
   },
   {
     id: 'vera-implementation-plan',
-    title: 'Vera Implementation Action Plan',
-    summary: 'Vera should evolve into a durable, provider-specific assistant with provider-scoped memory, clearer safety boundaries, and inspectable long-term memory.',
+    title: 'Atlas Implementation Action Plan',
+    summary: 'Atlas should evolve into a durable, provider-specific assistant with provider-scoped memory, clearer safety boundaries, and inspectable long-term memory.',
     bullets: [
-      'Provider-scoped Vera memory is foundational to long-term trust.',
+      'Provider-scoped Atlas memory is foundational to long-term trust.',
       'Observed workflow memory should remain reviewable and editable.',
       'Safety and context assembly should be explicit instead of hidden.',
     ],
     keywords: ['vera memory', 'provider memory', 'relationship memory', 'accepted preferences', 'observed workflow', 'safety memory'],
-    reference: makeInternalReference('vera-implementation-plan', 'Vera Implementation Action Plan'),
+    reference: makeInternalReference('vera-implementation-plan', 'Atlas Implementation Action Plan'),
   },
 ];

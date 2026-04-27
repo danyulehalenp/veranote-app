@@ -81,14 +81,14 @@ export default async function VeraLabRunDetailPage({
 
   return (
     <AppShell
-      title="Vera Lab Run Detail"
-      subtitle="Inspect one persisted Vera Lab batch in full so routing failures, wording misses, repair tasks, and regression outcomes can be reviewed without digging through raw tables."
+      title="Atlas Lab Run Detail"
+      subtitle="Inspect one persisted Atlas Lab batch in full so routing failures, wording misses, repair tasks, and regression outcomes can be reviewed without digging through raw tables."
       fullWidth
       showFeedback={false}
     >
       <InternalSurfaceNotice
         title="Internal admin run inspection"
-        body="This view is for internal QA review only. It exposes the full persisted chain for a single Vera Lab batch: case definition, judged result, linked repair task, and regression outcomes."
+        body="This view is for internal QA review only. It exposes the full persisted chain for a single Atlas Lab batch: case definition, judged result, linked repair task, and regression outcomes."
       />
       <VeraLabRunDetailView
         detail={detail}

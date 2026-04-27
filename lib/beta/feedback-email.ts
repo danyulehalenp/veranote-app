@@ -85,7 +85,7 @@ export function buildFeedbackNotificationSubject(feedback: BetaFeedbackItem) {
   if (feedback.metadata?.source === 'vera-gap') {
     const gapType = feedback.metadata.gapType ? feedback.metadata.gapType.replace(/-/g, ' ') : 'knowledge';
     const question = feedback.metadata.originalQuestion?.trim() || feedback.message.trim();
-    return `[Veranote][Teach Vera][${gapType}] ${truncateForSubject(question)}`;
+    return `[Veranote][Teach Atlas][${gapType}] ${truncateForSubject(question)}`;
   }
 
   return `[Veranote][Beta Feedback][${feedback.category}] ${truncateForSubject(feedback.message.trim())}`;

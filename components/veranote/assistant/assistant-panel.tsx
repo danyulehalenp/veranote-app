@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Composer } from '@/components/veranote/assistant/composer';
 import { ContextPill } from '@/components/veranote/assistant/context-pill';
 import { ThreadView } from '@/components/veranote/assistant/thread-view';
+import { InlineFeedbackControl } from '@/components/veranote/feedback/inline-feedback-control';
 import { getAssistantModeDefinition, listAssistantModeDefinitions } from '@/lib/veranote/assistant-mode';
 import { getAssistantToolDefinition, getAssistantToolRiskLabel } from '@/lib/veranote/assistant-tool-registry';
 import { describeAssistantReferencePolicy } from '@/lib/veranote/assistant-source-policy';
@@ -87,6 +88,18 @@ function createMessage(
     answerMode,
     builderFamily,
   };
+}
+
+function inferFeedbackWorkflowArea(message: AssistantMessage) {
+  if (message.content.includes('provider-review switching framework')) {
+    return 'switching_framework' as const;
+  }
+
+  if (message.answerMode === 'medication_reference_answer') {
+    return 'medication_reference' as const;
+  }
+
+  return 'vera_assistant' as const;
 }
 
 function conservativeOptionLabel(tone: 'most-conservative' | 'balanced' | 'closest-to-source') {
@@ -188,23 +201,23 @@ function buildEmptyStateTitle(stage: AssistantStage, mode: AssistantMode) {
     return 'Look up documentation terms and coding references';
   }
 
-  return stage === 'review' ? 'Use Vera to tighten this draft without drifting from source' : 'Use Vera to set up the lane and organize source material';
+  return stage === 'review' ? 'Use Atlas to tighten this draft without drifting from source' : 'Use Atlas to set up the lane and organize source material';
 }
 
 function buildEmptyStateDescription(stage: AssistantStage, mode: AssistantMode) {
   if (mode === 'prompt-builder') {
     return stage === 'review'
-      ? 'Ask Vera to capture recurring review edits so future drafts lean closer to the way you actually revise.'
-      : 'Ask Vera to translate your workflow into note-lane preferences, presets, or reusable setup patterns.';
+      ? 'Ask Atlas to capture recurring review edits so future drafts lean closer to the way you actually revise.'
+      : 'Ask Atlas to translate your workflow into note-lane preferences, presets, or reusable setup patterns.';
   }
 
   if (mode === 'reference-lookup') {
-    return 'Vera can explain note sections, documentation language, and approved reference lookups without leaving your current workflow.';
+    return 'Atlas can explain note sections, documentation language, and approved reference lookups without leaving your current workflow.';
   }
 
   return stage === 'review'
-    ? 'Start with a warning, a risky sentence, or a missing detail and Vera will help you correct it conservatively.'
-    : 'Start with a note type, a source-organizing question, or a workflow problem and Vera will help you set up the next step.';
+    ? 'Start with a warning, a risky sentence, or a missing detail and Atlas will help you correct it conservatively.'
+    : 'Start with a note type, a source-organizing question, or a workflow problem and Atlas will help you set up the next step.';
 }
 
 function buildComposerPlaceholder(stage: AssistantStage, context: AssistantApiContext) {
@@ -304,8 +317,8 @@ function buildActionPresentation(action: AssistantAction, stage: AssistantStage,
   }
 
   return {
-    lane: 'Teach Vera',
-    rationale: 'Use this when Vera needs to learn a missing capability instead of leaving the gap hidden.',
+    lane: 'Teach Atlas',
+    rationale: 'Use this when Atlas needs to learn a missing capability instead of leaving the gap hidden.',
   };
 }
 
@@ -364,7 +377,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
       return null;
     }
 
-    return `This week Vera is mostly seeing ${themes.slice(0, 2).join(' and ')}${themes.length > 2 ? ' across your workflow.' : '.'}`;
+    return `This week Atlas is mostly seeing ${themes.slice(0, 2).join(' and ')}${themes.length > 2 ? ' across your workflow.' : '.'}`;
   }, [activeNoteTypeInsight, profilePromptPreferenceSuggestion, rewritePreferenceSuggestion]);
 
   useEffect(() => {
@@ -437,7 +450,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
           setLearningHydratedAt(Date.now());
         }
       } catch {
-        // Keep local provider-scoped Vera memory available if server hydration fails.
+        // Keep local provider-scoped Atlas memory available if server hydration fails.
       }
     }
 
@@ -655,17 +668,17 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
         };
 
         if (!response.ok) {
-          throw new Error(data.error || 'Unable to save Vera gap feedback right now.');
+          throw new Error(data.error || 'Unable to save Atlas gap feedback right now.');
         }
 
         if (data.notification?.delivered && data.notification.recipient) {
-          setActionMessage(`Vera gap saved and emailed to ${data.notification.recipient} so this missing skill can be reviewed and added.`);
+          setActionMessage(`Atlas gap saved and emailed to ${data.notification.recipient} so this missing skill can be reviewed and added.`);
         } else {
-          setActionMessage('Vera gap saved to Beta Feedback so this missing skill can be reviewed and added.');
+          setActionMessage('Atlas gap saved to Beta Feedback so this missing skill can be reviewed and added.');
         }
         setActions((current) => current.filter((item) => item !== action));
       } catch (error) {
-        setActionMessage(error instanceof Error ? error.message : 'Unable to save Vera gap feedback right now.');
+        setActionMessage(error instanceof Error ? error.message : 'Unable to save Atlas gap feedback right now.');
       }
       return;
     }
@@ -694,7 +707,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
         : action.type === 'apply-conservative-rewrite'
         ? 'Assistant applied a focused conservative rewrite. Please review the sentence before final use.'
         : action.type === 'apply-note-revision'
-        ? `Vera applied the requested revision${action.targetSectionHeading ? ` in ${action.targetSectionHeading}` : ''}. Please review it before final use.`
+        ? `Atlas applied the requested revision${action.targetSectionHeading ? ` in ${action.targetSectionHeading}` : ''}. Please review it before final use.`
         : action.type === 'create-preset-draft'
         ? `Preset draft sent to the current note lane as ${action.presetName}.`
         : 'Assistant preference suggestion sent into the current note lane.',
@@ -796,7 +809,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
 
     assistantMemoryService.updateRememberedFact(editingMemoryKey, editingMemoryValue.trim(), resolvedProviderIdentityId);
     setLearningHydratedAt(Date.now());
-    setActionMessage('Updated what Vera remembers for this provider workspace.');
+    setActionMessage('Updated what Atlas remembers for this provider workspace.');
     cancelEditingMemory();
   }
 
@@ -807,7 +820,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
     }
 
     setLearningHydratedAt(Date.now());
-    setActionMessage('Removed that remembered workflow note from Vera.');
+    setActionMessage('Removed that remembered workflow note from Atlas.');
     if (editingMemoryKey === key) {
       cancelEditingMemory();
     }
@@ -820,7 +833,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
       cards.push({
         id: `profile:${profilePromptPreferenceSuggestion.key}`,
         title: 'Profile pattern is active',
-        description: `Vera is seeing ${profilePromptPreferenceSuggestion.label} across ${profilePromptPreferenceSuggestion.noteTypes.length} note types.`,
+        description: `Atlas is seeing ${profilePromptPreferenceSuggestion.label} across ${profilePromptPreferenceSuggestion.noteTypes.length} note types.`,
         whyNow: 'This matters now because the same provider-level preference is repeating across multiple note lanes, which is a strong signal that it should become a reusable default.',
         actionLabel: 'Draft from this cue',
         onDraft: () => {
@@ -838,7 +851,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
         id: `rewrite:${rewritePreferenceSuggestion.noteType}:${rewritePreferenceSuggestion.optionTone}`,
         title: 'Review habit is active',
         description: `You have leaned toward the ${conservativeOptionLabel(rewritePreferenceSuggestion.optionTone)} rewrite style ${rewritePreferenceSuggestion.count} times for ${rewritePreferenceSuggestion.noteType}.`,
-        whyNow: 'This matters now because your review behavior is showing a repeat safety style that Vera can help formalize instead of leaving it as a one-off correction pattern.',
+        whyNow: 'This matters now because your review behavior is showing a repeat safety style that Atlas can help formalize instead of leaving it as a one-off correction pattern.',
         actionLabel: 'Draft from this cue',
         onDraft: () => {
           bumpCueUsage(`rewrite:${rewritePreferenceSuggestion.noteType}:${rewritePreferenceSuggestion.optionTone}`);
@@ -855,8 +868,8 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
       cards.push({
         id: cueId,
         title: 'Lane preference is active',
-        description: `Vera is seeing a repeated setup for this note lane: ${activeNoteTypeInsight.laneSuggestion.outputScope.replace(/-/g, ' ')} scope, ${activeNoteTypeInsight.laneSuggestion.outputStyle} style, ${activeNoteTypeInsight.laneSuggestion.format} format.`,
-        whyNow: 'This matters now because the same structure keeps showing up when you work in this note lane, which usually means Vera should help preserve that setup for you.',
+        description: `Atlas is seeing a repeated setup for this note lane: ${activeNoteTypeInsight.laneSuggestion.outputScope.replace(/-/g, ' ')} scope, ${activeNoteTypeInsight.laneSuggestion.outputStyle} style, ${activeNoteTypeInsight.laneSuggestion.format} format.`,
+        whyNow: 'This matters now because the same structure keeps showing up when you work in this note lane, which usually means Atlas should help preserve that setup for you.',
         actionLabel: 'Draft from this cue',
         onDraft: () => {
           bumpCueUsage(cueId);
@@ -873,8 +886,8 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
       cards.push({
         id: cueId,
         title: 'Prompt pattern is active',
-        description: `Vera is seeing this note-lane prompt pattern repeat: ${activeNoteTypeInsight.promptSuggestion.label}.`,
-        whyNow: 'This matters now because the same prompt shaping pattern is repeating enough that Vera can turn it into something reusable and easier to maintain.',
+        description: `Atlas is seeing this note-lane prompt pattern repeat: ${activeNoteTypeInsight.promptSuggestion.label}.`,
+        whyNow: 'This matters now because the same prompt shaping pattern is repeating enough that Atlas can turn it into something reusable and easier to maintain.',
         actionLabel: 'Draft from this cue',
         onDraft: () => {
           bumpCueUsage(cueId);
@@ -964,7 +977,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
       cards.push({
         id: 'section',
         label: `Focused section: ${context.focusedSectionHeading}`,
-        detail: context.focusedSectionSentence || 'Vera can help tighten this section without drifting from source.',
+        detail: context.focusedSectionSentence || 'Atlas can help tighten this section without drifting from source.',
         actionLabel: stage === 'review' ? 'Review this section' : 'Shape this section',
         prompt: stage === 'review'
           ? `I am focused on the ${context.focusedSectionHeading} section. Help me review and revise it conservatively without drifting from source.`
@@ -1079,14 +1092,14 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
     if (messages.length) {
       return {
         title: 'Continuing this thread',
-        detail: `Vera is holding ${messages.length} recent turn${messages.length === 1 ? '' : 's'} in view for this ${stage} session.`,
+        detail: `Atlas is holding ${messages.length} recent turn${messages.length === 1 ? '' : 's'} in view for this ${stage} session.`,
       };
     }
 
     if (visibleMemoryHighlights.length) {
       return {
         title: 'Continuing your usual workflow',
-        detail: 'Vera is resuming from learned provider patterns instead of starting from zero.',
+        detail: 'Atlas is resuming from learned provider patterns instead of starting from zero.',
       };
     }
 
@@ -1103,7 +1116,19 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
     setShowSuggestions(false);
   }
 
+  function openReplyViewForMessage() {
+    if (isMinimized && onToggleMinimized) {
+      onToggleMinimized();
+    }
+  }
+
+  async function handleComposerSend(message: string) {
+    openReplyViewForMessage();
+    await sendMessage(message);
+  }
+
   function sendStageAction(nextMode: AssistantMode, prompt: string) {
+    openReplyViewForMessage();
     setMode(nextMode);
     void sendMessage(prompt);
   }
@@ -1113,7 +1138,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cyan-200/10 pb-3">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">Vera</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">Atlas</div>
             <div className="mt-1 text-sm text-cyan-50/76">
               Compact mode stays ready for a quick question without taking over the workspace.
             </div>
@@ -1149,8 +1174,11 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
 
         <div className="mt-3 rounded-[16px] border border-cyan-200/10 bg-[rgba(8,20,34,0.56)] px-3 py-3">
           <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">Quick ask</div>
+          <div className="mt-1 text-xs leading-5 text-cyan-50/64">
+            Sending a question opens the full reply view so the answer stays visible.
+          </div>
           <div className="mt-2">
-            <Composer disabled={isLoading} placeholder={composerPlaceholder} onSend={sendMessage} />
+            <Composer disabled={isLoading} placeholder={composerPlaceholder} onSend={handleComposerSend} compact />
           </div>
         </div>
       </div>
@@ -1164,7 +1192,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.1)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50">
-                {isReviewMode ? 'Review mode' : activeModeDefinition.label}
+                {isReviewMode ? 'Current context' : activeModeDefinition.label}
               </span>
               {!isReviewMode ? <ContextPill stage={stage} /> : null}
               {minimalContextChips.slice(0, isReviewMode ? 2 : 3).map((chip) => (
@@ -1236,603 +1264,619 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
             {actionMessage}
           </div>
         ) : null}
-
-        <div className="grid gap-2">
-          <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(10,24,40,0.56)] px-3 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">Workflow state</div>
-              <div className="text-[11px] text-cyan-50/58">{returnStateSummary.title}</div>
-            </div>
-            <div className="mt-1 text-xs leading-5 text-cyan-50/72">{returnStateSummary.detail}</div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {workflowStageItems.map((item, index) => (
-                <div
-                  key={item.id}
-                  className={`rounded-[14px] border px-3 py-2 ${getStageStatusClassName(item.status)}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
-                      Step {index + 1}
-                    </div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
-                      {item.status}
-                    </div>
-                  </div>
-                  <div className="mt-1 text-sm font-semibold">{item.label}</div>
-                  <div className="mt-1 text-[11px] leading-5 opacity-80">{item.detail}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(8,20,34,0.56)] px-3 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">What Vera remembers</div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowMemoryCenter((current) => !current)}
-                  className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-                >
-                  {showMemoryCenter ? 'Hide editor' : 'Memory center'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode('prompt-builder');
-                    void sendMessage('What do you remember about my workflow, and what should I update or save as a reusable preference?');
-                  }}
-                  className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-                >
-                  Review memory
-                </button>
-              </div>
-            </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
-              <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100/68">Workflow patterns</div>
-                <div className="mt-1 text-sm font-semibold text-cyan-50">{visibleMemoryHighlights.length}</div>
-                <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">Reusable habits Vera is actively using right now.</div>
-              </div>
-              <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100/68">Direct memory notes</div>
-                <div className="mt-1 text-sm font-semibold text-cyan-50">{rememberedFacts.length}</div>
-                <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">Explicit things you taught Vera about your workflow.</div>
-              </div>
-              <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100/68">Current continuity</div>
-                <div className="mt-1 text-sm font-semibold text-cyan-50">{context.noteType || (isReviewMode ? 'Review session' : 'Compose session')}</div>
-                <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">The note lane and current context Vera is carrying forward.</div>
-              </div>
-            </div>
-            {visibleMemoryHighlights.length ? (
-              <div className="mt-3 grid gap-2">
-                {visibleMemoryHighlights.map((item) => (
-                  <div key={item.id} className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-100/72">{item.label}</div>
-                    <div className="mt-1 text-xs leading-5 text-cyan-50/78">{item.detail}</div>
-                  </div>
-                ))}
-                <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(7,17,30,0.28)] px-3 py-2.5 text-xs leading-5 text-cyan-50/66">
-                  {visibleMemoryHighlights.length === 1
-                    ? 'That is the strongest learned pattern Vera has for this workflow right now. As more repeat habits show up, additional memory items will appear here.'
-                    : 'These are the main learned patterns Vera is using right now. Open Memory center if you want to edit direct remembered notes.'}
-                </div>
-              </div>
-            ) : (
-              <div className="mt-2 text-xs leading-5 text-cyan-50/68">
-                Vera has not learned a strong provider pattern here yet. As you work, repeated note habits and review tendencies will show up in this panel.
-              </div>
-            )}
-            {showMemoryCenter ? (
-              <div className="mt-3 rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-100/72">Editable memory notes</div>
-                  <div className="text-[11px] text-cyan-50/56">Update or remove what Vera keeps about your workflow.</div>
-                </div>
-                {rememberedFacts.length ? (
-                  <div className="mt-3 space-y-2">
-                    {rememberedFacts.map((fact) => (
-                      <div key={fact.key} className="rounded-[12px] border border-cyan-200/10 bg-[rgba(7,17,30,0.28)] px-3 py-3">
-                        {editingMemoryKey === fact.key ? (
-                          <div className="space-y-2">
-                            <textarea
-                              value={editingMemoryValue}
-                              onChange={(event) => setEditingMemoryValue(event.target.value)}
-                              className="workspace-control min-h-[88px] w-full rounded-[14px] px-3 py-2 text-sm leading-6"
-                            />
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={saveEditedMemory}
-                                className="rounded-full border border-cyan-200/14 bg-[rgba(18,181,208,0.16)] px-3 py-1.5 text-xs font-medium text-cyan-50"
-                              >
-                                Save
-                              </button>
-                              <button
-                                type="button"
-                                onClick={cancelEditingMemory}
-                                className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.68)] px-3 py-1.5 text-xs font-medium text-cyan-50/78"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                            <div className="min-w-0">
-                              <div className="text-sm leading-6 text-cyan-50/84">{fact.fact}</div>
-                              <div className="mt-1 text-[11px] text-cyan-50/54">
-                                Seen {fact.count} time{fact.count === 1 ? '' : 's'}{fact.lastSeenAt ? ` • last updated ${formatCueRecency(fact.lastSeenAt)}` : ''}
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => startEditingMemory(fact.key, fact.fact)}
-                                className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.68)] px-3 py-1 text-[11px] font-medium text-cyan-50/80"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => removeMemoryFact(fact.key)}
-                                className="rounded-full border border-rose-200/16 bg-[rgba(127,29,29,0.22)] px-3 py-1 text-[11px] font-medium text-rose-100"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-3 text-xs leading-5 text-cyan-50/66">
-                    No direct conversational memory notes are saved yet. Use “remember that...” in Vera to teach her something explicit about your workflow.
-                  </div>
-                )}
-              </div>
-            ) : null}
-          </div>
-        </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto py-2 pr-1">
-        <div className="flex min-h-full flex-col gap-3">
-          <div className="min-h-[240px] shrink-0">
-            <ThreadView
-              stage={stage}
-              messages={messages}
-              isLoading={isLoading}
-              emptyStateTitle={emptyStateTitle}
-              emptyStateDescription={emptyStateDescription}
-              starterPrompts={quickPrompts.slice(0, 4)}
-              onSelectStarter={(prompt) => void sendMessage(prompt)}
-              activityTimeline={assistantActivityTimeline}
-              compactReviewMode={compactReviewMode}
-              onToggleCompactReviewMode={stage === 'review' ? () => setCompactReviewMode((current) => !current) : undefined}
-              focusedSectionHeading={context.focusedSectionHeading}
-            />
-          </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden py-2">
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className="flex min-h-full flex-col gap-3">
+            <div className="min-h-[320px] flex-1">
+              <ThreadView
+                stage={stage}
+                messages={messages}
+                isLoading={isLoading}
+                emptyStateTitle={emptyStateTitle}
+                emptyStateDescription={emptyStateDescription}
+                starterPrompts={quickPrompts.slice(0, 4)}
+                onSelectStarter={(prompt) => void sendMessage(prompt)}
+                activityTimeline={assistantActivityTimeline}
+                compactReviewMode={compactReviewMode}
+                onToggleCompactReviewMode={stage === 'review' ? () => setCompactReviewMode((current) => !current) : undefined}
+                focusedSectionHeading={context.focusedSectionHeading}
+                renderAssistantFeedback={(message, isLatestAssistant) => {
+                  if (!isLatestAssistant) {
+                    return null;
+                  }
 
-      {!isMinimized && showSuggestions && actions.length ? (
-        <div className="aurora-soft-panel shrink-0 rounded-[18px] p-3 sm:p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Quick options</div>
-              <div className="mt-1 text-[11px] text-cyan-50/68">
-                These stay below the conversation so Vera's reply can stay clean and easy to read.
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowSuggestions(false)}
-              className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-            >
-              Hide
-            </button>
-          </div>
-          <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto pr-1">
-            {actions.map((action) => (
-              <div key={`${action.type}-${action.label}`} className="rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-3">
-                {(() => {
-                  const tool = getAssistantToolDefinition(action);
-                  const presentation = buildActionPresentation(action, stage, context);
+                  const latestProviderQuestion = [...messages].reverse().find((item) => item.role === 'provider')?.content;
+
                   return (
-                    <>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full border border-cyan-200/14 bg-[rgba(18,181,208,0.12)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50">
-                          {presentation.lane}
-                        </span>
-                        <div className="text-sm font-semibold text-cyan-50">{action.label}</div>
-                        <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/80">
-                          {getAssistantToolRiskLabel(tool.riskLevel)}
-                        </span>
-                        {action.type === 'apply-conservative-rewrite' ? (
-                          <span className="rounded-full border border-sky-200/20 bg-[rgba(56,189,248,0.14)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-100">
-                            {conservativeOptionLabel(action.optionTone)}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="mt-1 text-[11px] text-cyan-50/58">{tool.summary}</div>
-                      <div className="mt-2 rounded-[12px] border border-cyan-200/10 bg-[rgba(7,17,30,0.28)] px-2.5 py-2 text-[11px] leading-5 text-cyan-50/72">
-                        Why this matters: {presentation.rationale}
-                      </div>
-                    </>
+                    <InlineFeedbackControl
+                      pageContext={`Atlas assistant • ${stage} • ${context.noteType || 'Unknown note type'}`}
+                      workflowArea={inferFeedbackWorkflowArea(message)}
+                      noteType={context.noteType}
+                      answerMode={message.answerMode}
+                      builderFamily={message.builderFamily}
+                      routeTaken={message.modeMeta?.mode || `assistant-${stage}`}
+                      promptSummary={latestProviderQuestion}
+                      responseSummary={message.content}
+                      providerId={resolvedProviderIdentityId}
+                      providerProfileId={context.providerProfileId}
+                      providerProfileName={context.providerProfileName}
+                      providerAddressingName={context.providerAddressingName}
+                      stage={stage}
+                    />
                   );
-                })()}
-                <div className="mt-2 whitespace-pre-wrap text-xs leading-6 text-cyan-50/72">{action.instructions}</div>
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => void handleAction(action)}
-                    className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
-                  >
-                    {action.type === 'send-beta-feedback'
-                      ? 'Send to Beta Feedback'
-                      : action.type === 'apply-note-revision'
-                      ? 'Apply revision'
-                      : stage === 'review'
-                      ? 'Send to compose'
-                      : 'Apply'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {!isMinimized && showSecondaryControls ? (
-        <div className="aurora-soft-panel shrink-0 rounded-[18px] p-3 sm:p-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Workspace controls</div>
-          <div className="mt-1 text-[11px] leading-5 text-cyan-50/66">{stageFocusLine}</div>
-          {contextSummaryChips.length ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {contextSummaryChips.map((chip) => (
-                <span
-                  key={chip}
-                  className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.74)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/84"
-                >
-                  {chip}
-                </span>
-              ))}
+                }}
+              />
             </div>
-          ) : null}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {stageActionStrip.map((action) => (
-              <button
-                key={action.label}
-                type="button"
-                onClick={() => sendStageAction(action.nextMode, action.prompt)}
-                className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-          {hasToolsContent ? (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowTools((current) => !current)}
-                className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-              >
-                {showTools ? 'Hide recommendations' : 'Recommendations'}
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
 
-      {!isMinimized && showSecondaryControls && contextActionCards.length ? (
-          <div className="rounded-[18px] border border-cyan-200/12 bg-[rgba(13,30,50,0.52)] px-3 py-3 sm:px-4">
-            <button
-              type="button"
-              onClick={() => setShowContextDetails((current) => !current)}
-              className="flex w-full items-center justify-between gap-3 text-left"
-            >
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100">Live note context</div>
-                <div className="mt-1 text-xs leading-6 text-cyan-50/74">
-                  Current note context Vera can use right now.
+            {showSecondaryControls ? (
+              <div className="grid gap-2">
+                <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(10,24,40,0.56)] px-3 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">Workflow state</div>
+                    <div className="text-[11px] text-cyan-50/58">{returnStateSummary.title}</div>
+                  </div>
+                  <div className="mt-1 text-xs leading-5 text-cyan-50/72">{returnStateSummary.detail}</div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    {workflowStageItems.map((item, index) => (
+                      <div
+                        key={item.id}
+                        className={`rounded-[14px] border px-3 py-2 ${getStageStatusClassName(item.status)}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                            Step {index + 1}
+                          </div>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                            {item.status}
+                          </div>
+                        </div>
+                        <div className="mt-1 text-sm font-semibold">{item.label}</div>
+                        <div className="mt-1 text-[11px] leading-5 opacity-80">{item.detail}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/80">
-                {showContextDetails ? 'Hide' : 'Expand'}
-              </span>
-            </button>
-            {showContextDetails ? (
-              <div className="mt-3 space-y-2">
-                {contextActionCards.map((card) => (
-                  <div key={card.id} className="rounded-[14px] border border-cyan-200/10 bg-[rgba(7,17,30,0.34)] px-3 py-3">
-                    <div className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/76">{card.label}</div>
-                    <div className="mt-1 text-xs leading-6 text-cyan-50/78">{card.detail}</div>
-                    <div className="mt-3">
+
+                <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(8,20,34,0.56)] px-3 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">What Atlas remembers</div>
+                    <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => sendStageAction(card.nextMode, card.prompt)}
-                        className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.12)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.18)]"
+                        onClick={() => setShowMemoryCenter((current) => !current)}
+                        className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
                       >
-                        {card.actionLabel}
+                        {showMemoryCenter ? 'Hide editor' : 'Memory center'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMode('prompt-builder');
+                          void sendMessage('What do you remember about my workflow, and what should I update or save as a reusable preference?');
+                        }}
+                        className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                      >
+                        Review memory
                       </button>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      {!isMinimized && showSecondaryControls && referencePolicyPreview ? (
-          <div className="rounded-[18px] border border-cyan-200/12 bg-[rgba(13,30,50,0.52)] px-3 py-3 sm:px-4">
-            <button
-              type="button"
-              onClick={() => setShowReferencePolicyPanel((current) => !current)}
-              className="flex w-full items-center justify-between gap-3 text-left"
-            >
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100">Reference policy</div>
-                <div className="mt-1 text-xs leading-6 text-cyan-50/74">
-                  How Vera is using references in this reply.
-                </div>
-              </div>
-              <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/80">
-                {showReferencePolicyPanel ? 'Hide' : 'Expand'}
-              </span>
-            </button>
-            {showReferencePolicyPanel ? (
-              <div className="mt-3">
-                <div className="text-sm font-semibold text-white">{referencePolicyPreview.title}</div>
-                <div className="mt-1 text-xs leading-6 text-cyan-50/76">{referencePolicyPreview.detail}</div>
-                {referencePolicyPreview.categoryLabels.length ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {referencePolicyPreview.categoryLabels.map((label) => (
-                      <span
-                        key={label}
-                        className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.12)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50"
-                      >
-                        {label}
-                      </span>
-                    ))}
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100/68">Workflow patterns</div>
+                      <div className="mt-1 text-sm font-semibold text-cyan-50">{visibleMemoryHighlights.length}</div>
+                      <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">Reusable habits Atlas is actively using right now.</div>
+                    </div>
+                    <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100/68">Direct memory notes</div>
+                      <div className="mt-1 text-sm font-semibold text-cyan-50">{rememberedFacts.length}</div>
+                      <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">Explicit things you taught Atlas about your workflow.</div>
+                    </div>
+                    <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100/68">Current continuity</div>
+                      <div className="mt-1 text-sm font-semibold text-cyan-50">{context.noteType || (isReviewMode ? 'Review session' : 'Compose session')}</div>
+                      <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">The note lane and current context Atlas is carrying forward.</div>
+                    </div>
                   </div>
-                ) : null}
-                {referencePolicyPreview.domainLabels.length ? (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {referencePolicyPreview.domainLabels.map((label) => (
-                      <span
-                        key={label}
-                        className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.7)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/86"
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-      {!isMinimized && showTools ? (
-        <div className="aurora-soft-panel shrink-0 rounded-[18px] p-3 sm:p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowQuickPrompts((current) => !current)}
-              className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-            >
-              {showQuickPrompts ? 'Hide quick starts' : 'Quick starts'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowScenarioQuestions((current) => !current)}
-              className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-            >
-              {showScenarioQuestions ? 'Hide scenarios' : 'Scenarios'}
-            </button>
-            {currentCueCards.length ? (
-              <button
-                type="button"
-                onClick={() => setShowCurrentCues((current) => !current)}
-                className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-              >
-                {showCurrentCues ? 'Hide cues' : 'Vera cues'}
-              </button>
-            ) : null}
-          </div>
-
-          {(showQuickPrompts || showScenarioQuestions || showCurrentCues || stage === 'review' && rewritePreferenceSuggestion || profilePromptPreferenceSuggestion) ? (
-            <div className="mt-4 max-h-[220px] space-y-4 overflow-y-auto pr-1">
-              {showQuickPrompts ? (
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Quick starts</div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {quickPrompts.map((prompt) => (
-                      <button
-                        key={prompt}
-                        type="button"
-                        onClick={() => void sendMessage(prompt)}
-                        className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-                      >
-                        {prompt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {showScenarioQuestions ? (
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Common provider scenarios</div>
-                  <div className="mt-1 text-[11px] text-cyan-50/70">
-                    Use these when you want a fast starting point.
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {scenarioQuestions.map((prompt) => (
-                      <button
-                        key={prompt}
-                        type="button"
-                        onClick={() => void sendMessage(prompt)}
-                        className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-left text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-                      >
-                        {prompt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {stage === 'review' && rewritePreferenceSuggestion ? (
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Preference insight</div>
-                  <div className="mt-2 text-sm text-ink">
-                    You have chosen the <span className="font-semibold">{conservativeOptionLabel(rewritePreferenceSuggestion.optionTone)}</span> rewrite style {rewritePreferenceSuggestion.count} times for <span className="font-semibold">{rewritePreferenceSuggestion.noteType}</span>.
-                  </div>
-                  <div className="mt-2 text-xs leading-6 text-muted">
-                    Save it only if you want future drafts and review guidance for this note type to lean in that direction.
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleDraftRewritePreferenceSuggestion}
-                      className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
-                    >
-                      Draft preference suggestion
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDismissRewritePreferenceSuggestion}
-                      className="rounded-xl border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-4 py-2 text-sm font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              {profilePromptPreferenceSuggestion ? (
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Vera profile insight</div>
-                  <div className="mt-2 text-sm text-ink">
-                    Vera has noticed a repeated provider pattern for <span className="font-semibold">{context.providerProfileName || 'this profile'}</span>: <span className="font-semibold">{profilePromptPreferenceSuggestion.label}</span>.
-                  </div>
-                  <div className="mt-2 text-xs leading-6 text-muted">
-                    This has shown up across {profilePromptPreferenceSuggestion.noteTypes.length} note types. If that feels right, Vera can draft it as a broader reusable preference instead of leaving it as a one-off habit.
-                  </div>
-                  <div className="mt-2 text-xs text-cyan-50/70">
-                    Seen in: {profilePromptPreferenceSuggestion.noteTypes.join(' • ')}
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleDraftProfilePattern}
-                      className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
-                    >
-                      Draft from profile pattern
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDismissProfilePattern}
-                      className="rounded-xl border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-4 py-2 text-sm font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              {showCurrentCues && currentCueCards.length ? (
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Current Vera cues</div>
-                  {weeklyTheme ? (
-                    <div className="mt-2 rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-2 text-xs leading-6 text-cyan-50/72">
-                      {weeklyTheme}
+                  {visibleMemoryHighlights.length ? (
+                    <div className="mt-3 grid gap-2">
+                      {visibleMemoryHighlights.map((item) => (
+                        <div key={item.id} className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-100/72">{item.label}</div>
+                          <div className="mt-1 text-xs leading-5 text-cyan-50/78">{item.detail}</div>
+                        </div>
+                      ))}
+                      <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(7,17,30,0.28)] px-3 py-2.5 text-xs leading-5 text-cyan-50/66">
+                        {visibleMemoryHighlights.length === 1
+                          ? 'That is the strongest learned pattern Atlas has for this workflow right now. As more repeat habits show up, additional memory items will appear here.'
+                          : 'These are the main learned patterns Atlas is using right now. Open Memory center if you want to edit direct remembered notes.'}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-xs leading-5 text-cyan-50/68">
+                      Atlas has not learned a strong provider pattern here yet. As you work, repeated note habits and review tendencies will show up in this panel.
+                    </div>
+                  )}
+                  {showMemoryCenter ? (
+                    <div className="mt-3 rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-100/72">Editable memory notes</div>
+                        <div className="text-[11px] text-cyan-50/56">Update or remove what Atlas keeps about your workflow.</div>
+                      </div>
+                      {rememberedFacts.length ? (
+                        <div className="mt-3 space-y-2">
+                          {rememberedFacts.map((fact) => (
+                            <div key={fact.key} className="rounded-[12px] border border-cyan-200/10 bg-[rgba(7,17,30,0.28)] px-3 py-3">
+                              {editingMemoryKey === fact.key ? (
+                                <div className="space-y-2">
+                                  <textarea
+                                    value={editingMemoryValue}
+                                    onChange={(event) => setEditingMemoryValue(event.target.value)}
+                                    className="workspace-control min-h-[88px] w-full rounded-[14px] px-3 py-2 text-sm leading-6"
+                                  />
+                                  <div className="flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={saveEditedMemory}
+                                      className="rounded-full border border-cyan-200/14 bg-[rgba(18,181,208,0.16)] px-3 py-1.5 text-xs font-medium text-cyan-50"
+                                    >
+                                      Save
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={cancelEditingMemory}
+                                      className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.68)] px-3 py-1.5 text-xs font-medium text-cyan-50/78"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                  <div className="min-w-0">
+                                    <div className="text-sm leading-6 text-cyan-50/84">{fact.fact}</div>
+                                    <div className="mt-1 text-[11px] text-cyan-50/54">
+                                      Seen {fact.count} time{fact.count === 1 ? '' : 's'}{fact.lastSeenAt ? ` • last updated ${formatCueRecency(fact.lastSeenAt)}` : ''}
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => startEditingMemory(fact.key, fact.fact)}
+                                      className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.68)] px-3 py-1 text-[11px] font-medium text-cyan-50/80"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeMemoryFact(fact.key)}
+                                      className="rounded-full border border-rose-200/16 bg-[rgba(127,29,29,0.22)] px-3 py-1 text-[11px] font-medium text-rose-100"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mt-3 text-xs leading-5 text-cyan-50/66">
+                          No direct conversational memory notes are saved yet. Use “remember that...” in Atlas to teach it something explicit about your workflow.
+                        </div>
+                      )}
                     </div>
                   ) : null}
-                  <div className="mt-2 space-y-2 text-sm text-ink">
-                    {currentCueCards.map((card, index) => (
-                      <div key={card.id} className="rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="font-medium text-cyan-50">{card.title}</div>
-                          {index === 0 && card.usageCount > 0 ? (
-                            <span className="rounded-full border border-cyan-200/20 bg-[rgba(18,181,208,0.16)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50">
-                              Most useful to you
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="mt-1 text-xs text-cyan-50/72">
-                          {card.description}
-                        </div>
-                        {index === 0 ? (
-                          <div className="mt-2 text-xs leading-6 text-cyan-50/72">
-                            Why this matters now: {card.whyNow}
-                          </div>
-                        ) : null}
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={card.onDraft}
-                            className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
-                          >
-                            {card.actionLabel}
-                          </button>
-                          {card.usageCount > 0 ? (
-                            <span className="text-[11px] text-cyan-50/70">
-                              Used from Vera {card.usageCount} time{card.usageCount === 1 ? '' : 's'}
-                            </span>
-                          ) : null}
-                        </div>
+                </div>
+              </div>
+            ) : null}
+
+            {showSuggestions && actions.length ? (
+              <div className="aurora-soft-panel rounded-[18px] p-3 sm:p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Quick options</div>
+                    <div className="mt-1 text-[11px] text-cyan-50/68">
+                      These stay below the conversation so Atlas's reply can stay clean and easy to read.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowSuggestions(false)}
+                    className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                  >
+                    Hide
+                  </button>
+                </div>
+                <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto pr-1">
+                  {actions.map((action) => (
+                    <div key={`${action.type}-${action.label}`} className="rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-3">
+                      {(() => {
+                        const tool = getAssistantToolDefinition(action);
+                        const presentation = buildActionPresentation(action, stage, context);
+                        return (
+                          <>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full border border-cyan-200/14 bg-[rgba(18,181,208,0.12)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50">
+                                {presentation.lane}
+                              </span>
+                              <div className="text-sm font-semibold text-cyan-50">{action.label}</div>
+                              <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/80">
+                                {getAssistantToolRiskLabel(tool.riskLevel)}
+                              </span>
+                              {action.type === 'apply-conservative-rewrite' ? (
+                                <span className="rounded-full border border-sky-200/20 bg-[rgba(56,189,248,0.14)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-100">
+                                  {conservativeOptionLabel(action.optionTone)}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="mt-1 text-[11px] text-cyan-50/58">{tool.summary}</div>
+                            <div className="mt-2 rounded-[12px] border border-cyan-200/10 bg-[rgba(7,17,30,0.28)] px-2.5 py-2 text-[11px] leading-5 text-cyan-50/72">
+                              Why this matters: {presentation.rationale}
+                            </div>
+                          </>
+                        );
+                      })()}
+                      <div className="mt-2 whitespace-pre-wrap text-xs leading-6 text-cyan-50/72">{action.instructions}</div>
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={() => void handleAction(action)}
+                          className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
+                        >
+                          {action.type === 'send-beta-feedback'
+                            ? 'Send to Beta Feedback'
+                            : action.type === 'apply-note-revision'
+                            ? 'Apply revision'
+                            : stage === 'review'
+                            ? 'Send to compose'
+                            : 'Apply'}
+                        </button>
                       </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {showSecondaryControls ? (
+              <>
+                <div className="aurora-soft-panel rounded-[18px] p-3 sm:p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Workspace controls</div>
+                  <div className="mt-1 text-[11px] leading-5 text-cyan-50/66">{stageFocusLine}</div>
+                  {contextSummaryChips.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {contextSummaryChips.map((chip) => (
+                        <span
+                          key={chip}
+                          className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.74)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/84"
+                        >
+                          {chip}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {stageActionStrip.map((action) => (
+                      <button
+                        key={action.label}
+                        type="button"
+                        onClick={() => sendStageAction(action.nextMode, action.prompt)}
+                        className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                      >
+                        {action.label}
+                      </button>
                     ))}
                   </div>
-                  {assistantActivityTimeline.length ? (
-                    <div className="mt-3 rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-3">
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Assistant activity timeline</div>
-                      <div className="mt-2 space-y-2">
-                        {assistantActivityTimeline.map((item) => (
-                          <div key={item.id} className="text-xs text-cyan-50/72">
-                            <span className="font-semibold text-cyan-50">{item.label}:</span> {item.detail}
+                  {hasToolsContent ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowTools((current) => !current)}
+                        className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                      >
+                        {showTools ? 'Hide recommendations' : 'Recommendations'}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                {contextActionCards.length ? (
+                  <div className="rounded-[18px] border border-cyan-200/12 bg-[rgba(13,30,50,0.52)] px-3 py-3 sm:px-4">
+                    <button
+                      type="button"
+                      onClick={() => setShowContextDetails((current) => !current)}
+                      className="flex w-full items-center justify-between gap-3 text-left"
+                    >
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100">Live note context</div>
+                        <div className="mt-1 text-xs leading-6 text-cyan-50/74">
+                          Current note context Atlas can use right now.
+                        </div>
+                      </div>
+                      <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/80">
+                        {showContextDetails ? 'Hide' : 'Expand'}
+                      </span>
+                    </button>
+                    {showContextDetails ? (
+                      <div className="mt-3 space-y-2">
+                        {contextActionCards.map((card) => (
+                          <div key={card.id} className="rounded-[14px] border border-cyan-200/10 bg-[rgba(7,17,30,0.34)] px-3 py-3">
+                            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/76">{card.label}</div>
+                            <div className="mt-1 text-xs leading-6 text-cyan-50/78">{card.detail}</div>
+                            <div className="mt-3">
+                              <button
+                                type="button"
+                                onClick={() => sendStageAction(card.nextMode, card.prompt)}
+                                className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.12)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.18)]"
+                              >
+                                {card.actionLabel}
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="mt-3 text-xs text-cyan-50/62">
-              Open recommendations only when you want a faster starting point.
-            </div>
-          )}
-        </div>
-      ) : null}
-        </div>
-      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
-      {!isMinimized ? (
-        <div className="shrink-0 border-t border-cyan-200/10 pt-2">
-          <div className="aurora-soft-panel rounded-[18px] p-3">
-            <Composer disabled={isLoading} placeholder={composerPlaceholder} onSend={sendMessage} />
-          </div>
-        </div>
-      ) : (
-        <div className="aurora-soft-panel rounded-[18px] p-4">
-          <div className="flex items-center justify-between gap-3 text-sm text-cyan-50/74">
-            <div>Vera is minimized. Expand to continue note review and guidance.</div>
-            {onToggleMinimized ? (
-              <button
-                type="button"
-                onClick={onToggleMinimized}
-                className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
-              >
-                Expand Vera
-              </button>
+                {referencePolicyPreview ? (
+                  <div className="rounded-[18px] border border-cyan-200/12 bg-[rgba(13,30,50,0.52)] px-3 py-3 sm:px-4">
+                    <button
+                      type="button"
+                      onClick={() => setShowReferencePolicyPanel((current) => !current)}
+                      className="flex w-full items-center justify-between gap-3 text-left"
+                    >
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100">Reference policy</div>
+                        <div className="mt-1 text-xs leading-6 text-cyan-50/74">
+                          How Atlas is using references in this reply.
+                        </div>
+                      </div>
+                      <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/80">
+                        {showReferencePolicyPanel ? 'Hide' : 'Expand'}
+                      </span>
+                    </button>
+                    {showReferencePolicyPanel ? (
+                      <div className="mt-3">
+                        <div className="text-sm font-semibold text-white">{referencePolicyPreview.title}</div>
+                        <div className="mt-1 text-xs leading-6 text-cyan-50/76">{referencePolicyPreview.detail}</div>
+                        {referencePolicyPreview.categoryLabels.length ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {referencePolicyPreview.categoryLabels.map((label) => (
+                              <span
+                                key={label}
+                                className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.12)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {referencePolicyPreview.domainLabels.length ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {referencePolicyPreview.domainLabels.map((label) => (
+                              <span
+                                key={label}
+                                className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.7)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/86"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {showTools ? (
+                  <div className="aurora-soft-panel rounded-[18px] p-3 sm:p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowQuickPrompts((current) => !current)}
+                        className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                      >
+                        {showQuickPrompts ? 'Hide quick starts' : 'Quick starts'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowScenarioQuestions((current) => !current)}
+                        className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                      >
+                        {showScenarioQuestions ? 'Hide scenarios' : 'Scenarios'}
+                      </button>
+                      {currentCueCards.length ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowCurrentCues((current) => !current)}
+                          className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                        >
+                          {showCurrentCues ? 'Hide cues' : 'Atlas cues'}
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {(showQuickPrompts || showScenarioQuestions || showCurrentCues || stage === 'review' && rewritePreferenceSuggestion || profilePromptPreferenceSuggestion) ? (
+                      <div className="mt-4 max-h-[220px] space-y-4 overflow-y-auto pr-1">
+                        {showQuickPrompts ? (
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Quick starts</div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {quickPrompts.map((prompt) => (
+                                <button
+                                  key={prompt}
+                                  type="button"
+                                  onClick={() => void sendMessage(prompt)}
+                                  className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                                >
+                                  {prompt}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {showScenarioQuestions ? (
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Common provider scenarios</div>
+                            <div className="mt-1 text-[11px] text-cyan-50/70">
+                              Use these when you want a fast starting point.
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {scenarioQuestions.map((prompt) => (
+                                <button
+                                  key={prompt}
+                                  type="button"
+                                  onClick={() => void sendMessage(prompt)}
+                                  className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-left text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                                >
+                                  {prompt}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {stage === 'review' && rewritePreferenceSuggestion ? (
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Preference insight</div>
+                            <div className="mt-2 text-sm text-ink">
+                              You have chosen the <span className="font-semibold">{conservativeOptionLabel(rewritePreferenceSuggestion.optionTone)}</span> rewrite style {rewritePreferenceSuggestion.count} times for <span className="font-semibold">{rewritePreferenceSuggestion.noteType}</span>.
+                            </div>
+                            <div className="mt-2 text-xs leading-6 text-muted">
+                              Save it only if you want future drafts and review guidance for this note type to lean in that direction.
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={handleDraftRewritePreferenceSuggestion}
+                                className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
+                              >
+                                Draft preference suggestion
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleDismissRewritePreferenceSuggestion}
+                                className="rounded-xl border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-4 py-2 text-sm font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                              >
+                                Dismiss
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {profilePromptPreferenceSuggestion ? (
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Atlas profile insight</div>
+                            <div className="mt-2 text-sm text-ink">
+                              Atlas has noticed a repeated provider pattern for <span className="font-semibold">{context.providerProfileName || 'this profile'}</span>: <span className="font-semibold">{profilePromptPreferenceSuggestion.label}</span>.
+                            </div>
+                            <div className="mt-2 text-xs leading-6 text-muted">
+                              This has shown up across {profilePromptPreferenceSuggestion.noteTypes.length} note types. If that feels right, Atlas can draft it as a broader reusable preference instead of leaving it as a one-off habit.
+                            </div>
+                            <div className="mt-2 text-xs text-cyan-50/70">
+                              Seen in: {profilePromptPreferenceSuggestion.noteTypes.join(' • ')}
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={handleDraftProfilePattern}
+                                className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
+                              >
+                                Draft from profile pattern
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleDismissProfilePattern}
+                                className="rounded-xl border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-4 py-2 text-sm font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                              >
+                                Dismiss
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {showCurrentCues && currentCueCards.length ? (
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Current Atlas cues</div>
+                            {weeklyTheme ? (
+                              <div className="mt-2 rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-2 text-xs leading-6 text-cyan-50/72">
+                                {weeklyTheme}
+                              </div>
+                            ) : null}
+                            <div className="mt-2 space-y-2 text-sm text-ink">
+                              {currentCueCards.map((card, index) => (
+                                <div key={card.id} className="rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <div className="font-medium text-cyan-50">{card.title}</div>
+                                    {index === 0 && card.usageCount > 0 ? (
+                                      <span className="rounded-full border border-cyan-200/20 bg-[rgba(18,181,208,0.16)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50">
+                                        Most useful to you
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <div className="mt-1 text-xs text-cyan-50/72">
+                                    {card.description}
+                                  </div>
+                                  {index === 0 ? (
+                                    <div className="mt-2 text-xs leading-6 text-cyan-50/72">
+                                      Why this matters now: {card.whyNow}
+                                    </div>
+                                  ) : null}
+                                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={card.onDraft}
+                                      className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
+                                    >
+                                      {card.actionLabel}
+                                    </button>
+                                    {card.usageCount > 0 ? (
+                                      <span className="text-[11px] text-cyan-50/70">
+                                        Used from Atlas {card.usageCount} time{card.usageCount === 1 ? '' : 's'}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            {assistantActivityTimeline.length ? (
+                              <div className="mt-3 rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-3">
+                                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Assistant activity timeline</div>
+                                <div className="mt-2 space-y-2">
+                                  {assistantActivityTimeline.map((item) => (
+                                    <div key={item.id} className="text-xs text-cyan-50/72">
+                                      <span className="font-semibold text-cyan-50">{item.label}:</span> {item.detail}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="mt-3 text-xs text-cyan-50/62">
+                        Open recommendations only when you want a faster starting point.
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </>
             ) : null}
           </div>
         </div>
-      )}
+
+        <div className="shrink-0 border-t border-cyan-200/10 pt-2">
+          <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(8,20,34,0.72)] px-2.5 py-2.5">
+            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">Follow-up</div>
+            <Composer disabled={isLoading} placeholder={composerPlaceholder} onSend={handleComposerSend} compact />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

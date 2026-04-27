@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json({
-      error: error instanceof Error ? error.message : 'Unable to run Vera Lab batch.',
+      error: error instanceof Error ? error.message : 'Unable to run Atlas Lab batch.',
     }, { status: 500 });
   }
 }

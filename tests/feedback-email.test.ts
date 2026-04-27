@@ -9,13 +9,13 @@ afterEach(() => {
 });
 
 describe('feedback email notifications', () => {
-  it('formats Vera-gap subject lines so they stand out in the inbox', () => {
+  it('formats Atlas-gap subject lines so they stand out in the inbox', () => {
     const feedback: BetaFeedbackItem = {
       id: 'feedback_2',
       createdAt: '2026-04-20T00:00:00.000Z',
-      pageContext: 'Vera assistant gap',
+      pageContext: 'Atlas assistant gap',
       category: 'feature-request',
-      message: 'Vera could not answer this provider question: what is the icd 10 for recurrent severe mdd?',
+      message: 'Atlas could not answer this provider question: what is the icd 10 for recurrent severe mdd?',
       status: 'new',
       metadata: {
         source: 'vera-gap',
@@ -24,7 +24,7 @@ describe('feedback email notifications', () => {
       },
     };
 
-    expect(buildFeedbackNotificationSubject(feedback)).toBe('[Veranote][Teach Vera][coding reference] what is the icd 10 for recurrent severe mdd?');
+    expect(buildFeedbackNotificationSubject(feedback)).toBe('[Veranote][Teach Atlas][coding reference] what is the icd 10 for recurrent severe mdd?');
   });
 
   it('formats general beta feedback subject lines with the category', () => {
@@ -57,7 +57,7 @@ describe('feedback email notifications', () => {
       createdAt: '2026-04-20T00:00:00.000Z',
       pageContext: 'Feedback Inbox',
       category: 'feature-request',
-      message: 'Teach Vera more clinical questions.',
+      message: 'Teach Atlas more clinical questions.',
       status: 'new',
       metadata: {
         source: 'vera-gap',

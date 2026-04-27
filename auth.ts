@@ -1,8 +1,10 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
+import { headers } from 'next/headers';
 import { z } from 'zod';
 import { authenticateProviderCredentials } from '@/lib/veranote/provider-auth';
 import { normalizeSafeCallbackPath } from '@/lib/veranote/auth-redirect';
+import { getRuntimeAuthBaseUrl } from '@/lib/veranote/domain-config';
 import { assertSafeBetaRuntimeConfig } from '@/lib/veranote/runtime-config';
 
 assertSafeBetaRuntimeConfig();
@@ -44,12 +46,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ],
   callbacks: {
     async redirect({ url, baseUrl }) {
-      if (url.startsWith(baseUrl)) {
-        const relativeUrl = url.slice(baseUrl.length) || '/';
-        return `${baseUrl}${normalizeSafeCallbackPath(relativeUrl)}`;
+      const runtimeBaseUrl = getRuntimeAuthBaseUrl({
+        baseUrl,
+        headersLike: await headers(),
+      });
+
+      if (url.startsWith(runtimeBaseUrl)) {
+        const relativeUrl = url.slice(runtimeBaseUrl.length) || '/';
+        return `${runtimeBaseUrl}${normalizeSafeCallbackPath(relativeUrl)}`;
       }
 
-      return `${baseUrl}${normalizeSafeCallbackPath(url)}`;
+      if (url.startsWith(baseUrl)) {
+        const relativeUrl = url.slice(baseUrl.length) || '/';
+        return `${runtimeBaseUrl}${normalizeSafeCallbackPath(relativeUrl)}`;
+      }
+
+      return `${runtimeBaseUrl}${normalizeSafeCallbackPath(url)}`;
     },
     async jwt({ token, user }) {
       if (user) {

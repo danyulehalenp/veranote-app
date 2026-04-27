@@ -47,8 +47,8 @@ describe('assistant stale-context routing', () => {
     }));
 
     const payload = await response.json();
-    expect(payload.message).toContain('300 mg twice daily');
-    expect(payload.message).toContain('I should verify this against a prescribing reference');
+    expect(payload.message).toContain('150-300 mg twice daily');
+    expect(payload.message).toContain('Dosing depends on indication, patient factors, interactions, and current prescribing references.');
     expect(payload.message).not.toContain('Eating disorder involving restriction');
     expect(payload.message).not.toContain('orthostasis');
     expect(payload.answerMode).toBe('medication_reference_answer');
@@ -92,7 +92,7 @@ describe('assistant stale-context routing', () => {
     expect(payload.message).toContain('desvenlafaxine');
     expect(payload.message).toContain('doxepin');
     expect(payload.message).not.toContain('Eating disorder involving restriction');
-    expect(payload.answerMode).toBe('direct_reference_answer');
+    expect(payload.answerMode).toBe('medication_reference_answer');
   });
 
   it('still uses eating-disorder note context when the user explicitly references the current note', async () => {
@@ -109,8 +109,25 @@ describe('assistant stale-context routing', () => {
     }));
 
     const payload = await response.json();
-    expect(payload.message).toContain('orthostasis');
-    expect(payload.message).toContain('bradycardia');
+    expect(payload.message).toContain('medical risk');
     expect(payload.message).not.toContain('300 mg twice daily');
+  });
+
+  it('keeps note-grounded medication documentation prompts in clinical documentation mode', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'In this note how should I word the Abilify issue without turning it into an order?',
+        context: staleEatingDisorderContext,
+        recentMessages: staleEatingDisorderMessages,
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.answerMode).not.toBe('medication_reference_answer');
+    expect(payload.message).not.toContain('aripiprazole is an antipsychotic');
   });
 });

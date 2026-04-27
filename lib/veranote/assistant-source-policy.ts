@@ -151,7 +151,7 @@ export function describeAssistantReferencePolicy(query?: string): AssistantRefer
   if (!query?.trim()) {
     return {
       title: 'Trusted lookup only',
-      detail: 'Vera only uses approved external sources in this mode. Ask a coding, documentation, lab, or psych-reference question to see the active lookup policy.',
+      detail: 'Atlas only uses approved external sources in this mode. Ask a coding, documentation, lab, or psych-reference question to see the active lookup policy.',
       categoryLabels: ['Coding / reference', 'Documentation structure', 'Lab reference', 'Psych reference', 'Psych medication reference', 'Emerging drug reference'],
       domainLabels: ['CDC', 'CMS', 'MedlinePlus', 'NIMH', 'DEA', 'FDA', 'UNODC'],
     };
@@ -164,7 +164,7 @@ export function describeAssistantReferencePolicy(query?: string): AssistantRefer
   if (!policy.categories.length) {
     return {
       title: 'No trusted source policy matched yet',
-      detail: 'This lookup does not match one of Vera’s approved reference categories yet, so she should stay conservative and use Teach Vera this if the answer is missing.',
+      detail: 'This lookup does not match one of Atlas’s approved reference categories yet, so it should stay conservative and use Teach Atlas this if the answer is missing.',
       categoryLabels: [],
       domainLabels: [],
     };
@@ -172,7 +172,7 @@ export function describeAssistantReferencePolicy(query?: string): AssistantRefer
 
   return {
     title: categoryLabels.length === 1 ? categoryLabels[0] : 'Mixed trusted lookup',
-    detail: `For this lookup, Vera is limited to ${domainLabels.join(', ')} so the external answer stays inside approved source boundaries.`,
+    detail: `For this lookup, Atlas is limited to ${domainLabels.join(', ')} so the external answer stays inside approved source boundaries.`,
     categoryLabels,
     domainLabels,
   };

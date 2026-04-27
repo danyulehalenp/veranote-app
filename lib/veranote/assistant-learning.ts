@@ -887,7 +887,7 @@ function rewriteStatusFor(noteType: string, optionTone: RewriteOptionTone, store
 }
 
 function buildRewriteReason(noteType: string, optionTone: RewriteOptionTone, count: number) {
-  return `Vera inferred this because you chose the ${optionTone.replace(/-/g, ' ')} rewrite style ${count} time${count === 1 ? '' : 's'} while reviewing ${noteType}.`;
+  return `Atlas inferred this because you chose the ${optionTone.replace(/-/g, ' ')} rewrite style ${count} time${count === 1 ? '' : 's'} while reviewing ${noteType}.`;
 }
 
 function buildLaneReason(record: LanePreferenceRecord) {
@@ -895,15 +895,15 @@ function buildLaneReason(record: LanePreferenceRecord) {
     ? `selected sections (${record.requestedSections.join(', ')})`
     : 'the default section plan';
 
-  return `Vera inferred this because you finalized ${record.noteType} with ${record.outputScope.replace('-', ' ')} scope, ${record.outputStyle} style, ${record.format} format, and ${sectionSummary} ${record.count} time${record.count === 1 ? '' : 's'}.`;
+  return `Atlas inferred this because you finalized ${record.noteType} with ${record.outputScope.replace('-', ' ')} scope, ${record.outputStyle} style, ${record.format} format, and ${sectionSummary} ${record.count} time${record.count === 1 ? '' : 's'}.`;
 }
 
 function buildPromptReason(record: PromptPreferenceRecord) {
-  return `Vera inferred this because you used the same prompt-builder preference pattern for ${record.noteType} ${record.count} time${record.count === 1 ? '' : 's'}.`;
+  return `Atlas inferred this because you used the same prompt-builder preference pattern for ${record.noteType} ${record.count} time${record.count === 1 ? '' : 's'}.`;
 }
 
 function buildProfilePromptReason(record: ProfilePromptPreferenceRecord) {
-  return `Vera inferred this because the same preference pattern appeared ${record.count} time${record.count === 1 ? '' : 's'} across ${record.noteTypes.length} note types in this provider profile.`;
+  return `Atlas inferred this because the same preference pattern appeared ${record.count} time${record.count === 1 ? '' : 's'} across ${record.noteTypes.length} note types in this provider profile.`;
 }
 
 function laneStatusFor(noteType: string, key: string, store: AssistantLearningStore) {

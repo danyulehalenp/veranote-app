@@ -76,6 +76,7 @@ export function classifyClinicalFollowupDirective(message: string): AssistantFol
 
   const oneLine = [
     /\bone line\b/,
+    /\bone sentence\b/,
     /\bshort version only\b/,
     /\bjust give me the sentence\b/,
     /\bjust the sentence\b/,
@@ -88,14 +89,25 @@ export function classifyClinicalFollowupDirective(message: string): AssistantFol
     /\bmake that tighter\b/,
     /\bmake it tighter\b/,
     /\bno, tighter than that\b/,
+    /\bone paragraph\b/,
+    /\brewrite\b/,
+    /\bword this better\b/,
+    /\bimprove this note\b/,
+    /\bnot fake-clean\b/,
     /\bmake that usable\b/,
     /\bmake it usable\b/,
-    /\bmake it chart-?ready\b/,
+    /\bmake it chart(?:-|\s)?ready\b/,
     /\bmake that legally safer wording\b/,
     /\bmake it legally safer wording\b/,
     /\blegally safer wording\b/,
     /\bgive me the warning language\b/,
-    /\bmake that chart-?ready\b/,
+    /\bgive me chart(?:-|\s)?ready wording instead\b/,
+    /\bmake that chart(?:-|\s)?ready\b/,
+    /\binclude what is missing\b/,
+    /\badd conservative summary\b/,
+    /\bavoid overcalling\b/,
+    /\bsame facts only\b/,
+    /\bdon'?t mention means not assessed\b/,
   ].some((pattern) => pattern.test(normalized));
 
   const direct = [
