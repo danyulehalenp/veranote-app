@@ -20,7 +20,8 @@ function extractCookieToken(request: Request) {
 }
 
 function mockAuthAllowed() {
-  return process.env.NODE_ENV === 'test' || process.env.VERANOTE_ALLOW_MOCK_AUTH === 'true';
+  return process.env.NODE_ENV !== 'production'
+    || process.env.VERANOTE_ALLOW_MOCK_AUTH === 'true';
 }
 
 function buildProviderUser(providerIdentityId: string, providerAccountId?: string): User {

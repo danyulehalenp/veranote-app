@@ -10,7 +10,7 @@ export type AuthorizedProviderContext = {
 };
 
 function prototypeFallbackEnabled() {
-  return process.env.NODE_ENV === 'test' || INTERNAL_MODE_ENABLED;
+  return process.env.NODE_ENV !== 'production' || INTERNAL_MODE_ENABLED;
 }
 
 export function prototypeSwitchingAllowed() {

@@ -12,9 +12,23 @@ function isProtectedPath(pathname: string) {
   ));
 }
 
+function mockAuthAllowed() {
+  return process.env.NODE_ENV !== 'production'
+    || process.env.VERANOTE_ALLOW_MOCK_AUTH === 'true';
+}
+
+function hasMockProviderToken(request: { cookies: { get: (name: string) => { value: string } | undefined } }) {
+  if (!mockAuthAllowed()) {
+    return false;
+  }
+
+  const token = request.cookies.get('veranote-auth')?.value;
+  return token === 'veranote-provider-token' || token === process.env.VERANOTE_PROVIDER_TOKEN;
+}
+
 export default auth((request) => {
   const pathname = request.nextUrl.pathname;
-  const isAuthenticated = !!request.auth;
+  const isAuthenticated = !!request.auth || hasMockProviderToken(request);
   const isSignInPage = pathname.startsWith('/sign-in');
 
   if (!isAuthenticated && isProtectedPath(pathname)) {

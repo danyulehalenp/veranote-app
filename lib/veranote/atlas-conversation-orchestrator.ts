@@ -49,11 +49,66 @@ type AtlasConversationInput = {
   context?: AssistantApiContext;
 };
 
+const COMMON_CLINICAL_SPELLING_NORMALIZATIONS: Array<[RegExp, string]> = [
+  [/\bu\b/g, 'you'],
+  [/\belaberat(e|ed|ing)?\b/g, 'elaborate'],
+  [/\belaborat\b/g, 'elaborate'],
+  [/\bcritera\b/g, 'criteria'],
+  [/\bcriterias\b/g, 'criteria'],
+  [/\bdiffrence\b/g, 'difference'],
+  [/\bdiference\b/g, 'difference'],
+  [/\bdiagonsis\b/g, 'diagnosis'],
+  [/\bdiagnosic\b/g, 'diagnostic'],
+  [/\bschizo\s+affective\b/g, 'schizoaffective'],
+  [/\bschizoafective\b/g, 'schizoaffective'],
+  [/\bschizoaffectve\b/g, 'schizoaffective'],
+  [/\bschizoaffectivee\b/g, 'schizoaffective'],
+  [/\bschizoeffective\b/g, 'schizoaffective'],
+  [/\bpsycosis\b/g, 'psychosis'],
+  [/\bpsychosos\b/g, 'psychosis'],
+  [/\bpsychottic\b/g, 'psychotic'],
+  [/\bbiploar\b/g, 'bipolar'],
+  [/\bbioplar\b/g, 'bipolar'],
+  [/\bhypomnaia\b/g, 'hypomania'],
+  [/\bhypomannia\b/g, 'hypomania'],
+  [/\bdepresion\b/g, 'depression'],
+  [/\bdepresson\b/g, 'depression'],
+  [/\bwelbutrin\b/g, 'wellbutrin'],
+  [/\bwellbutrinn\b/g, 'wellbutrin'],
+  [/\bbuproprion\b/g, 'bupropion'],
+  [/\bbupropian\b/g, 'bupropion'],
+  [/\bpaxel\b/g, 'paxil'],
+  [/\bpaxal\b/g, 'paxil'],
+  [/\bpaxill\b/g, 'paxil'],
+  [/\bparoxitine\b/g, 'paroxetine'],
+  [/\bparoxatine\b/g, 'paroxetine'],
+  [/\blamictle\b/g, 'lamictal'],
+  [/\blamictel\b/g, 'lamictal'],
+  [/\blamictol\b/g, 'lamictal'],
+  [/\blamotrigene\b/g, 'lamotrigine'],
+  [/\blamotrogine\b/g, 'lamotrigine'],
+  [/\bcelexe\b/g, 'celexa'],
+  [/\bcylexa\b/g, 'celexa'],
+  [/\blithum\b/g, 'lithium'],
+  [/\blithuim\b/g, 'lithium'],
+];
+
+function normalizeCommonClinicalSpellings(value: string) {
+  return COMMON_CLINICAL_SPELLING_NORMALIZATIONS.reduce(
+    (normalized, [pattern, replacement]) => normalized.replace(pattern, replacement),
+    value,
+  );
+}
+
 function normalizeText(value: string) {
-  return value
+  const normalized = value
     .toLowerCase()
     .replace(/[’']/g, "'")
     .replace(/[^a-z0-9?/\-+.\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return normalizeCommonClinicalSpellings(normalized)
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -96,11 +151,11 @@ function classifyFollowupIntent(message: string): AtlasConversationFollowupInten
     return 'simplify';
   }
 
-  if (/^(can you elaborate|could you elaborate|elaborate|tell me more|more detail|more details|expand on this|explain more|say more)\b/.test(normalized)) {
+  if (/^(can you elaborate|could you elaborate|elaborate|tell me more|more detail|more details|go into more detail|more about this|expand on this|expand on that|explain more|explain that|explain this further|say more|walk me through it|walk me through this)\b/.test(normalized)) {
     return 'elaborate';
   }
 
-  if (/^(what should i verify|what should i check|what do i need to verify|what do i need to check|what is the key .*issue|what is missing|what else is missing|what should i document instead|what belongs\b|give me .*chart[-\s]?ready|give me .*sentence|give me safer wording|give me safe wording|safer wording|chart this safer|word this safer|can you give me exact orders|give me exact orders)\b/.test(normalized)) {
+  if (/^(what should i verify|what should i check|what do i need to verify|what do i need to check|what is the key .*issue|what is the main .*risk|what is the biggest .*risk|what exactly do you mean|what does that mean|what is missing|what else is missing|what should i document instead|what belongs\b|give me .*chart[-\s]?ready|give me .*sentence|give me safer wording|give me safe wording|safer wording|chart this safer|word this safer|can you give me exact orders|give me exact orders)\b/.test(normalized)) {
     return 'clarify';
   }
 
@@ -112,7 +167,7 @@ function classifyFollowupIntent(message: string): AtlasConversationFollowupInten
     return 'clarify';
   }
 
-  if (/^(yes|yes proceed|proceed|go ahead|continue|continue please|please continue|ok proceed|okay proceed|sure|yep|yeah)\b/.test(normalized)) {
+  if (/^(yes|yes proceed|proceed|go ahead|continue|continue please|please continue|ok proceed|okay proceed|sure|yep|yeah|yes please|please do|do that)\b/.test(normalized)) {
     return 'continue';
   }
 
@@ -382,6 +437,19 @@ export function buildAtlasConversationFallbackPayload(
       suggestions: [
         'Describe duration and severity separately.',
         'Do not diagnose from one symptom cluster without context.',
+      ],
+      answerMode: 'direct_reference_answer',
+      builderFamily: 'overlap',
+    };
+  }
+
+  if (conversation.routeHint === 'diagnostic_reference' && /\bschizoaffective\b/.test(combined)) {
+    return {
+      message: 'Schizoaffective disorder is mainly a timeline diagnosis: schizophrenia-spectrum psychosis plus major mood-episode evidence, with psychosis also documented for a meaningful period outside prominent mood symptoms. The practical comparison is bipolar disorder with psychotic features, where psychosis is tied to the mood episode. Keep this as a high-level diagnostic reference, not verbatim DSM criteria or a patient-specific diagnosis.',
+      suggestions: [
+        'Verify longitudinal mood and psychosis timing.',
+        'Keep substance, medication, delirium, and medical contributors on the differential when relevant.',
+        'Do not diagnose from one visit or sparse source alone.',
       ],
       answerMode: 'direct_reference_answer',
       builderFamily: 'overlap',

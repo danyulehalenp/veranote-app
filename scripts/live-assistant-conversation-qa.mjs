@@ -177,6 +177,15 @@ async function openAssistantPanel(page) {
     throw new Error('Assistant launcher opened, but the assistant composer did not become visible.');
   }
 
+  const workspaceOpenButton = page.getByTestId('workspace-assistant-open-button');
+  if (await waitForVisible(workspaceOpenButton)) {
+    await workspaceOpenButton.click();
+    if (await waitForVisible(composerInput, 5000)) {
+      return;
+    }
+    throw new Error('Workspace assistant control opened, but the assistant composer did not become visible.');
+  }
+
   const expandButton = page.getByTestId('assistant-expand-button');
   if (await waitForVisible(expandButton)) {
     await expandButton.click();
@@ -229,6 +238,7 @@ async function gotoWorkspace(page, appUrl) {
 
   const assistantShellReady = page.getByTestId('assistant-open-button')
     .or(page.getByTestId('assistant-expand-button'))
+    .or(page.getByTestId('workspace-assistant-open-button'))
     .or(page.getByTestId('assistant-composer-input'));
   await assistantShellReady.first().waitFor({ state: 'visible', timeout: 30000 });
 }
@@ -240,13 +250,43 @@ async function askVisibleAssistantTurn(page, prompt) {
   await send.waitFor({ state: 'visible', timeout: 15000 });
 
   const beforeAssistantCount = await page.getByTestId('assistant-message').count();
+  const beforeLatestAssistantId = await page
+    .locator('[data-testid="assistant-message"][data-assistant-message-latest="true"]')
+    .getAttribute('data-assistant-message-id')
+    .catch(() => null);
+  await input.scrollIntoViewIfNeeded();
   await input.fill(prompt);
-  await send.click();
   await page.waitForFunction(
-    (count) => document.querySelectorAll('[data-testid="assistant-message"]').length > count,
-    beforeAssistantCount,
-    { timeout: 30000 },
+    () => {
+      const button = document.querySelector('[data-testid="assistant-send-button"]');
+      return button instanceof HTMLButtonElement && !button.disabled;
+    },
+    undefined,
+    { timeout: 5000 },
   );
+  await send.click();
+  try {
+    await page.waitForFunction(
+      ({ count, latestId }) => {
+        const messages = document.querySelectorAll('[data-testid="assistant-message"]');
+        const latest = document.querySelector('[data-testid="assistant-message"][data-assistant-message-latest="true"]');
+        return messages.length > count || (
+          latest instanceof HTMLElement
+          && latest.dataset.assistantMessageId
+          && latest.dataset.assistantMessageId !== latestId
+        );
+      },
+      { count: beforeAssistantCount, latestId: beforeLatestAssistantId },
+      { timeout: 30000 },
+    );
+  } catch (error) {
+    const safePrompt = prompt.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'turn';
+    await page.screenshot({
+      path: path.resolve('test-results', `live-assistant-timeout-${safePrompt}.png`),
+      fullPage: true,
+    });
+    throw error;
+  }
 
   const latestMessage = page.locator('[data-testid="assistant-message"][data-assistant-message-latest="true"]');
   await latestMessage.waitFor({ state: 'visible', timeout: 15000 });

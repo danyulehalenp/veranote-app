@@ -203,7 +203,9 @@ h1, h2, h3, h4 {
   width: 100%;
   overflow: hidden;
   border-radius: 16px;
+  padding-right: 4.35rem;
   text-align: left;
+  touch-action: manipulation;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
@@ -224,6 +226,7 @@ h1, h2, h3, h4 {
   border: 1px solid rgba(191, 244, 255, 0.5);
   background: linear-gradient(135deg, #d8fbff 0%, #8ae8ff 100%);
   padding: 0.85rem 0.95rem;
+  padding-right: 4.35rem;
   color: #06111d;
   font-size: 0.9rem;
   font-weight: 800;
@@ -237,6 +240,7 @@ h1, h2, h3, h4 {
     linear-gradient(135deg, rgba(8, 28, 48, 0.92), rgba(8, 20, 35, 0.88)),
     rgba(255, 255, 255, 0.045);
   padding: 0.72rem 0.82rem;
+  padding-right: 4.35rem;
   color: rgba(240, 253, 255, 0.84);
   font-size: 0.82rem;
   font-weight: 700;
@@ -259,6 +263,12 @@ h1, h2, h3, h4 {
 
 .workspace-rail-assistant::after {
   content: 'assistant';
+}
+
+.workspace-rail-primary::after,
+.workspace-rail-action::after,
+.workspace-rail-assistant::after,
+.workspace-rail-tab::after {
   position: absolute;
   right: 0.65rem;
   top: 0.58rem;
@@ -274,6 +284,21 @@ h1, h2, h3, h4 {
   text-transform: uppercase;
 }
 
+.workspace-rail-primary::after {
+  content: 'start';
+  border-color: rgba(6, 17, 29, 0.18);
+  background: rgba(255, 255, 255, 0.5);
+  color: rgba(6, 17, 29, 0.66);
+}
+
+.workspace-rail-action::after {
+  content: 'click';
+}
+
+.workspace-rail-tab::after {
+  content: 'go';
+}
+
 .workspace-rail-tab-active {
   border-color: rgba(125, 249, 255, 0.72);
   background: linear-gradient(135deg, rgba(20, 184, 166, 0.28), rgba(14, 165, 233, 0.24));
@@ -287,6 +312,12 @@ h1, h2, h3, h4 {
 .workspace-rail-tab-active::before {
   background: #a5f3fc;
   opacity: 1;
+}
+
+.workspace-rail-tab-active::after {
+  content: 'current';
+  border-color: rgba(165, 243, 252, 0.34);
+  color: rgba(216, 251, 255, 0.84);
 }
 
 .workspace-rail-primary:hover,
@@ -399,6 +430,7 @@ h1, h2, h3, h4 {
 .workspace-expandable {
   position: relative;
   cursor: pointer;
+  touch-action: manipulation;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, background 160ms ease;
 }
 
@@ -426,7 +458,7 @@ h1, h2, h3, h4 {
 .workspace-action-pill::before,
 .workspace-select-card::before,
 .workspace-expandable::before {
-  content: 'action';
+  content: 'click';
   position: absolute;
   right: 0.65rem;
   top: 0.55rem;
@@ -444,9 +476,13 @@ h1, h2, h3, h4 {
 }
 
 .workspace-action-pill::before,
-.workspace-select-card::before {
+.workspace-action-pill::after {
   content: '';
   display: none;
+}
+
+.workspace-select-card::before {
+  content: 'select';
 }
 
 .workspace-expandable::before {

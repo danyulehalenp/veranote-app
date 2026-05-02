@@ -79,7 +79,7 @@ export function AssistantShell() {
   const layoutRef = useRef(panelLayout);
   const routeStage = useMemo(() => resolveAssistantStageForPathname(pathname), [pathname]);
   const stage = context.stage || routeStage;
-  const suppressFloatingLauncher = false;
+  const suppressFloatingLauncher = pathname?.startsWith('/dashboard/new-note') ?? false;
   const resolvedProviderIdentityId = data?.user?.providerIdentityId || context.providerIdentityId || getCurrentProviderId();
   const sessionScopedContext = useMemo(() => ({
     ...context,

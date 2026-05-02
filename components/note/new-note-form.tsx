@@ -4534,6 +4534,7 @@ export function NewNoteForm() {
 	          </button>
 	          <button
 	            type="button"
+	            data-testid="workspace-assistant-open-button"
 	            onClick={openAtlasAssistant}
 	            className="workspace-rail-assistant"
 	          >

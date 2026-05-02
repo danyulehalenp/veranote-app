@@ -167,6 +167,7 @@ export function ThreadView({
             key={message.id}
             className={messageWrapperClassName}
             data-testid={message.role === 'assistant' ? 'assistant-message' : 'assistant-provider-message'}
+            data-assistant-message-id={message.id}
             data-assistant-message-latest={message.role === 'assistant' && isLatestAssistant ? 'true' : undefined}
           >
             <div className={messageCardClassName}>

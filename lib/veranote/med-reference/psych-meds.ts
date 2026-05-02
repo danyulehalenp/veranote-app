@@ -1475,8 +1475,36 @@ export const PSYCH_MED_REFERENCE_LIBRARY: PsychMedReferenceEntry[] = [
 
 export const PSYCH_MED_REFERENCE_BY_ALIAS = new Map<string, PsychMedReferenceEntry>();
 
+const MEDICATION_SPELLING_NORMALIZATIONS: Array<[RegExp, string]> = [
+  [/\bwelbutrin\b/g, 'wellbutrin'],
+  [/\bwellbutrinn\b/g, 'wellbutrin'],
+  [/\bbuproprion\b/g, 'bupropion'],
+  [/\bbupropian\b/g, 'bupropion'],
+  [/\bpaxel\b/g, 'paxil'],
+  [/\bpaxal\b/g, 'paxil'],
+  [/\bpaxill\b/g, 'paxil'],
+  [/\bparoxitine\b/g, 'paroxetine'],
+  [/\bparoxatine\b/g, 'paroxetine'],
+  [/\blamictle\b/g, 'lamictal'],
+  [/\blamictel\b/g, 'lamictal'],
+  [/\blamictol\b/g, 'lamictal'],
+  [/\blamotrigene\b/g, 'lamotrigine'],
+  [/\blamotrogine\b/g, 'lamotrigine'],
+  [/\bcelexe\b/g, 'celexa'],
+  [/\bcylexa\b/g, 'celexa'],
+  [/\blithum\b/g, 'lithium'],
+  [/\blithuim\b/g, 'lithium'],
+];
+
 function normalizeAlias(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function normalizeMedicationSpellings(value: string) {
+  return MEDICATION_SPELLING_NORMALIZATIONS.reduce(
+    (normalized, [pattern, replacement]) => normalized.replace(pattern, replacement),
+    value,
+  );
 }
 
 for (const medication of PSYCH_MED_REFERENCE_LIBRARY) {
@@ -1486,5 +1514,5 @@ for (const medication of PSYCH_MED_REFERENCE_LIBRARY) {
 }
 
 export function normalizeMedReferenceText(value: string) {
-  return normalizeAlias(value);
+  return normalizeMedicationSpellings(normalizeAlias(value));
 }
