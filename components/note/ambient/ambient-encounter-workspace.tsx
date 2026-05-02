@@ -26,6 +26,18 @@ import type {
   AmbientTranscriptTransportPhase,
 } from '@/types/ambient-listening';
 import { getAmbientWorkspaceChromeStorageKey } from '@/lib/veranote/provider-identity';
+import {
+  browserDictationSupported,
+  requestBrowserDictationStream,
+  setBrowserDictationStreamPaused,
+  stopBrowserDictationStream,
+} from '@/lib/dictation/browser-mic';
+import {
+  browserRecorderSupported,
+  buildCumulativeDictationAudioBlob,
+  encodeBlobToBase64,
+  getPreferredRecorderMimeType,
+} from '@/lib/dictation/browser-recorder';
 
 type AmbientSessionPayload = {
   sessionId: string;
@@ -181,6 +193,7 @@ export function AmbientEncounterWorkspace({
     ...getAmbientMockSetupDraft(),
     careSetting: defaultCareSetting,
     mode: defaultMode,
+    captureRuntime: 'real_microphone',
     transcriptSimulator: 'live_stream_adapter',
   }));
   const [sessionState, setSessionState] = useState<AmbientSessionState>('idle');
@@ -206,6 +219,9 @@ export function AmbientEncounterWorkspace({
   const [chromePreference, setChromePreference] = useState<AmbientWorkspaceChromePreference>(DEFAULT_AMBIENT_CHROME_PREFERENCE);
   const [dragState, setDragState] = useState<AmbientDragState | null>(null);
   const lastTranscriptEventAtRef = useRef<string | null>(null);
+  const ambientMediaStreamRef = useRef<MediaStream | null>(null);
+  const ambientRecorderRef = useRef<MediaRecorder | null>(null);
+  const ambientRecordedAudioChunksRef = useRef<Blob[]>([]);
   const restoreAttemptedSessionIdRef = useRef<string | null>(null);
   const restorePendingSessionIdRef = useRef<string | null>(null);
   const onSessionSummaryChangeRef = useRef(onSessionSummaryChange);
@@ -219,6 +235,20 @@ export function AmbientEncounterWorkspace({
   useEffect(() => {
     onSessionPersistenceChangeRef.current = onSessionPersistenceChange;
   }, [onSessionPersistenceChange]);
+
+  useEffect(() => (
+    () => {
+      try {
+        ambientRecorderRef.current?.stop();
+      } catch {
+        // Ignore cleanup from already-stopped recorders.
+      }
+      ambientRecorderRef.current = null;
+      ambientRecordedAudioChunksRef.current = [];
+      stopBrowserDictationStream(ambientMediaStreamRef.current);
+      ambientMediaStreamRef.current = null;
+    }
+  ), []);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -627,6 +657,78 @@ export function AmbientEncounterWorkspace({
     applySession(payload.session);
   }
 
+  async function beginAmbientCapture() {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+      throw new Error('Ambient microphone capture is only available in the browser.');
+    }
+
+    if (!browserDictationSupported(navigator.mediaDevices) || typeof MediaRecorder === 'undefined' || !browserRecorderSupported(MediaRecorder)) {
+      throw new Error('Ambient microphone capture is not available in this browser.');
+    }
+
+    const stream = await requestBrowserDictationStream(navigator.mediaDevices, {
+      secureContext: window.isSecureContext,
+    });
+    const mimeType = getPreferredRecorderMimeType(MediaRecorder);
+    const recorder = mimeType
+      ? new MediaRecorder(stream, { mimeType })
+      : new MediaRecorder(stream);
+
+    ambientRecordedAudioChunksRef.current = [];
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        ambientRecordedAudioChunksRef.current.push(event.data);
+      }
+    };
+
+    ambientMediaStreamRef.current = stream;
+    ambientRecorderRef.current = recorder;
+    recorder.start();
+  }
+
+  async function finalizeAmbientCaptureBlob() {
+    const recorder = ambientRecorderRef.current;
+    if (!recorder) {
+      throw new Error('Ambient microphone capture has not started.');
+    }
+
+    const finalBlob = await new Promise<Blob>((resolve, reject) => {
+      const handleStop = () => {
+        recorder.removeEventListener('stop', handleStop);
+        recorder.removeEventListener('error', handleError);
+        try {
+          resolve(buildCumulativeDictationAudioBlob(
+            ambientRecordedAudioChunksRef.current,
+            recorder.mimeType || 'audio/webm',
+          ));
+        } catch (error) {
+          reject(error);
+        }
+      };
+      const handleError = () => {
+        recorder.removeEventListener('stop', handleStop);
+        recorder.removeEventListener('error', handleError);
+        reject(new Error('Ambient recording failed before transcription.'));
+      };
+
+      recorder.addEventListener('stop', handleStop, { once: true });
+      recorder.addEventListener('error', handleError, { once: true });
+
+      try {
+        recorder.stop();
+      } catch (error) {
+        recorder.removeEventListener('stop', handleStop);
+        recorder.removeEventListener('error', handleError);
+        reject(error);
+      }
+    });
+
+    ambientRecorderRef.current = null;
+    stopBrowserDictationStream(ambientMediaStreamRef.current);
+    ambientMediaStreamRef.current = null;
+    return finalBlob;
+  }
+
   function handlePrepareSession() {
     void withRequest(async () => {
       if (!sessionId) {
@@ -716,9 +818,17 @@ export function AmbientEncounterWorkspace({
 
   function stopRecording() {
     void withRequest(async () => {
+      const audioBlob = await finalizeAmbientCaptureBlob();
       await updateSession({ action: 'set_state', state: 'processing_transcript' });
-      await updateSession({ action: 'set_state', state: 'draft_generation_pending' });
-      await updateSession({ action: 'set_state', state: 'draft_ready' });
+      await updateSession({
+        action: 'transcribe_audio',
+        audio: {
+          base64Audio: await encodeBlobToBase64(audioBlob),
+          mimeType: audioBlob.type || 'audio/webm',
+          sizeBytes: audioBlob.size,
+          capturedAt: new Date().toISOString(),
+        },
+      });
       onOpenTranscriptMode();
     });
   }
@@ -835,26 +945,56 @@ export function AmbientEncounterWorkspace({
           onStartRecording={() => {
             void withRequest(async () => {
               setElapsedSeconds(0);
-              await updateSession({ action: 'set_state', state: 'recording' });
+              await beginAmbientCapture();
+              try {
+                await updateSession({ action: 'set_state', state: 'recording' });
+              } catch (error) {
+                try {
+                  ambientRecorderRef.current?.stop();
+                } catch {
+                  // Ignore cleanup failures.
+                }
+                ambientRecorderRef.current = null;
+                ambientRecordedAudioChunksRef.current = [];
+                stopBrowserDictationStream(ambientMediaStreamRef.current);
+                ambientMediaStreamRef.current = null;
+                throw error;
+              }
             });
           }}
           onPauseRecording={() => {
             void withRequest(async () => {
+              setBrowserDictationStreamPaused(ambientMediaStreamRef.current, true);
+              if (ambientRecorderRef.current?.state === 'recording') {
+                ambientRecorderRef.current.pause();
+              }
               await updateSession({ action: 'set_state', state: 'paused' });
             });
           }}
           onResumeRecording={() => {
             void withRequest(async () => {
+              setBrowserDictationStreamPaused(ambientMediaStreamRef.current, false);
+              if (ambientRecorderRef.current?.state === 'paused') {
+                ambientRecorderRef.current.resume();
+              }
               await updateSession({ action: 'set_state', state: 'recording' });
             });
           }}
           onOffRecordStart={() => {
             void withRequest(async () => {
+              setBrowserDictationStreamPaused(ambientMediaStreamRef.current, true);
+              if (ambientRecorderRef.current?.state === 'recording') {
+                ambientRecorderRef.current.pause();
+              }
               await updateSession({ action: 'set_state', state: 'off_record' });
             });
           }}
           onOffRecordEnd={() => {
             void withRequest(async () => {
+              setBrowserDictationStreamPaused(ambientMediaStreamRef.current, false);
+              if (ambientRecorderRef.current?.state === 'paused') {
+                ambientRecorderRef.current.resume();
+              }
               await updateSession({ action: 'set_state', state: 'recording' });
             });
           }}

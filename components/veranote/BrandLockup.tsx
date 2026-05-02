@@ -10,10 +10,10 @@ export function BrandLockup({ variant, subtitle }: BrandLockupProps) {
   if (variant === "nav") {
     return (
       <div className="flex flex-col items-start leading-none">
-        <Logo size="md" />
+        <Logo size="sm" />
 
         {subtitle && (
-          <span className="mt-1 text-[11px] tracking-wide text-[#D8FBFF]/50">
+          <span className="mt-1 hidden text-[11px] tracking-wide text-[#D8FBFF]/50 sm:inline">
             {subtitle}
           </span>
         )}

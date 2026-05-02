@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { InlineFeedbackControl } from '@/components/veranote/feedback/inline-feedback-control';
+import { AtlasNudgeStrip, AtlasReviewDock } from '@/components/veranote/atlas-review/atlas-review-dock';
 import { findProviderProfile } from '@/lib/constants/provider-profiles';
 import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '@/lib/constants/settings';
 import { describePopulatedSourceSections, EMPTY_SOURCE_SECTIONS, normalizeSourceSections } from '@/lib/ai/source-sections';
@@ -22,6 +22,7 @@ import { findDiagnosisAvoidTermsInText, findDiagnosisMentionsInText, findDiagnos
 import { detectRiskTerms, findAbbreviationMentionsInText, findAvoidTermsInText, findMseTermsInText } from '@/lib/psychiatry-terminology/seed-loader';
 import { ASSISTANT_ACTION_EVENT, publishAssistantContext } from '@/lib/veranote/assistant-context';
 import { dismissLanePreferenceSuggestion, getLanePreferenceSuggestion, recordLanePreferenceSelection } from '@/lib/veranote/assistant-learning';
+import { applyAssistantPersonaDefaults, resolveAssistantPersona } from '@/lib/veranote/assistant-persona';
 import { buildDraftRecoveryState } from '@/lib/veranote/draft-recovery';
 import {
   formatTextForOutputDestination,
@@ -31,17 +32,24 @@ import {
   inferOutputNoteFocus,
 } from '@/lib/veranote/output-destinations';
 import { buildLanePreferencePrompt } from '@/lib/veranote/preference-draft';
+import { ATLAS_REVIEW_DOCK_ENABLED, buildAtlasNudges, buildAtlasReviewItems, type AtlasReviewItem } from '@/lib/veranote/atlas-review';
 import {
   getAssistantPendingActionStorageKey,
   getCurrentProviderId,
   getDraftRecoveryStorageKey,
   getDraftSessionStorageKey,
-  getProviderSettingsStorageKey,
 } from '@/lib/veranote/provider-identity';
+import {
+  fetchProviderSettingsFromServer,
+  readCachedProviderSettings,
+  writeCachedProviderSettings,
+} from '@/lib/veranote/provider-settings-client';
 import { resolveVeraAddress } from '@/lib/veranote/vera-relationship';
 import type { DraftSession, PersistedDraftSession, ReviewStatus, SourceSections } from '@/types/session';
 import type { DictationTargetSection } from '@/types/dictation';
 import type { NoteSectionKey, OutputScope } from '@/lib/note/section-profiles';
+
+const ASSISTANT_OPEN_EVENT = 'veranote-assistant-open';
 
 function sanitizeFileName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'note-draft';
@@ -1473,6 +1481,7 @@ export function ReviewWorkspace({
   const draftRecoveryStorageKey = getDraftRecoveryStorageKey(resolvedProviderIdentityId);
   const assistantPendingActionStorageKey = getAssistantPendingActionStorageKey(resolvedProviderIdentityId);
   const activeProviderProfile = useMemo(() => findProviderProfile(providerSettings.providerProfileId), [providerSettings.providerProfileId]);
+  const assistantPersona = useMemo(() => resolveAssistantPersona(providerSettings), [providerSettings]);
   const activeDestinationMeta = useMemo(
     () => getOutputDestinationMeta(providerSettings.outputDestination),
     [providerSettings.outputDestination],
@@ -1484,13 +1493,13 @@ export function ReviewWorkspace({
 
   async function handleApplyOutputProfile(profileId: string) {
     if (!profileId) {
-      const nextSettings = {
+      const nextSettings = applyAssistantPersonaDefaults({
         ...providerSettings,
         activeOutputProfileId: '',
-      };
+      });
 
       setProviderSettings(nextSettings);
-      localStorage.setItem(getProviderSettingsStorageKey(resolvedProviderIdentityId), JSON.stringify(nextSettings));
+      writeCachedProviderSettings(resolvedProviderIdentityId, nextSettings);
       return;
     }
 
@@ -1499,7 +1508,7 @@ export function ReviewWorkspace({
       return;
     }
 
-    const nextSettings = {
+    const nextSettings = applyAssistantPersonaDefaults({
       ...providerSettings,
       outputDestination: profile.destination,
       outputNoteFocus: profile.noteFocus,
@@ -1507,10 +1516,10 @@ export function ReviewWorkspace({
       paragraphOnly: profile.paragraphOnly,
       wellskyFriendly: profile.wellskyFriendly,
       activeOutputProfileId: profile.id,
-    };
+    });
 
     setProviderSettings(nextSettings);
-    localStorage.setItem(getProviderSettingsStorageKey(resolvedProviderIdentityId), JSON.stringify(nextSettings));
+    writeCachedProviderSettings(resolvedProviderIdentityId, nextSettings);
 
     try {
       await fetch('/api/settings/provider', {
@@ -1599,36 +1608,43 @@ export function ReviewWorkspace({
   }, [resolvedProviderIdentityId, session?.noteType]);
 
   useEffect(() => {
+    let isActive = true;
+    const controller = new AbortController();
+
     async function hydrateProviderSettings() {
-      const storageKey = getProviderSettingsStorageKey(resolvedProviderIdentityId);
-      const raw = localStorage.getItem(storageKey);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw) as ProviderSettings;
-          setProviderSettings({ ...DEFAULT_PROVIDER_SETTINGS, ...parsed });
-          return;
-        } catch {
-          localStorage.removeItem(storageKey);
-        }
+      const cached = readCachedProviderSettings(resolvedProviderIdentityId);
+      if (cached && isActive) {
+        setProviderSettings(cached);
       }
 
       try {
-        const response = await fetch(`/api/settings/provider?providerId=${encodeURIComponent(resolvedProviderIdentityId)}`, { cache: 'no-store' });
-        const data = (await response.json()) as { settings?: ProviderSettings };
-        const merged = { ...DEFAULT_PROVIDER_SETTINGS, ...(data?.settings || {}) };
-        setProviderSettings(merged);
-        localStorage.setItem(storageKey, JSON.stringify(merged));
+        const merged = await fetchProviderSettingsFromServer(resolvedProviderIdentityId, controller.signal);
+        writeCachedProviderSettings(resolvedProviderIdentityId, merged);
+        if (isActive) {
+          setProviderSettings(merged);
+        }
       } catch {
-        // Leave defaults in place if provider settings are unavailable.
+        if (!cached && isActive) {
+          // Leave defaults in place if provider settings are unavailable.
+          setProviderSettings(DEFAULT_PROVIDER_SETTINGS);
+        }
       }
     }
 
     void hydrateProviderSettings();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
   }, [resolvedProviderIdentityId]);
 
   useEffect(() => {
     publishAssistantContext({
       stage: 'review',
+      userAiName: assistantPersona.name,
+      userAiRole: assistantPersona.role,
+      userAiAvatar: assistantPersona.avatar,
       noteType: session?.noteType,
       specialty: session?.specialty,
       currentDraftText: draftText ? draftText.slice(0, 4000) : undefined,
@@ -1645,6 +1661,9 @@ export function ReviewWorkspace({
     });
   }, [
     activeProviderProfile,
+    assistantPersona.avatar,
+    assistantPersona.name,
+    assistantPersona.role,
     draftText,
     providerSettings.outputDestination,
     providerSettings.providerProfileId,
@@ -1960,6 +1979,23 @@ export function ReviewWorkspace({
     window.setTimeout(() => setInteractionMessage(''), duration);
   }
 
+  function handleAtlasAsk(item: AtlasReviewItem) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(ASSISTANT_OPEN_EVENT));
+    }
+
+    flashInteractionMessage(`${assistantPersona.name} opened for ${item.group.toLowerCase()} review.`);
+  }
+
+  function handleAtlasShowSource(item: AtlasReviewItem) {
+    if (!item.sourceReference?.targetId) {
+      return;
+    }
+
+    jumpToElementById(item.sourceReference.targetId);
+    flashInteractionMessage(`Opened ${item.sourceReference.label.toLowerCase()}.`);
+  }
+
   function handleSectionStatusChange(anchor: string, status: ReviewStatus) {
     if (!session) {
       return;
@@ -2241,7 +2277,7 @@ export function ReviewWorkspace({
         const nextDraft = nextLines.join('\n').replace(/\n{3,}/g, '\n\n');
         setDraftText(nextDraft);
         focusDraftMatch(normalizedRevision);
-        setRewriteMessage(`Applied Atlas revision in ${targetSectionHeading}. Please review it before final use.`);
+        setRewriteMessage(`Applied ${assistantPersona.name} revision in ${targetSectionHeading}. Please review it before final use.`);
         window.setTimeout(() => setRewriteMessage(''), 3200);
         return;
       }
@@ -2250,7 +2286,7 @@ export function ReviewWorkspace({
     const nextDraft = `${draftText.trim()}\n\n${normalizedRevision}`.trim();
     setDraftText(nextDraft);
     focusDraftMatch(normalizedRevision);
-    setRewriteMessage('Applied Atlas revision to the current draft. Please review it before final use.');
+    setRewriteMessage(`Applied ${assistantPersona.name} revision to the current draft. Please review it before final use.`);
     window.setTimeout(() => setRewriteMessage(''), 3200);
   }
 
@@ -2357,6 +2393,7 @@ export function ReviewWorkspace({
     outputText: draftText,
     sourceSections,
   }), [draftText, session?.sourceInput, sourceSections]);
+  const copilotSuggestions = session?.copilotSuggestions ?? [];
   const objectiveReview = useMemo(
     () => buildObjectiveReviewState({
       sourceBlocks,
@@ -2365,9 +2402,9 @@ export function ReviewWorkspace({
       draftText,
       contradictionFlags,
       highRiskWarnings,
-      copilotSuggestions: session?.copilotSuggestions ?? [],
+      copilotSuggestions,
     }),
-    [contradictionFlags, draftText, highRiskWarnings, session?.copilotSuggestions, session?.sourceInput, sourceBlocks, sourceSections],
+    [contradictionFlags, copilotSuggestions, draftText, highRiskWarnings, session?.sourceInput, sourceBlocks, sourceSections],
   );
   const draftAvoidTerms = useMemo(
     () => uniqueBy(findAvoidTermsInText(draftText), (item) => item.entry.id),
@@ -2910,6 +2947,34 @@ export function ReviewWorkspace({
       statusLabel: status.replace('-', ' '),
     };
   }, [firstOpenReviewSection, reconciledSectionReviewState, sectionEvidenceMap]);
+  const atlasReviewItems = useMemo(
+    () => buildAtlasReviewItems({
+      contradictionFlags,
+      copilotSuggestions,
+      draftMseTermsNeedingReview,
+      encounterDocumentationChecks,
+      highRiskWarnings,
+      medicationScaffoldWarnings,
+      objectiveConflictBullets: objectiveReview.conflictBullets,
+      phaseTwoTrustCues,
+      reviewCounts,
+      destinationConstraintActive,
+    }),
+    [
+      contradictionFlags,
+      copilotSuggestions,
+      destinationConstraintActive,
+      draftMseTermsNeedingReview,
+      encounterDocumentationChecks,
+      highRiskWarnings,
+      medicationScaffoldWarnings,
+      objectiveReview.conflictBullets,
+      phaseTwoTrustCues,
+      reviewCounts,
+    ],
+  );
+  const atlasNudgeItems = useMemo(() => buildAtlasNudges(atlasReviewItems), [atlasReviewItems]);
+  const showAtlasReviewDock = ATLAS_REVIEW_DOCK_ENABLED && atlasReviewItems.length > 0;
 
   useEffect(() => {
     const topHighRiskWarning = highRiskWarnings[0];
@@ -2976,7 +3041,6 @@ export function ReviewWorkspace({
     session?.selectedPresetId,
     session?.specialty,
   ]);
-  const copilotSuggestions = session?.copilotSuggestions ?? [];
   const sectionPlan = useMemo(() => planSections({
     noteType: session?.noteType || '',
     requestedScope: session?.outputScope,
@@ -3809,19 +3873,12 @@ export function ReviewWorkspace({
             {renderRecentActions()}
           </div>
         ) : null}
-        <InlineFeedbackControl
-          pageContext={`Note builder review • ${session?.noteType || 'Unknown note type'}`}
-          workflowArea="note_builder"
-          noteType={session?.noteType}
-          routeTaken={`note-builder-${session?.mode || 'unknown'}`}
-          promptSummary={session?.sourceInput}
-          responseSummary={draftText}
-          providerId={resolvedProviderIdentityId}
-          providerProfileId={providerSettings.providerProfileId}
-          providerProfileName={activeProviderProfile?.name}
-          stage="review"
-          promptLabel="Was this draft useful?"
-        />
+        <div className="mt-4 rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.38)] px-4 py-3 text-sm text-cyan-50/76">
+          Feedback is now kept out of the main finish flow. If something is wrong or confusing, use the separate feedback surface so copy/export stays focused.
+          <Link href="/dashboard/feedback" className="ml-2 font-semibold text-cyan-100 underline decoration-cyan-200/30 underline-offset-4">
+            Open feedback
+          </Link>
+        </div>
         <div className="mt-4 rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3 text-sm text-cyan-50/78">
           Active paste profile: <span className="font-semibold text-cyan-50">{activeDestinationMeta.summaryLabel}</span>. {activeDestinationMeta.pasteExpectation}
         </div>
@@ -3942,9 +3999,9 @@ export function ReviewWorkspace({
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Embedded review</div>
-              <h2 className="mt-2 text-lg font-semibold text-white">Review note</h2>
+              <h2 className="mt-2 text-lg font-semibold text-white">Review Draft</h2>
               <p className="mt-1 text-sm text-cyan-50/70">
-                Edit the generated note here. Use the dedicated review page only if you want the deeper trust, source, and warning tools.
+                Edit, copy, or open deeper review tools.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -3980,6 +4037,24 @@ export function ReviewWorkspace({
                   {hasOpenReviewSections ? 'Jump to first open section' : 'Jump to final read anchor'}
                 </button>
               </div>
+            </div>
+          ) : null}
+
+          {showAtlasReviewDock ? (
+            <div className="mt-4 grid gap-4">
+              <AtlasNudgeStrip
+                items={atlasNudgeItems}
+                onAskAtlas={handleAtlasAsk}
+                onShowSource={handleAtlasShowSource}
+                assistantName={assistantPersona.name}
+              />
+              <AtlasReviewDock
+                items={atlasReviewItems}
+                onAskAtlas={handleAtlasAsk}
+                onShowSource={handleAtlasShowSource}
+                assistantName={assistantPersona.name}
+                assistantAvatar={assistantPersona.avatar}
+              />
             </div>
           ) : null}
 
@@ -4210,10 +4285,36 @@ export function ReviewWorkspace({
         ) : null}
       </div>
 
-      <div className="mb-6 space-y-6">
-        {renderDraftEditorSection()}
-        {renderFinishSection()}
-      </div>
+      {showAtlasReviewDock ? (
+        <div className="mb-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+          <div className="space-y-6">
+            {atlasNudgeItems.length ? (
+              <AtlasNudgeStrip
+                items={atlasNudgeItems}
+                onAskAtlas={handleAtlasAsk}
+                onShowSource={handleAtlasShowSource}
+                assistantName={assistantPersona.name}
+              />
+            ) : null}
+            {renderDraftEditorSection()}
+            {renderFinishSection()}
+          </div>
+          <div className="space-y-6">
+            <AtlasReviewDock
+              items={atlasReviewItems}
+              onAskAtlas={handleAtlasAsk}
+              onShowSource={handleAtlasShowSource}
+              assistantName={assistantPersona.name}
+              assistantAvatar={assistantPersona.avatar}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="mb-6 space-y-6">
+          {renderDraftEditorSection()}
+          {renderFinishSection()}
+        </div>
+      )}
 
       <CollapsibleReviewSection
         title="Reference and deep review"

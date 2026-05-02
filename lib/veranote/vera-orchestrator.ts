@@ -49,7 +49,7 @@ export type AssistantOrchestratorBuilders = {
   ) => AssistantResponsePayload;
   buildDirectReviewHelp: (normalizedMessage: string, context?: AssistantApiContext) => AssistantResponsePayload | null;
   buildReviewScenarioHelp: (normalizedMessage: string, context?: AssistantApiContext) => AssistantResponsePayload | null;
-  buildUnknownQuestionFallback: (message: string) => AssistantResponsePayload | null;
+  buildUnknownQuestionFallback: (message: string, context?: AssistantApiContext) => AssistantResponsePayload | null;
   buildWorkflowHelp: (stage: AssistantStage, context?: AssistantApiContext) => AssistantResponsePayload;
   buildContextualSectionDraftHelp: (
     normalizedMessage: string,
@@ -105,14 +105,14 @@ export function orchestrateAssistantResponse(
       : stage === 'review'
         ? builders.buildDirectReviewHelp(normalizedMessage, context)
           || builders.buildReviewScenarioHelp(normalizedMessage, context)
-          || builders.buildUnknownQuestionFallback(message)
+          || builders.buildUnknownQuestionFallback(message, context)
           || builders.buildWorkflowHelp(stage, context)
         : builders.buildContextualSectionDraftHelp(normalizedMessage, message, recentMessages, context)
           || builders.buildDirectComposeHelp(normalizedMessage, context)
           || builders.buildMixedDomainComposeHelp(normalizedMessage, message, context)
           || builders.buildRawDetailComposeHelp(message, context)
           || builders.buildComposeScenarioHelp(normalizedMessage, context)
-          || builders.buildUnknownQuestionFallback(message)
+          || builders.buildUnknownQuestionFallback(message, context)
           || builders.buildWorkflowHelp(stage, context));
 
   return {

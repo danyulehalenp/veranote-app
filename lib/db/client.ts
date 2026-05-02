@@ -3,6 +3,7 @@ import path from 'path';
 import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '@/lib/constants/settings';
 import { DEFAULT_PROVIDER_ACCOUNT_ID } from '@/lib/constants/provider-accounts';
 import { DEFAULT_PROVIDER_IDENTITY_ID, findProviderIdentity } from '@/lib/constants/provider-identities';
+import { applyAssistantPersonaDefaults } from '@/lib/veranote/assistant-persona';
 import { mergePresetCatalog, type NotePreset } from '@/lib/note/presets';
 import { buildDraftRecoveryState, getDraftPriorityScore } from '@/lib/veranote/draft-recovery';
 import { createEmptyAssistantLearningStore, type AssistantLearningStore } from '@/lib/veranote/assistant-learning';
@@ -96,25 +97,25 @@ async function readDb(): Promise<PrototypeDb> {
           && typeof (event as DictationAuditEvent).eventName === 'string'
         ))
         : [],
-      providerSettings: {
+      providerSettings: applyAssistantPersonaDefaults({
         ...DEFAULT_PROVIDER_SETTINGS,
         ...(parsed.providerSettings || {}),
-      },
+      }),
       providerSettingsByProviderId: typeof parsed.providerSettingsByProviderId === 'object' && parsed.providerSettingsByProviderId
         ? Object.fromEntries(
             Object.entries(parsed.providerSettingsByProviderId).map(([providerId, settings]) => [
               providerId,
-              {
+              applyAssistantPersonaDefaults({
                 ...DEFAULT_PROVIDER_SETTINGS,
                 ...(settings || {}),
-              },
+              }),
             ]),
           )
         : {
-            [DEFAULT_PROVIDER_IDENTITY_ID]: {
+            [DEFAULT_PROVIDER_IDENTITY_ID]: applyAssistantPersonaDefaults({
               ...DEFAULT_PROVIDER_SETTINGS,
               ...(parsed.providerSettings || {}),
-            },
+            }),
           },
       currentProviderAccountId: typeof parsed.currentProviderAccountId === 'string' && parsed.currentProviderAccountId
         ? parsed.currentProviderAccountId
@@ -473,10 +474,10 @@ export async function deleteDraft(draftId: string, providerId = DEFAULT_PROVIDER
 
 export async function saveProviderSettings(settings: ProviderSettings, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
   const db = await readDb();
-  const nextSettings = {
+  const nextSettings = applyAssistantPersonaDefaults({
     ...DEFAULT_PROVIDER_SETTINGS,
     ...settings,
-  };
+  });
   db.providerSettings = nextSettings;
   db.providerSettingsByProviderId = {
     ...(db.providerSettingsByProviderId || {}),
@@ -506,10 +507,10 @@ export async function getProviderSettings(providerId = DEFAULT_PROVIDER_IDENTITY
     veraPreferredAddress: identity?.displayName || DEFAULT_PROVIDER_SETTINGS.veraPreferredAddress,
   };
 
-  return {
+  return applyAssistantPersonaDefaults({
     ...identitySeedSettings,
     ...(scopedSettings || db.providerSettings || {}),
-  };
+  });
 }
 
 export async function getCurrentProviderIdentityId() {

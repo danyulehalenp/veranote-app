@@ -118,7 +118,7 @@ function templateFileForNoteType(noteType: string) {
  }
 
  if (normalized.includes('medical h&p')) {
- return 'psych-admission-medical-hp.md';
+ return 'medical-h-and-p.md';
  }
 
  if (normalized.includes('medical consultation') || normalized.includes('medical consult')) {
@@ -206,14 +206,40 @@ function enforceProgressNoteHeadings(note: string, noteType: string) {
  return `${note.trim()}\n\n${additions.join('\n\n')}`;
 }
 
+function hardenRiskReassuranceWording(note: string, noteType: string) {
+ const appliesToFinalRiskBatch = /inpatient psych initial adult|inpatient psych discharge|risk-heavy|risk heavy/i.test(noteType);
+ if (!appliesToFinalRiskBatch) return note;
+
+ return note
+  .replace(
+   /\b(?:there is\s+)?(?:pressure|provider pressure)\s+(?:is\s+)?(?:noted\s+)?to\s+(?:say|classify|characterize|describe|frame)\s+(?:the\s+)?patient\s+as\s+low[-\s]?risk[^.]*\./gi,
+   'Unsupported risk-minimization pressure is present; broader safety risk requires documented assessment, and unresolved domains remain visible.',
+  )
+  .replace(/\blow[-\s]?risk\b/gi, 'risk-minimized')
+  .replace(/\bsafe\s+(?:for|to)\s+discharge\b/gi, 'discharge readiness not established')
+  .replace(/\bstable\s+for\s+discharge\b/gi, 'discharge condition not established')
+  .replace(/\bdischarge\s+ready\b/gi, 'discharge readiness not established')
+  .replace(/\brisk\s+resolved\b/gi, 'risk status remains incompletely established')
+  .replace(/\bno\s+acute\s+safety\s+concerns?\b/gi, 'incomplete acute safety data')
+  .replace(/\bno\s+safety\s+concerns?\b/gi, 'incomplete safety data')
+  .replace(/\b(?:denies|reports|states)\s+(?:any\s+)?safety\s+concerns?\b/gi, 'specific safety denials require source-bound qualification')
+  .replace(/\bguaranteed\s+safety\b/gi, 'safety cannot be guaranteed from the provided source')
+  .replace(/\bcontract(?:ed)?\s+for\s+safety\b/gi, 'safety planning status requires documentation');
+}
+
 export async function generateNote(input: GenerateNoteInput): Promise<GenerateNoteWithMetaResult> {
  const apiKey = process.env.OPENAI_API_KEY;
  const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 
  if (!apiKey) {
  const fallback = generateMockNote(input.sourceInput, input.noteType, input.flagMissingInfo);
+ const fallbackNote = hardenRiskReassuranceWording(
+  enforceProgressNoteHeadings(fallback.note, input.noteType),
+  input.noteType,
+ );
  return {
  ...fallback,
+ note: fallbackNote,
  flags: mergeFlags(input, fallback.flags),
  claims: stubClaims,
  copilotSuggestions: buildSuggestions(input),
@@ -259,6 +285,8 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
 	   ? `Render these exact sections in order for the outpatient follow-up note: ${sectionPlan.sections.map((section) => SECTION_LABELS[section]).join(', ') || 'none specified'}. Keep medication response, side effects, safety/risk limits, and follow-up plan explicit. If a required outpatient section has no supported content, keep the heading and write a brief not documented, unclear, not provided, or gap statement.`
 	 : sectionPlan.profile.id === 'medical-consult-note'
 	   ? `Render these exact sections in order for the medical consult note: ${sectionPlan.sections.map((section) => SECTION_LABELS[section]).join(', ') || 'none specified'}. Keep the consult question, relevant history, pertinent findings, uncertainty-bound medical impression, recommendations, and source limitations explicit. If a consult section has no supported content, keep the heading and write a brief not documented, unclear, not provided, pending, or needs verification statement.`
+	 : sectionPlan.profile.id === 'medical-h-and-p'
+	   ? `Render these exact sections in order for the medical H&P note: ${sectionPlan.sections.map((section) => SECTION_LABELS[section]).join(', ') || 'none specified'}. Keep the medical chief concern, pertinent positives and negatives, medications/allergies gaps, exam limits, diagnostics/vitals limits, assessment, and plan explicit. If a medical H&P section has no supported content, keep the heading and write a brief not documented, unclear, not provided, pending, or needs verification statement.`
 	 : `Render only these sections unless the source or requested scope clearly requires less: ${sectionPlan.sections.map((section) => SECTION_LABELS[section]).join(', ') || 'none specified'}.`,
 	 sectionPlan.requiresStandaloneMse
 	 ? 'A standalone Mental Status / Observations section is required for this output scope.'
@@ -352,8 +380,13 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
  const parsed = JSON.parse(outputText);
  const validated = GenerateNoteResponseSchema.parse(parsed);
 
+	 const liveNote = hardenRiskReassuranceWording(
+	  enforceProgressNoteHeadings(validated.note, input.noteType),
+	  input.noteType,
+	 );
+
 	 return {
-	 note: enforceProgressNoteHeadings(validated.note, input.noteType),
+	 note: liveNote,
  flags: mergeFlags(input, validated.flags),
  claims: stubClaims,
  copilotSuggestions: buildSuggestions(input),
@@ -367,9 +400,14 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
  };
  } catch (error) {
  const fallback = generateMockNote(input.sourceInput, input.noteType, input.flagMissingInfo);
+ const fallbackNote = hardenRiskReassuranceWording(
+  enforceProgressNoteHeadings(fallback.note, input.noteType),
+  input.noteType,
+ );
 
  return {
  ...fallback,
+ note: fallbackNote,
  flags: mergeFlags(input, fallback.flags),
  claims: stubClaims,
  copilotSuggestions: buildSuggestions(input),

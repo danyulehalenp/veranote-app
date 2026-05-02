@@ -4,6 +4,7 @@ export type PsychMedicationAnswerIntent =
   | 'formulation_lookup'
   | 'side_effects'
   | 'monitoring'
+  | 'lab_level_interpretation'
   | 'interaction_check'
   | 'switching_framework'
   | 'pregnancy_lactation'

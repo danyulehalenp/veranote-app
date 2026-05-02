@@ -82,6 +82,15 @@ export type NoteSectionKey =
   | 'consultPertinentLabsVitalsDiagnostics'
   | 'consultAssessmentMedicalImpression'
   | 'consultRecommendationsPlan'
+  | 'medicalHpReasonAdmissionContext'
+  | 'medicalHpHistoryOfPresentIllness'
+  | 'medicalHpPastMedicalHistory'
+  | 'medicalHpMedicationsAllergies'
+  | 'medicalHpReviewOfSystems'
+  | 'medicalHpPhysicalExamObservations'
+  | 'medicalHpPertinentLabsVitalsDiagnostics'
+  | 'medicalHpAssessmentMedicalProblems'
+  | 'medicalHpPlanRecommendations'
   | 'diagnosis'
   | 'medicalDiagnosis'
   | 'proposedDischarge'
@@ -185,6 +194,15 @@ export const SECTION_LABELS: Record<NoteSectionKey, string> = {
   consultPertinentLabsVitalsDiagnostics: 'Pertinent Labs / Vitals / Diagnostics',
   consultAssessmentMedicalImpression: 'Assessment / Medical Impression',
   consultRecommendationsPlan: 'Recommendations / Plan',
+  medicalHpReasonAdmissionContext: 'Reason for Medical H&P / Admission Context',
+  medicalHpHistoryOfPresentIllness: 'History of Present Illness',
+  medicalHpPastMedicalHistory: 'Past Medical History',
+  medicalHpMedicationsAllergies: 'Medications / Allergies',
+  medicalHpReviewOfSystems: 'Review of Systems',
+  medicalHpPhysicalExamObservations: 'Physical Exam / Observations',
+  medicalHpPertinentLabsVitalsDiagnostics: 'Pertinent Labs / Vitals / Diagnostics',
+  medicalHpAssessmentMedicalProblems: 'Assessment / Medical Problems',
+  medicalHpPlanRecommendations: 'Plan / Recommendations',
   diagnosis: 'Psychiatric Diagnosis',
   medicalDiagnosis: 'Medical Diagnosis / Medical Conditions',
   proposedDischarge: 'Plan / Proposed Discharge',
@@ -553,6 +571,47 @@ export const NOTE_PROFILES: NoteProfile[] = [
       'hpi-only': false,
       'selected-sections': true,
       'full-note': true,
+    },
+  },
+  {
+    id: 'medical-h-and-p',
+    label: 'Medical H&P',
+    noteTypeMatches: [/medical h&p/i, /medical h and p/i, /medical history and physical/i],
+    defaultScope: 'full-note',
+    availableSections: [
+      'medicalHpReasonAdmissionContext',
+      'sourceOfInformation',
+      'medicalHpHistoryOfPresentIllness',
+      'medicalHpPastMedicalHistory',
+      'medicalHpMedicationsAllergies',
+      'medicalHpReviewOfSystems',
+      'medicalHpPhysicalExamObservations',
+      'medicalHpPertinentLabsVitalsDiagnostics',
+      'medicalHpAssessmentMedicalProblems',
+      'medicalHpPlanRecommendations',
+      'sourceLimitations',
+    ],
+    defaultSectionsByScope: {
+      'hpi-only': ['medicalHpReasonAdmissionContext', 'medicalHpHistoryOfPresentIllness'],
+      'selected-sections': ['medicalHpHistoryOfPresentIllness', 'medicalHpMedicationsAllergies', 'medicalHpPhysicalExamObservations', 'medicalHpAssessmentMedicalProblems', 'medicalHpPlanRecommendations'],
+      'full-note': [
+        'medicalHpReasonAdmissionContext',
+        'sourceOfInformation',
+        'medicalHpHistoryOfPresentIllness',
+        'medicalHpPastMedicalHistory',
+        'medicalHpMedicationsAllergies',
+        'medicalHpReviewOfSystems',
+        'medicalHpPhysicalExamObservations',
+        'medicalHpPertinentLabsVitalsDiagnostics',
+        'medicalHpAssessmentMedicalProblems',
+        'medicalHpPlanRecommendations',
+        'sourceLimitations',
+      ],
+    },
+    requiresStandaloneMseByScope: {
+      'hpi-only': false,
+      'selected-sections': false,
+      'full-note': false,
     },
   },
   {

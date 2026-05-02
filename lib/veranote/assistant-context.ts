@@ -1,7 +1,11 @@
 import type { AssistantStage } from '@/types/assistant';
+import type { AssistantAvatarId } from '@/lib/veranote/assistant-persona';
 
 export type AssistantContextSnapshot = {
   stage: AssistantStage;
+  userAiName?: string;
+  userAiRole?: string;
+  userAiAvatar?: AssistantAvatarId;
   activeSourceMode?: 'manual' | 'dictation' | 'transcript' | 'objective';
   noteType?: string;
   specialty?: string;

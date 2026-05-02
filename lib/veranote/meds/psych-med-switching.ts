@@ -293,13 +293,19 @@ export function detectPsychMedicationSwitchingIntent(prompt: string) {
 function extractMentionedProfiles(prompt: string) {
   const normalized = normalize(prompt);
   const matches: Array<{ profile: PsychMedicationProfile; index: number }> = [];
+  const mentionsLaiSpecific =
+    /\b(lai|long acting|long acting injectable|injectable|injection|maintena|aristada|consta|sustenna|invega|decanoate)\b/.test(normalized);
 
   for (const profile of PSYCH_MEDICATION_LIBRARY) {
+    const isLaiProfile = profile.subclass === 'long_acting_injectable_antipsychotic';
     const aliases = [profile.id, profile.genericName, ...profile.brandNames, ...(profile.aliases ?? [])];
     for (const alias of aliases) {
       const normalizedAlias = normalize(alias);
       const index = normalized.indexOf(normalizedAlias);
       if (index >= 0) {
+        if (isLaiProfile && !mentionsLaiSpecific) {
+          continue;
+        }
         matches.push({ profile, index });
         break;
       }
@@ -371,7 +377,7 @@ function determineSwitchPair(prompt: string) {
 }
 
 function inferStrategyType(normalized: string, fromMedication?: PsychMedicationProfile | null, toMedication?: PsychMedicationProfile | null): PsychMedicationSwitchStrategyType {
-  if (/\blai\b/.test(normalized) || (toMedication?.subclass?.includes('injectable'))) {
+  if (/\b(lai|long acting|long acting injectable|injectable|injection|maintena|aristada|consta|sustenna|invega|decanoate)\b/.test(normalized) || (toMedication?.subclass?.includes('injectable'))) {
     return 'oral_to_lai_transition';
   }
   if (/\bmaoi\b/.test(normalized) || fromMedication?.subclass === 'MAOI' || toMedication?.subclass === 'MAOI') {
@@ -423,7 +429,7 @@ function applicableSwitchRules(normalized: string, fromMedication?: PsychMedicat
   if (isAntipsychotic(fromMedication) && isAntipsychotic(toMedication) && !/\blai\b/.test(normalized)) {
     rules.push(HIGH_RISK_SWITCH_RULES.find((rule) => rule.id === 'antipsychotic_switch')!);
   }
-  if (/\blai\b/.test(normalized) || toMedication?.subclass === 'long_acting_injectable_antipsychotic') {
+  if (/\b(lai|long acting|long acting injectable|injectable|injection|maintena|aristada|consta|sustenna|invega|decanoate)\b/.test(normalized) || toMedication?.subclass === 'long_acting_injectable_antipsychotic') {
     rules.push(HIGH_RISK_SWITCH_RULES.find((rule) => rule.id === 'oral_to_lai')!);
   }
   if ((fromMedication?.id === 'lithium' || toMedication?.id === 'lithium') && (isMoodStabilizer(fromMedication) || isMoodStabilizer(toMedication))) {

@@ -3,6 +3,7 @@ import { getProviderSettings, saveProviderSettings } from '@/lib/db/client';
 import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '@/lib/constants/settings';
 import { buildDictationInsertionWorkflowProfile } from '@/lib/dictation/ehr-insertion-profiles';
 import { getAuthorizedDesktopBridgeContext } from '@/lib/veranote/desktop-bridge-auth';
+import { applyAssistantPersonaDefaults } from '@/lib/veranote/assistant-persona';
 import { resolveScopedProviderIdentityId } from '@/lib/veranote/provider-session';
 
 export async function GET(request: Request) {
@@ -35,10 +36,13 @@ export async function POST(request: Request) {
 
   const providerId = resolveScopedProviderIdentityId(body.providerId, authorizedProvider.providerIdentityId);
   const { providerId: _providerId, ...settingsInput } = body;
-  const settings = await saveProviderSettings({
-    ...DEFAULT_PROVIDER_SETTINGS,
-    ...settingsInput,
-  }, providerId);
+  const settings = await saveProviderSettings(
+    applyAssistantPersonaDefaults({
+      ...DEFAULT_PROVIDER_SETTINGS,
+      ...settingsInput,
+    }),
+    providerId,
+  );
 
   return NextResponse.json({ settings });
 }

@@ -4,6 +4,7 @@ import { buildKnowledgeRegistry, queryKnowledgeRegistry, type KnowledgeBundle, t
 import { buildPsychCptHelp } from '@/lib/veranote/assistant-psych-cpt-knowledge';
 import { buildPsychDiagnosisCodingHelp } from '@/lib/veranote/assistant-psych-diagnosis-coding';
 import { buildPsychDiagnosisConceptHelp } from '@/lib/veranote/assistant-psych-diagnosis-concepts';
+import { buildDiagnosticGeneralConceptReferenceHelp } from '@/lib/veranote/assistant-diagnostic-general-reference';
 import { buildPsychMedicationReferenceHelp } from '@/lib/veranote/assistant-psych-med-knowledge';
 import { getAssistantReferencePolicy } from '@/lib/veranote/assistant-source-policy';
 
@@ -73,6 +74,12 @@ export function buildGeneralKnowledgeHelp(
 
   if (psychCptHelp) {
     return psychCptHelp;
+  }
+
+  const directDiagnosticConceptHelp = buildDiagnosticGeneralConceptReferenceHelp(normalized);
+
+  if (directDiagnosticConceptHelp) {
+    return directDiagnosticConceptHelp;
   }
 
   const psychMedicationHelp = buildPsychMedicationReferenceHelp(normalized, recentMessages);

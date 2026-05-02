@@ -82,7 +82,7 @@ function SignInCard() {
               <div className="workspace-card-static rounded-[22px] p-4">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Provider memory</div>
                 <div className="mt-2 text-lg font-semibold text-white">Learns your workflow</div>
-                <p className="mt-2 text-sm text-cyan-50/68">Atlas is moving toward a remembered, provider-specific assistant instead of a reset-every-time tool.</p>
+                <p className="mt-2 text-sm text-cyan-50/68">Your assistant can stay remembered and provider-specific instead of acting like a reset-every-time tool.</p>
               </div>
             </div>
           </div>

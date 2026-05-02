@@ -27,8 +27,11 @@ Rules:
 - Preserve discharge timing, disposition, and follow-up details when present.
 - Do not imply symptoms resolved unless documented.
 - Do not imply safety/stability at discharge unless documented.
-- Do not use "safe for discharge," "stable for discharge," "low risk," "discharge ready," or equivalent reassurance unless the source explicitly supports that exact level of discharge readiness.
-- Do not repeat unsafe shortcut wording as if it is a clinical conclusion. If the source asks to make discharge sound okay, preserve the gaps instead.
+- Never emit these exact shortcut phrases anywhere in the draft, even as a quote, rejected source request, or "not supported" statement: "safe for discharge," "safe to discharge," "stable for discharge," "low risk," "discharge ready," "risk resolved," "no safety concerns," "no acute safety concern," "contracted for safety," or "guaranteed safety."
+- Do not write equivalent discharge reassurance unless the source explicitly supports that level of discharge readiness and it is not contradicted by missing discharge MSE, risk status, safety plan, follow-up, medication access/adherence, support/housing, or relapse-prevention data.
+- Do not repeat, quote, or paraphrase unsafe shortcut wording as a clinical conclusion. If the source asks to make discharge sound okay, write that unsupported discharge-reassurance pressure was not adopted and preserve the gaps instead.
+- Do not mention the forbidden shortcut phrase the source used. For example, if the source asks for a reassuring discharge label, write "unsupported discharge-reassurance pressure is present" rather than copying the label.
+- If discharge safety/readiness is sparse or incomplete, write that discharge safety/readiness cannot be established from the provided source.
 - Preserve partial improvement, residual symptoms, unresolved risk facts, and conflicting discharge-readiness signals when they remain in the source.
 - If the source supports that the patient is improved and appropriate for discharge, preserve that logic clearly.
 - Preserve denial of SI/HI/AVH or other discharge safety statements only if documented at discharge.
@@ -75,11 +78,13 @@ Safety Plan / Discharge Readiness:
 - Include safety-plan status, follow-up status, medication access/adherence issues, support/housing/transportation gaps, collateral gaps, and relapse-prevention gaps when documented.
 - If safety planning or discharge readiness details are not documented, say they were not documented.
 - If safety plan is partial, sparse, pending, or incomplete, preserve that limitation.
+- If discharge safety/readiness cannot be established from available facts, state that directly without using shortcut reassurance phrases.
 
 Discharge Condition:
 - State discharge condition only as supported by the source.
 - If discharge condition is unclear or not documented, write: "Discharge condition was not documented in the provided source."
 - Do not infer stable, ready, low-risk, or safe discharge status from denial alone or from partial improvement.
+- When condition/readiness is limited, prefer "condition/readiness cannot be established from the provided source" over any reassuring discharge label.
 
 Discharge Medications:
 - Include discharge medication details only if documented.

@@ -6,6 +6,8 @@ export type AmbientListeningMode =
   | 'uploaded_audio'
   | 'simulation';
 
+export type AmbientCaptureRuntime = 'simulation' | 'real_microphone';
+
 export type AmbientCareSetting =
   | 'outpatient_psychiatry'
   | 'outpatient_therapy'
@@ -29,7 +31,7 @@ export type AmbientSessionState =
   | 'finalized'
   | 'discarded';
 
-export type AmbientTranscriptSourceKind = 'none' | 'mock_seeded' | 'live_stream_adapter';
+export type AmbientTranscriptSourceKind = 'none' | 'mock_seeded' | 'live_stream_adapter' | 'batch_transcription';
 export type AmbientTranscriptDeliveryTransport = 'none' | 'polling_pull' | 'stream_push';
 export type AmbientTranscriptEventType = 'interim_turn' | 'final_turn';
 export type AmbientTranscriptTransportPhase =
@@ -253,6 +255,48 @@ export type AmbientTranscriptIngressEvent = {
   eventType?: AmbientTranscriptEventType;
   occurredAt?: string;
   turn: AmbientTranscriptIngressTurn;
+};
+
+export type AmbientSttProviderId =
+  | 'deepgram-batch-diarization'
+  | 'openai-batch-transcription'
+  | 'mock-simulation';
+
+export type AmbientSttWordTiming = {
+  word: string;
+  startMs: number;
+  endMs: number;
+  confidence?: number | null;
+  speakerLabel?: string | null;
+};
+
+export type AmbientSttSegment = {
+  segmentId: string;
+  text: string;
+  startMs: number;
+  endMs: number;
+  isFinal: boolean;
+  textConfidence?: number | null;
+  speakerLabel?: string | null;
+  speakerConfidence?: number | null;
+  wordTimings?: AmbientSttWordTiming[];
+  rawProviderMetadata?: Record<string, unknown> | null;
+};
+
+export type AmbientSttProviderError = {
+  providerId: AmbientSttProviderId;
+  code: string;
+  message: string;
+  retryable: boolean;
+  rawProviderMetadata?: Record<string, unknown> | null;
+};
+
+export type AmbientBatchTranscriptionProviderResult = {
+  providerId: AmbientSttProviderId;
+  providerLabel: string;
+  transcriptText: string;
+  segments: AmbientSttSegment[];
+  rawProviderMetadata?: Record<string, unknown> | null;
 };
 
 export type AmbientEvidenceAnchor = {

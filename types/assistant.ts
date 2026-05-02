@@ -1,3 +1,5 @@
+import type { AssistantAvatarId } from '@/lib/veranote/assistant-persona';
+
 export type AssistantStage = 'compose' | 'review';
 
 export type AssistantMode = 'workflow-help' | 'prompt-builder' | 'reference-lookup';
@@ -146,6 +148,9 @@ export type AssistantResponsePayload = {
 export type AssistantApiContext = {
   providerAccountId?: string;
   providerIdentityId?: string;
+  userAiName?: string;
+  userAiRole?: string;
+  userAiAvatar?: AssistantAvatarId;
   noteType?: string;
   specialty?: string;
   currentDraftText?: string;

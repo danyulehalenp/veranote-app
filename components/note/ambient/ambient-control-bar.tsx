@@ -49,6 +49,10 @@ function toneForTranscriptSource(sourceKind: AmbientTranscriptSourceKind) {
     return 'border-sky-300/24 bg-[rgba(56,189,248,0.16)] text-sky-50';
   }
 
+  if (sourceKind === 'batch_transcription') {
+    return 'border-emerald-300/24 bg-[rgba(16,185,129,0.16)] text-emerald-50';
+  }
+
   if (sourceKind === 'mock_seeded') {
     return 'border-violet-300/20 bg-[rgba(129,140,248,0.14)] text-indigo-50';
   }
@@ -136,12 +140,16 @@ export function AmbientControlBar({
     ? 'Live adapter simulation'
     : transcriptSourceKind === 'mock_seeded'
       ? 'Buffered replay simulation'
-      : 'Transport pending';
+      : transcriptSourceKind === 'batch_transcription'
+        ? 'Batch transcription'
+        : 'Transport pending';
   const cadenceHint = transcriptSourceKind === 'live_stream_adapter'
     ? 'Transcript events should arrive over SSE roughly every 1.2s while recording remains active.'
     : transcriptSourceKind === 'mock_seeded'
       ? 'Transcript events should drain over polling roughly every 1.2s from the buffered mock queue.'
-      : 'Transcript transport will initialize after consent and recording start.';
+      : transcriptSourceKind === 'batch_transcription'
+        ? 'Transcript text will appear after recording stops and the captured audio is transcribed.'
+        : 'Transcript transport will initialize after consent and recording start.';
   const primaryStartLabel = startLabel
     || (needsPreparation ? 'Start ambient session' : 'Start recording');
   const primaryStopLabel = stopLabel || 'Stop';

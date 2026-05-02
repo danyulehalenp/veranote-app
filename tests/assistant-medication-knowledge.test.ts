@@ -33,16 +33,29 @@ describe('assistant medication knowledge', () => {
     expect(response?.answerMode).toBe('medication_reference_answer');
   });
 
+  it('keeps generic lithium therapeutic-level questions in concise reference mode', () => {
+    const response = buildPsychMedicationReferenceHelp('what are normal therapeutic levels of lithium for a patient');
+
+    expect(response?.answerMode).toBe('medication_reference_answer');
+    expect(response?.message).toContain('Typical lithium therapeutic levels:');
+    expect(response?.message).toContain('Maintenance: 0.6-1.0 mEq/L');
+    expect(response?.message).toContain('Acute mania: 0.8-1.2 mEq/L');
+    expect(response?.message).not.toContain('Follow-up:');
+    expect(response?.message).not.toContain('Key context:');
+  });
+
   it('answers formulation and strength lookups without falling back to generic class help', () => {
     const celexa = buildGeneralKnowledgeHelp('what mg does Celexa come in');
-    expect(celexa?.message).toContain('Celexa (citalopram)');
+    expect(celexa?.message).toContain('citalopram/Celexa');
     expect(celexa?.message).toContain('10 mg');
     expect(celexa?.message).toContain('40 mg');
-    expect(celexa?.message).toContain('Dosing depends on indication, patient factors, and safety considerations, so verify with a current prescribing reference.');
+    expect(celexa?.message).toContain('verify with a current prescribing reference or pharmacy');
+    expect(celexa?.message).not.toContain('Dosing depends on indication, patient factors, and safety considerations');
+    expect(celexa?.message).not.toContain('If you would like');
     expect(celexa?.answerMode).toBe('medication_reference_answer');
 
     const celexaVariant = buildGeneralKnowledgeHelp('what mg doses is celexa availabe in?');
-    expect(celexaVariant?.message).toContain('Celexa (citalopram)');
+    expect(celexaVariant?.message).toContain('citalopram/Celexa');
     expect(celexaVariant?.message).toContain('10 mg');
     expect(celexaVariant?.message).not.toContain('citalopram is an antidepressant');
 
@@ -61,6 +74,43 @@ describe('assistant medication knowledge', () => {
     const depakote = buildPsychMedicationReferenceHelp('tablet strengths for Depakote');
     expect(depakote?.message).toContain('125 mg');
     expect(depakote?.message).toContain('500 mg');
+  });
+
+  it('answers high-confidence formulation questions for common psych meds', () => {
+    const lamotrigine = buildGeneralKnowledgeHelp('What mg formulations does lamotrigine come in?');
+    expect(lamotrigine?.message).toContain('lamotrigine');
+    expect(lamotrigine?.message).toContain('25 mg');
+    expect(lamotrigine?.message).toContain('100 mg');
+    expect(lamotrigine?.message).toContain('150 mg');
+    expect(lamotrigine?.message).toContain('200 mg');
+    expect(lamotrigine?.message).toContain('chewable/dispersible tablet');
+    expect(lamotrigine?.message).toContain('orally disintegrating tablet');
+    expect(lamotrigine?.message).toContain('verify with a current prescribing reference or pharmacy');
+    expect(lamotrigine?.message).not.toContain('Exact strengths and formulations can vary by manufacturer or product.');
+    expect(lamotrigine?.message).not.toContain('Dosing depends on indication, patient factors, and safety considerations');
+    expect(lamotrigine?.message).not.toContain('If you would like');
+    expect(lamotrigine?.answerMode).toBe('medication_reference_answer');
+
+    const sertraline = buildPsychMedicationReferenceHelp('What mg formulations does sertraline come in?');
+    expect(sertraline?.message).toContain('25 mg');
+    expect(sertraline?.message).toContain('50 mg');
+    expect(sertraline?.message).toContain('100 mg');
+
+    const quetiapine = buildPsychMedicationReferenceHelp('What strengths does quetiapine come in?');
+    expect(quetiapine?.message).toContain('25 mg');
+    expect(quetiapine?.message).toContain('400 mg');
+    expect(quetiapine?.message).toContain('extended-release tablet');
+
+    const lithium = buildPsychMedicationReferenceHelp('What forms does lithium come in?');
+    expect(lithium?.message).toContain('capsule');
+    expect(lithium?.message).toContain('extended-release tablet');
+    expect(lithium?.message).toContain('oral solution');
+
+    const buspirone = buildPsychMedicationReferenceHelp('What strengths does buspirone come in?');
+    expect(buspirone?.message).toContain('buspirone/Buspar');
+    expect(buspirone?.message).toContain('5 mg');
+    expect(buspirone?.message).toContain('30 mg');
+    expect(buspirone?.message).toContain('verify with a current prescribing reference');
   });
 
   it('answers adult sleep recommendation questions directly', () => {

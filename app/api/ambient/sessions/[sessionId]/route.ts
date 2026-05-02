@@ -13,6 +13,7 @@ import {
   setServerAmbientSessionState,
   setServerAmbientSpeakerLabel,
   subscribeToServerAmbientSession,
+  transcribeServerAmbientAudio,
   updateServerAmbientConsent,
 } from '@/lib/ambient-listening/server-session-store';
 import type { AmbientConsentEventDraft } from '@/lib/ambient-listening/mock-data';
@@ -142,6 +143,7 @@ export async function POST(request: Request, context: RouteContext) {
       | 'restore_turn'
       | 'confirm_turn'
       | 'pull_events'
+      | 'transcribe_audio'
       | 'edit_sentence'
       | 'accept_sentence'
       | 'reject_sentence'
@@ -154,6 +156,12 @@ export async function POST(request: Request, context: RouteContext) {
     sentenceId?: string;
     text?: string;
     sectionId?: string;
+    audio?: {
+      base64Audio: string;
+      mimeType: string;
+      sizeBytes: number;
+      capturedAt: string;
+    };
   };
 
   const authorizedProvider = await getAuthorizedProviderContext();
@@ -257,6 +265,16 @@ export async function POST(request: Request, context: RouteContext) {
           session: serializeAmbientSession(drained.session),
         });
       }
+      case 'transcribe_audio':
+        if (!body.audio) {
+          throw new Error('Ambient audio is required.');
+        }
+        session = await transcribeServerAmbientAudio({
+          sessionId,
+          providerIdentityId: providerId,
+          audio: body.audio,
+        });
+        break;
       case 'edit_sentence':
         if (!body.sentenceId || typeof body.text !== 'string') {
           throw new Error('Sentence id and text are required.');

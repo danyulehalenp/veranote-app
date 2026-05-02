@@ -119,4 +119,34 @@ describe('ambient server session store', () => {
     expect(stored?.state).toBe('needs_review');
     expect(stored?.reviewFlags.some((flag) => flag.flagId === 'flag-speaker-1' && flag.status === 'open')).toBe(true);
   });
+
+  it('does not seed simulated transcript events when the session uses real microphone capture', () => {
+    const created = createServerAmbientSession({
+      providerIdentityId: 'provider-1',
+      encounterId: 'ambient-encounter-3',
+      setupDraft: {
+        ...getAmbientMockSetupDraft(),
+        captureRuntime: 'real_microphone',
+        transcriptSimulator: 'live_stream_adapter',
+      },
+      participants: getAmbientMockParticipants(),
+      consentDrafts: getAmbientMockConsentDrafts(),
+    });
+
+    updateServerAmbientConsent({
+      sessionId: created.sessionId,
+      providerIdentityId: 'provider-1',
+      consentDrafts: getAmbientMockConsentDrafts(),
+    });
+
+    const recording = setServerAmbientSessionState({
+      sessionId: created.sessionId,
+      providerIdentityId: 'provider-1',
+      state: 'recording',
+    });
+
+    expect(recording.pendingTranscriptEvents).toHaveLength(0);
+    expect(recording.turns).toHaveLength(0);
+    expect(recording.transcriptSourceKind).toBe('none');
+  });
 });

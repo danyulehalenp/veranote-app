@@ -183,6 +183,36 @@ describe('assistant medication stress routing', () => {
     expect(response.message).not.toContain('Unable to process request');
   });
 
+  it('answers common formulation questions directly on the live route while preserving fallback for missing data', async () => {
+    const lamotrigine = await ask('What mg formulations does lamotrigine come in?');
+    expect(lamotrigine.answerMode).toBe('medication_reference_answer');
+    expect(lamotrigine.message).toContain('25 mg');
+    expect(lamotrigine.message).toContain('100 mg');
+    expect(lamotrigine.message).toContain('150 mg');
+    expect(lamotrigine.message).toContain('200 mg');
+    expect(lamotrigine.message).toContain('chewable/dispersible tablet');
+    expect(lamotrigine.message).toContain('orally disintegrating tablet');
+    expect(lamotrigine.message).toContain('verify with a current prescribing reference');
+    expect(lamotrigine.message).not.toContain("I don't have verified strength/formulation data");
+
+    const sertraline = await ask('What mg formulations does sertraline come in?');
+    expect(sertraline.message).toContain('25 mg');
+    expect(sertraline.message).toContain('50 mg');
+    expect(sertraline.message).toContain('100 mg');
+
+    const quetiapine = await ask('What strengths does quetiapine come in?');
+    expect(quetiapine.message).toContain('25 mg');
+    expect(quetiapine.message).toContain('400 mg');
+    expect(quetiapine.message).toContain('extended-release tablet');
+
+    const buspirone = await ask('What strengths does buspirone come in?');
+    expect(buspirone.answerMode).toBe('medication_reference_answer');
+    expect(buspirone.message).toContain('buspirone/Buspar');
+    expect(buspirone.message).toContain('5 mg');
+    expect(buspirone.message).toContain('30 mg');
+    expect(buspirone.message).toContain('verify with a current prescribing reference');
+  });
+
   it('keeps adjustment-style timing-uncertain eval prompts out of medication fallback and preserves uncertainty', async () => {
     const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
       method: 'POST',

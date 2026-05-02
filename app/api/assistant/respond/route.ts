@@ -24,7 +24,11 @@ import { enforceFidelity } from '@/lib/veranote/assistant-fidelity-guard';
 import { buildInternalKnowledgeHelp } from '@/lib/veranote/assistant-internal-knowledge';
 import { buildClinicalTaskPriorityPayload, classifyClinicalTaskOverride } from '@/lib/veranote/assistant-clinical-task';
 import { buildGeneralKnowledgeHelp, buildReferenceLookupHelp, buildStructuredKnowledgeReminder } from '@/lib/veranote/assistant-knowledge';
+import { buildDiagnosticGeneralConceptReferenceHelp } from '@/lib/veranote/assistant-diagnostic-general-reference';
+import { buildDiagnosticSafetyGateHelp } from '@/lib/veranote/assistant-diagnostic-safety-gate';
+import { buildPsychMedicationReferenceHelp } from '@/lib/veranote/assistant-psych-med-knowledge';
 import { detectMedicationQuestionIntent, findPsychMedication } from '@/lib/veranote/meds/psych-med-answering';
+import { detectMedReferenceIntent, findMedReferenceMedication } from '@/lib/veranote/med-reference/query';
 import { extractMemoryFromOutput } from '@/lib/veranote/memory/memory-extractor';
 import { resolveProviderMemory } from '@/lib/veranote/memory/memory-resolver';
 import { runAssistantPipeline } from '@/lib/veranote/pipeline/assistant-pipeline';
@@ -56,6 +60,15 @@ import type { Contradiction } from '@/lib/veranote/assistant-contradiction-detec
 import type { RiskAnalysis } from '@/lib/veranote/assistant-risk-detector';
 import type { PhiEntity } from '@/lib/security/phi-types';
 import { extractPriorClinicalState } from '@/lib/veranote/pipeline/assistant-pipeline';
+import { resolveAssistantPersona } from '@/lib/veranote/assistant-persona';
+import { buildAtlasBlueprintResponse } from '@/lib/veranote/atlas-clinical-blueprint';
+import {
+  applyAtlasConversationTone,
+  buildAtlasConversationEvalMeta,
+  buildAtlasConversationFallbackPayload,
+  buildAtlasConversationSafetyPayload,
+  orchestrateAtlasConversation,
+} from '@/lib/veranote/atlas-conversation-orchestrator';
 
 type AssistantRequest = {
   stage?: AssistantStage;
@@ -93,6 +106,10 @@ function shortProviderName(address?: string) {
   return cleaned.split(/\s+/)[0] || cleaned;
 }
 
+function getAssistantDisplayName(context?: AssistantApiContext) {
+  return resolveAssistantPersona(context).name;
+}
+
 function maybeQuestion(text: string) {
   const trimmed = text.trim();
   return /[?.!]$/.test(trimmed) ? trimmed : `${trimmed}?`;
@@ -104,6 +121,233 @@ function looksLikeQuestion(message: string) {
     /[?]$/.test(trimmed)
     || /^(can you|could you|would you|will you|do you|did you|what|why|how|when|where|who|which|is|are|am|does|should)\b/i.test(trimmed)
   );
+}
+
+function looksLikePureMedicationReferenceQuestion(message: string) {
+  const normalized = message.toLowerCase().replace(/[^a-z0-9.\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const asksReference =
+    /\bwhat (are|is)\b.{0,40}\b(normal|therapeutic|target|reference)\b.{0,30}\b(levels?|ranges?|qtc)\b/.test(normalized)
+    || /\b(normal|therapeutic|target|reference)\b.{0,30}\b(levels?|ranges?|qtc)\b/.test(normalized)
+    || /\b(levels?|ranges?)\b.{0,30}\b(normal|therapeutic|target|reference)\b/.test(normalized)
+    || /\bwhat levels?\b.{0,30}\b(lithium|valproate|depakote|carbamazepine|tegretol)\b/.test(normalized)
+    || /\bwhat level should\b.{0,30}\b(lithium|valproate|depakote|carbamazepine|tegretol)\b.{0,30}\b(usually|normally|typically)\b/.test(normalized)
+    || /\b(qtc normal range|normal qtc)\b/.test(normalized);
+  const medicationOrLabAnchor = /\b(lithium|valproate|valproic acid|vpa|depakote|divalproex|carbamazepine|tegretol|qtc)\b/.test(normalized);
+  const appliedClinicalCue = /\b(my patient|this patient|pt|what should i do|should i|can i|ok|okay|increase|decrease|titrate|start|stop|hold|continue|restart|confused|confusion|sedated|sedation|sleepy|vomiting|diarrhea|dizzy|ataxia|weak|jaundice|bleeding|creatinine|egfr|bun|renal|kidney|on haldol|on quetiapine|on depakote|on lithium|on clozapine|on oxcarbazepine)\b/.test(normalized);
+  const numericValue = /\b\d+(?:\.\d+)?\b/.test(normalized);
+
+  return asksReference && medicationOrLabAnchor && !appliedClinicalCue && !numericValue;
+}
+
+function looksLikeDirectGeriatricReferenceQuestion(message: string) {
+  return (
+    looksLikeQuestion(message)
+    && /\b(geriatric|geriatrics|elderly|older adult|older adults|beers criteria|dementia-related psychosis|dementia related psychosis|post-stroke depression|post stroke depression|poststroke depression|mild cognitive impairment|\bmci\b|diphenhydramine|fall risk|falls|appetite stimulation|cholinesterase inhibitors?|donepezil|memantine|galantamine|rivastigmine|alzheimer|alzheimer's|ect|electroconvulsive|nortriptyline|amitriptyline)\b/i.test(message)
+    && !/\b(source says|draft says|note says|patient reports|patient denies|document|wording|chart-ready|chart ready|write this|rewrite)\b/i.test(message)
+  );
+}
+
+function looksLikeDirectApprovalReferenceQuestion(message: string) {
+  return (
+    looksLikeQuestion(message)
+    && /\b(fda approved|approved for|approved in|approved to|approved medication|approved medications|which medications are approved|which drugs are approved|which antipsychotics are approved|which ssris are approved|approved for adolescents|approved for children|approved for pediatric|under age|children under|indication|indicated for|fda-labeled|fda labeled)\b/i.test(message)
+    && !/\b(overdose|toxicity|toxic|poison control|level\s+\d|serum level|mEq\/L|confused|confusion|ataxia|seizure|syncope|rigidity|clonus|fever)\b/i.test(message)
+  );
+}
+
+function looksLikeDirectInteractionReferenceQuestion(message: string) {
+  return (
+    looksLikeQuestion(message)
+    && /\b(interaction|interact|combine|combined|combining|taken together|safe together|okay together|ok together|contraindicated|avoid|safely combined|increase levels?|decrease levels?|lower levels?|inhibit|induce|inducer|affect metabolism|with\b|plus\b|and\b|pregnancy|pregnant|first trimester|breastfeeding|breast milk|lactation|nursing|neonatal|oral clefts?|ebstein|pphn|floppy baby|cyp1a2|cyp2d6|cyp3a4|p-gp|p gp)\b/i.test(message)
+    && /\b(lithium|nsaids?|maoi|triptan|fluoxetine|prozac|valproate|depakote|divalproex|carbamazepine|tegretol|smoking|tobacco|st\.?\s*john|ssris?|grapefruit|buspirone|clozapine|ciprofloxacin|renal failure|bupropion|wellbutrin|celexa|citalopram|zoloft|sertraline|lexapro|escitalopram|paxil|paroxetine|effexor|venlafaxine|cymbalta|duloxetine|seroquel|quetiapine|zyprexa|olanzapine|risperdal|risperidone|abilify|aripiprazole|lamictal|lamotrigine|trileptal|oxcarbazepine|ativan|lorazepam|xanax|alprazolam|klonopin|clonazepam|haldol|haloperidol|suboxone|buprenorphine|vivitrol|naltrexone|invega|paliperidone|lybalvi|samidorphan|eating disorder|erythromycin|linezolid|pimozide|qtc|thioridazine|ace inhibitors?|rifampin|methadone|disulfiram|alcohol|warfarin|omeprazole|diazepam|diuretics?|aspirin|tamoxifen|tramadol|verapamil|pseudoephedrine|urea cycle|pregnancy|breastfeeding|lactation|ect|snris?|benzodiazepines?|stimulants?|mirtazapine|topiramate)\b/i.test(message)
+    && !/\b(source says|draft says|note says|patient reports|patient denies|document|wording|chart-ready|chart ready|write this|rewrite)\b/i.test(message)
+  );
+}
+
+function looksLikeDirectLabMonitoringReferenceQuestion(message: string) {
+  return (
+    looksLikeQuestion(message)
+    && /\b(labs?|monitor|monitoring|protocol|frequency|baseline|checked|required|needed|ekg|ecg|a1c|lipids|cbc|anc|lft|lfts|liver function|kidney function|renal function|tsh|pregnancy test|urine drug screens?|drug screens?|uds|chest x[- ]?ray|x[- ]?ray|xray|side effect|risk|symptoms|signs|syndrome|warning|prolactin|hypercalcemia|hair loss|alopecia|gingival|growth suppression|extrapyramidal|eps|stevens-johnson|stevens johnson|sjs|neuroleptic malignant|nms)\b/i.test(message)
+    && /\b(second-generation|second generation|sga|antipsychotics?|carbamazepine|tegretol|serotonin syndrome|valproate|depakote|divalproex|neuroleptic malignant|nms|phenytoin|stimulants?|extrapyramidal|eps|risperidone|lithium|clozapine|benzodiazepines?|tca|tricyclic|olanzapine|lfts?|tsh|psychotropic|psych drug|aripiprazole|ziprasidone|duloxetine|maoi)\b/i.test(message)
+    && !/\b(source says|draft says|note says|patient reports|patient denies|document|wording|chart-ready|chart ready|write this|rewrite)\b/i.test(message)
+  );
+}
+
+function looksLikeDirectEmergencyProtocolQuestion(message: string) {
+  return (
+    looksLikeQuestion(message)
+    && /\b(acute|urgent|emergency|er|ed|icu|overdose|toxicity|toxic|withdrawal|intoxicated|agitation|restraints?|triage|dystonic|hypertensive crisis|nms|neuroleptic malignant|serotonin syndrome|wernicke|korsakoff|ciwa|cows|flumazenil|naloxone|narcan|charcoal|bowel obstruction|ileus|loaded intravenously|iv|im|eps|prophylaxis|first-line treatment|what is the treatment|how is .* managed|dose of im|dose of .* agitation|panic.*er)\b/i.test(message)
+    && /\b(dystonic|maoi|phenelzine|tranylcypromine|hypertensive crisis|nms|neuroleptic malignant|haloperidol|haldol|olanzapine|zyprexa|ziprasidone|geodon|lorazepam|ativan|ssri|sertraline|fluoxetine|suicidal|suicide|ketamine|diphenhydramine|benadryl|serotonin syndrome|benzodiazepine|benzo|restraints?|seclusion|midazolam|versed|flumazenil|panicked|panic|clozapine|clozaril|valproate|depakote|divalproex|opioid withdrawal|buprenorphine|suboxone|naloxone|narcan|wernicke|korsakoff|disulfiram|cows|cocaine|methadone|heroin|clonidine)\b/i.test(message)
+    && !/\b(source says|draft says|note says|patient reports|patient denies|document|wording|chart-ready|chart ready|write this|rewrite)\b/i.test(message)
+  );
+}
+
+function looksLikeMedicationUseSafetyQuestion(message: string) {
+  return (
+    /\b(can i|should i|could i)\s+(use|give|start|restart|prescribe|try)\b/i.test(message)
+    && /\b(stimulant|antidepressant|antipsychotic|lamotrigine|lamictal|lithium|valproate|depakote|clozapine|ssri|snri|maoi|benzodiazepine|benzo)\b/i.test(message)
+    && !/\b(diagnose|diagnosis|can i diagnose|does this meet)\b/i.test(message)
+  );
+}
+
+function looksLikeBoundaryDocumentationIntent(message: string) {
+  if (/^\s*make it\s+chart-ready\b/i.test(message)) {
+    return false;
+  }
+  if (/^\s*chart wording\b.*\bno lecture\b/i.test(message)) {
+    return false;
+  }
+  if (/\b(discharge|discharge-ready|discharge ready|exact plan language|honest plan language)\b/i.test(message)) {
+    return false;
+  }
+
+  return (
+    /^\s*(rewrite|draft|make this|make.*chart-ready|chart wording|write an hpi|draft risk wording|rewrite risk|help me document)\b/i.test(message)
+    || /\b(help me document|make this non-stigmatizing|make this nonstigmatizing|make this chart-ready|chart-ready)\b/i.test(message)
+  )
+    && !/\b(can i|should i)\s+(diagnose|call|say|list|write|chart)\b/i.test(message);
+}
+
+function buildBoundaryDocumentationHelp(message: string): AssistantResponsePayload | null {
+  if (!looksLikeBoundaryDocumentationIntent(message)) {
+    return null;
+  }
+
+  const normalized = message.toLowerCase();
+
+  if (/\bdenies si\b/.test(normalized) && /\bcollateral\b/.test(normalized) && /\bsuicidal texts?\b/.test(normalized)) {
+    return {
+      message: 'Chart-ready wording: "Patient denies SI. Collateral reports recent suicidal texts. The discrepancy remains clinically relevant and should be addressed in the risk assessment rather than treated as reassuring by denial alone."',
+      suggestions: [],
+      answerMode: 'chart_ready_wording',
+    };
+  }
+
+  if (/\bdenies hi\b/.test(normalized) && /\bthreats?\b/.test(normalized)) {
+    return {
+      message: 'Chart-ready wording: "Patient denies HI. Source also notes threats yesterday; target and access are not known from the available information."',
+      suggestions: [],
+      answerMode: 'chart_ready_wording',
+    };
+  }
+
+  if (/\bpassive death wish\b/.test(normalized)) {
+    return {
+      message: 'Chart-ready wording: "Patient reports passive death wish and denies plan or intent." Add timing, frequency, access to means, and protective factors only if documented.',
+      suggestions: [],
+      answerMode: 'chart_ready_wording',
+    };
+  }
+
+  if (/\bdenies hallucinations\b/.test(normalized) && /\binternally preoccupied\b/.test(normalized)) {
+    return {
+      message: 'Chart-ready wording: "Patient denies hallucinations. Patient appears internally preoccupied on observation." Keep report and observation separate without converting observation into a confirmed hallucination.',
+      suggestions: [],
+      answerMode: 'chart_ready_wording',
+    };
+  }
+
+  if (/\bappears paranoid\b/.test(normalized)) {
+    return {
+      message: 'Chart-ready wording: "Patient appears paranoid/suspicious on interview." If available, add the specific observed behavior rather than using the label alone.',
+      suggestions: [],
+      answerMode: 'chart_ready_wording',
+    };
+  }
+
+  if (/\bnoncompliant\b/.test(normalized) && /\bmeds?|medications?\b/.test(normalized)) {
+    return {
+      message: 'Chart-ready wording: "Patient declined medication" or "Patient has not been taking medication as prescribed," depending on what the source supports. Include the stated reason or barrier only if documented.',
+      suggestions: [],
+      answerMode: 'chart_ready_wording',
+    };
+  }
+
+  if (/\bwrite an hpi\b/.test(normalized)) {
+    return {
+      message: 'HPI draft: Patient reports depressed mood for 2 weeks with poor sleep. Patient denies SI. No additional symptoms, impairment, treatment history, or safety details were provided.',
+      suggestions: [],
+      answerMode: 'chart_ready_wording',
+    };
+  }
+
+  if (/\brecent attempt\b/.test(normalized) && /\bsafety plan pending\b/.test(normalized)) {
+    return {
+      message: 'Chart-ready risk wording: "Patient denies SI, with recent attempt last week documented; safety plan pending." Do not summarize this as low risk without completing the risk assessment.',
+      suggestions: [],
+      answerMode: 'warning_language',
+    };
+  }
+
+  if (/\bvoices\b/.test(normalized) && /\bdenies intent\b/.test(normalized)) {
+    return {
+      message: 'Chart-ready wording: "Patient reports voices telling him to leave and denies intent to harm self." Add command content, distress, ability to resist, and safety context only if documented.',
+      suggestions: [],
+      answerMode: 'chart_ready_wording',
+    };
+  }
+
+  return {
+    message: 'Chart-ready wording: preserve the exact patient report, collateral report, and observed behavior separately. Avoid unsupported labels and add missing context only when it is documented.',
+    suggestions: [],
+    answerMode: 'chart_ready_wording',
+  };
+}
+
+function looksLikeFrustratedClinicalFollowup(message: string) {
+  return /\b(that is why i am asking|that's why i am asking|why i am asking you|what kind of assistant|poor job|bad answer|not what i asked|you did not answer|you didn't answer|too generic|unhelpful|chatgpt is doing a poor job)\b/i.test(message);
+}
+
+function findPriorRecoverableClinicalQuestion(recentMessages?: AssistantThreadTurn[]) {
+  if (!recentMessages?.length) {
+    return null;
+  }
+
+  return [...recentMessages]
+    .reverse()
+    .find((turn) => {
+      if (turn.role !== 'provider' || !turn.content?.trim()) {
+        return false;
+      }
+
+      if (looksLikeFrustratedClinicalFollowup(turn.content)) {
+        return false;
+      }
+
+      return looksLikeDirectInteractionReferenceQuestion(turn.content)
+        || looksLikeDirectApprovalReferenceQuestion(turn.content)
+        || looksLikeDirectLabMonitoringReferenceQuestion(turn.content)
+        || looksLikeDirectEmergencyProtocolQuestion(turn.content)
+        || looksLikeDirectGeriatricReferenceQuestion(turn.content)
+        || looksLikePureMedicationReferenceQuestion(turn.content);
+    })?.content || null;
+}
+
+function buildFrustratedClinicalCorrectionHelp(
+  message: string,
+  recentMessages?: AssistantThreadTurn[],
+  context?: AssistantApiContext,
+): AssistantResponsePayload | null {
+  if (!looksLikeFrustratedClinicalFollowup(message)) {
+    return null;
+  }
+
+  const priorQuestion = findPriorRecoverableClinicalQuestion(recentMessages);
+  if (!priorQuestion) {
+    return null;
+  }
+
+  const { sanitizedTexts } = sanitizePHITexts([priorQuestion]);
+  const correctedPayload = buildGeneralKnowledgeHelp(sanitizedTexts[0], context);
+  if (!correctedPayload?.message || correctedPayload.answerMode !== 'medication_reference_answer') {
+    return null;
+  }
+
+  return {
+    ...correctedPayload,
+    message: `You are right - that answer was too generic. ${correctedPayload.message}`,
+    suggestions: [],
+  };
 }
 
 type UtilityQuestionPayload = {
@@ -695,6 +939,7 @@ function buildRequestedRevisionHelp(normalizedMessage: string, rawMessage: strin
 
   const revisionText = buildRequestedRevisionText(rawMessage);
   const targetSectionHeading = inferRevisionSectionHeading(rawMessage, context);
+  const assistantName = getAssistantDisplayName(context);
 
   return {
     message: joinGuidance([
@@ -705,7 +950,7 @@ function buildRequestedRevisionHelp(normalizedMessage: string, rawMessage: strin
     suggestions: [
       `Suggested revision: ${revisionText}`,
       'Use this when you forgot to include a source-supported detail after the draft was generated.',
-      'If this kind of addition repeats often, Atlas can help turn it into a reusable workflow preference later.',
+      `If this kind of addition repeats often, ${assistantName} can help turn it into a reusable workflow preference later.`,
     ],
     actions: [
       {
@@ -1156,6 +1401,7 @@ function buildSupportAndTrainingHelp(normalizedMessage: string): AssistantRespon
 
 function buildConversationalHelp(normalizedMessage: string, context?: AssistantApiContext): AssistantResponsePayload | null {
   const providerName = shortProviderName(context?.providerAddressingName);
+  const assistantName = getAssistantDisplayName(context);
 
   if (hasKeyword(normalizedMessage, ['how are you', 'howre you', "how're you"])) {
     return {
@@ -1186,7 +1432,7 @@ function buildConversationalHelp(normalizedMessage: string, context?: AssistantA
 
   if (hasKeyword(normalizedMessage, ['who are you', 'what can you do', 'what do you do'])) {
     return {
-      message: 'I’m Atlas, your Veranote assistant. I can help with source organization, draft review, section rewrites, workflow preferences, and trusted reference lookups. If I do not know a trusted answer yet, I should say so and show you the safest next path.',
+      message: `I’m ${assistantName}, your Veranote assistant. I can help with source organization, draft review, section rewrites, workflow preferences, and trusted reference lookups. If I do not know a trusted answer yet, I should say so and show you the safest next path.`,
       suggestions: [
         'Ask me to explain a warning, tighten a section, or look up a coding or documentation reference.',
       ],
@@ -1726,6 +1972,7 @@ function buildReviewScenarioHelp(normalizedMessage: string, context?: AssistantA
 function buildPromptBuilderHelp(stage: AssistantStage, rawMessage: string, context?: AssistantApiContext): AssistantResponsePayload {
   const normalizedMessage = rawMessage.toLowerCase();
   const noteLine = context?.noteType ? ` for ${context.noteType}` : '';
+  const assistantName = getAssistantDisplayName(context);
   const destinationSuggestion = context?.outputDestination && context.outputDestination !== 'Generic'
     ? `Format the final note so it works cleanly in ${context.outputDestination} without changing the clinical meaning.`
     : 'Keep destination-specific cleanup separate from the clinical meaning of the note.';
@@ -1783,7 +2030,7 @@ function buildPromptBuilderHelp(stage: AssistantStage, rawMessage: string, conte
 
   if (stage === 'review') {
     return {
-      message: `In review${noteLine}, use prompt preferences only for repeat patterns you actually want Atlas to remember later, like overly polished wording or destination-specific cleanup.`,
+      message: `In review${noteLine}, use prompt preferences only for repeat patterns you actually want ${assistantName} to remember later, like overly polished wording or destination-specific cleanup.`,
       suggestions: [
         'Capture repeatable review edits as reusable note preferences.',
         'Avoid preferences that hide source ambiguity.',
@@ -1794,7 +2041,7 @@ function buildPromptBuilderHelp(stage: AssistantStage, rawMessage: string, conte
   }
 
   return {
-    message: `Use the prompt builder${noteLine} to tell Atlas how you want this note lane to behave. Focus on tone, section structure, destination formatting, and how conservative the wording should be.`,
+    message: `Use the prompt builder${noteLine} to tell ${assistantName} how you want this note lane to behave. Focus on tone, section structure, destination formatting, and how conservative the wording should be.`,
     suggestions: [
       'Describe the note lane, not one patient.',
       'Say what to keep brief, what to keep literal, and what should stay uncertain.',
@@ -1805,10 +2052,12 @@ function buildPromptBuilderHelp(stage: AssistantStage, rawMessage: string, conte
   };
 }
 
-function buildUnknownQuestionFallback(message: string): AssistantResponsePayload | null {
+function buildUnknownQuestionFallback(message: string, context?: AssistantApiContext): AssistantResponsePayload | null {
   if (!looksLikeQuestion(message)) {
     return null;
   }
+
+  const assistantName = getAssistantDisplayName(context);
 
   if (looksLikeClinicalReasoningSource(message)) {
     if (/(heavy daily alcohol|missed clonazepam|tremor|vomiting|tachycardia|visual shadows|panic attack likely)/i.test(message)) {
@@ -1835,13 +2084,13 @@ function buildUnknownQuestionFallback(message: string): AssistantResponsePayload
   return {
     message: "I don't have a safe Veranote answer for that yet.",
     suggestions: [
-      'Send this through Beta Feedback if you want it added as a teachable Atlas skill.',
+      `Send this through Beta Feedback if you want it added as a teachable ${assistantName} skill.`,
     ],
     actions: [
       {
         type: 'send-beta-feedback',
-        label: 'Teach Atlas this',
-        instructions: 'Send this unanswered question into the Atlas gaps queue so it can be reviewed and added to Atlas’s abilities.',
+        label: `Teach ${assistantName} this`,
+        instructions: `Send this unanswered question into the ${assistantName} gaps queue so it can be reviewed and added to ${assistantName}'s abilities.`,
         feedbackCategory: 'feature-request',
         pageContext: 'Atlas assistant gap',
         feedbackMessage: `Atlas could not answer this provider question: ${message}`,
@@ -2625,28 +2874,351 @@ export async function POST(request: Request) {
 
     const standaloneMedicationDocumentationPrompt = isStandaloneMedicationDocumentationPrompt(rawMessage);
     const ignoreStaleClinicalContext = shouldIgnoreStaleClinicalContext(rawMessage);
+    const atlasConversation = orchestrateAtlasConversation({
+      message: rawMessage,
+      recentMessages: body.recentMessages,
+      context: body.context,
+    });
     const sourceText = buildSourceTextForReasoning(rawMessage, body.context, body.recentMessages);
     const { sanitizedTexts, entities: phiEntities } = sanitizePHITexts([
       rawMessage,
+      atlasConversation.effectiveMessage,
       sourceText,
       ignoreStaleClinicalContext ? '' : body.context?.currentDraftText || '',
     ]);
-    const [sanitizedMessage, sanitizedSourceText, sanitizedDraftText] = sanitizedTexts;
+    const [sanitizedMessage, sanitizedEffectiveMessage, sanitizedSourceText, sanitizedDraftText] = sanitizedTexts;
+    const assistantMessageForRouting = atlasConversation.didRewrite ? sanitizedEffectiveMessage : sanitizedMessage;
     const providerId = resolveAssistantProviderId(body.context, authenticatedProviderId);
-    const clinicalOverride = classifyClinicalTaskOverride(rawMessage);
-    const earlyMedicationReferenceIntent = detectMedicationQuestionIntent(sanitizedMessage);
-    const hasEarlyMedicationAnchor = Boolean(findPsychMedication(sanitizedMessage))
-      || /\b(ssri|snri|maoi|tca|benzodiazepine|benzo|opioid|nsaid|stimulant|antipsychotic|antidepressant|mood stabilizer)\b/i.test(sanitizedMessage);
-    const looksLikeClinicalMedicationNarrative = /\b(pt|patient|source|draft|note|chart|vera|unsafe|settle on|calling this|what should vera keep explicit)\b/i.test(sanitizedMessage);
-    const earlyMedicationReferencePayload = buildGeneralKnowledgeHelp(sanitizedMessage, body.context);
+    const frustratedClinicalCorrectionPayload = buildFrustratedClinicalCorrectionHelp(
+      sanitizedMessage,
+      body.recentMessages,
+      body.context,
+    );
+    if (frustratedClinicalCorrectionPayload && !standaloneMedicationDocumentationPrompt) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'medication_help',
+          answerMode: frustratedClinicalCorrectionPayload.answerMode || 'medication_reference_answer',
+          routePriority: 'frustrated-followup-correction',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...frustratedClinicalCorrectionPayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: frustratedClinicalCorrectionPayload.message,
+            warnings: [],
+            knowledgeIntent: 'medication_help',
+            answerMode: frustratedClinicalCorrectionPayload.answerMode,
+            routePriority: 'frustrated-followup-correction',
+          },
+        } : {}),
+      });
+    }
+    const conversationSafetyPayload = buildAtlasConversationSafetyPayload(atlasConversation);
+    const conversationContinuationPayload = conversationSafetyPayload
+      || (atlasConversation.didRewrite && atlasConversation.routeHint === 'diagnostic_reference'
+        ? buildDiagnosticGeneralConceptReferenceHelp(assistantMessageForRouting)
+          || buildAtlasConversationFallbackPayload(atlasConversation)
+        : atlasConversation.didRewrite && atlasConversation.routeHint === 'diagnostic_safety'
+          ? buildDiagnosticSafetyGateHelp(assistantMessageForRouting)
+            || buildAtlasConversationFallbackPayload(atlasConversation)
+          : atlasConversation.didRewrite && atlasConversation.routeHint === 'medication_reference'
+            ? buildAtlasConversationFallbackPayload(atlasConversation)
+              || buildPsychMedicationReferenceHelp(assistantMessageForRouting, body.recentMessages)
+            : atlasConversation.didRewrite && (
+              atlasConversation.routeHint === 'local_policy'
+              || atlasConversation.routeHint === 'workflow_help'
+              || atlasConversation.routeHint === 'documentation_safety'
+            )
+              ? buildAtlasConversationFallbackPayload(atlasConversation)
+              : null);
+    if (
+      conversationContinuationPayload
+      && !standaloneMedicationDocumentationPrompt
+    ) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const conversationPayload = applyAtlasConversationTone(conversationContinuationPayload, atlasConversation);
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: atlasConversation.routeHint === 'medication_reference' ? 'medication_help' : 'diagnosis_help',
+          answerMode: conversationPayload.answerMode || 'direct_reference_answer',
+          routePriority: `atlas-conversation:${atlasConversation.routeHint}`,
+          conversationFollowupIntent: atlasConversation.followupIntent,
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...conversationPayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: conversationPayload.message,
+            warnings: [],
+            knowledgeIntent: atlasConversation.routeHint === 'medication_reference' ? 'medication_help' : 'diagnosis_help',
+            answerMode: conversationPayload.answerMode,
+            builderFamily: conversationPayload.builderFamily,
+            routePriority: `atlas-conversation:${atlasConversation.routeHint}`,
+            conversation: buildAtlasConversationEvalMeta(atlasConversation),
+          },
+        } : {}),
+      });
+    }
+    const atlasBlueprintRoute = buildAtlasBlueprintResponse({
+      message: assistantMessageForRouting,
+      sourceText: sanitizedSourceText,
+      stage: body.stage === 'review' ? 'review' : 'compose',
+      context: body.context,
+    });
+    if (atlasBlueprintRoute.payload) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const rehydratedBlueprintPayload = rehydrateAssistantPayload(atlasBlueprintRoute.payload, phiEntities);
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          answerMode: rehydratedBlueprintPayload.answerMode || 'none',
+          builderFamily: rehydratedBlueprintPayload.builderFamily || 'none',
+          atlasLane: atlasBlueprintRoute.arbitration.laneId,
+          atlasLaneConfidence: atlasBlueprintRoute.arbitration.confidence,
+          routePriority: `atlas-blueprint:${atlasBlueprintRoute.arbitration.laneId}`,
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...rehydratedBlueprintPayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: rehydratedBlueprintPayload.message,
+            warnings: [],
+            knowledgeIntent: mode === 'reference-lookup' ? 'reference_help' : 'workflow_help',
+            answerMode: rehydratedBlueprintPayload.answerMode,
+            builderFamily: rehydratedBlueprintPayload.builderFamily,
+            atlasLane: atlasBlueprintRoute.arbitration.laneId,
+            atlasLaneConfidence: atlasBlueprintRoute.arbitration.confidence,
+            routePriority: `atlas-blueprint:${atlasBlueprintRoute.arbitration.laneId}`,
+            ...(atlasConversation.didRewrite ? {
+              conversation: buildAtlasConversationEvalMeta(atlasConversation),
+            } : {}),
+          },
+        } : {}),
+      });
+    }
+    const clinicalOverride = classifyClinicalTaskOverride(assistantMessageForRouting);
+    const routeBoundaryDocumentationPayload = buildBoundaryDocumentationHelp(assistantMessageForRouting);
+    if (
+      routeBoundaryDocumentationPayload
+      && !standaloneMedicationDocumentationPrompt
+    ) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'draft_support',
+          answerMode: routeBoundaryDocumentationPayload.answerMode || 'chart_ready_wording',
+          routePriority: 'route-boundary-documentation',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...routeBoundaryDocumentationPayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: routeBoundaryDocumentationPayload.message,
+            warnings: [],
+            knowledgeIntent: 'draft_support',
+            answerMode: routeBoundaryDocumentationPayload.answerMode,
+            routePriority: 'route-boundary-documentation',
+          },
+        } : {}),
+      });
+    }
+
+    const diagnosticSafetyGatePayload = buildDiagnosticSafetyGateHelp(assistantMessageForRouting);
+    if (
+      diagnosticSafetyGatePayload
+      && !standaloneMedicationDocumentationPrompt
+    ) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'diagnosis_help',
+          answerMode: diagnosticSafetyGatePayload.answerMode || 'direct_reference_answer',
+          routePriority: 'diagnostic-safety-gate',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...diagnosticSafetyGatePayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: diagnosticSafetyGatePayload.message,
+            warnings: [],
+            knowledgeIntent: 'diagnosis_help',
+            answerMode: diagnosticSafetyGatePayload.answerMode,
+            routePriority: 'diagnostic-safety-gate',
+          },
+        } : {}),
+      });
+    }
+    const earlyDiagnosticReferencePayload = buildDiagnosticGeneralConceptReferenceHelp(assistantMessageForRouting);
+    if (
+      earlyDiagnosticReferencePayload
+      && !clinicalOverride
+      && !standaloneMedicationDocumentationPrompt
+      && !/\b(source says|draft says|note says|patient reports|patient denies|document this|word this|chart-ready|chart ready|rewrite)\b/i.test(assistantMessageForRouting)
+    ) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'diagnosis_help',
+          answerMode: earlyDiagnosticReferencePayload.answerMode || 'direct_reference_answer',
+          routePriority: 'diagnostic-reference-direct',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...earlyDiagnosticReferencePayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: earlyDiagnosticReferencePayload.message,
+            warnings: [],
+            knowledgeIntent: 'diagnosis_help',
+            answerMode: earlyDiagnosticReferencePayload.answerMode,
+            routePriority: 'diagnostic-reference-direct',
+          },
+        } : {}),
+      });
+    }
+    const earlyMedicationReferenceIntent = detectMedicationQuestionIntent(assistantMessageForRouting);
+    const earlyStructuredMedicationReferenceIntent = detectMedReferenceIntent(assistantMessageForRouting);
+    const directGeriatricReferenceQuestion = looksLikeDirectGeriatricReferenceQuestion(assistantMessageForRouting);
+    const directApprovalReferenceQuestion = looksLikeDirectApprovalReferenceQuestion(assistantMessageForRouting);
+    const directInteractionReferenceQuestion = looksLikeDirectInteractionReferenceQuestion(assistantMessageForRouting);
+    const directLabMonitoringReferenceQuestion = looksLikeDirectLabMonitoringReferenceQuestion(assistantMessageForRouting);
+    const directEmergencyProtocolQuestion = looksLikeDirectEmergencyProtocolQuestion(assistantMessageForRouting);
+    const directMedicationUseSafetyQuestion = looksLikeMedicationUseSafetyQuestion(assistantMessageForRouting);
+    const hasEarlyMedicationAnchor = Boolean(findPsychMedication(assistantMessageForRouting))
+      || Boolean(findMedReferenceMedication(assistantMessageForRouting))
+      || directApprovalReferenceQuestion
+      || directGeriatricReferenceQuestion
+      || directInteractionReferenceQuestion
+      || directLabMonitoringReferenceQuestion
+      || directEmergencyProtocolQuestion
+      || directMedicationUseSafetyQuestion
+      || /\b(ssri|snri|maoi|tca|benzodiazepine|benzo|opioid|nsaid|stimulant|antipsychotic|antidepressant|mood stabilizer)\b/i.test(assistantMessageForRouting);
+    const pureMedicationReferenceQuestion = looksLikePureMedicationReferenceQuestion(assistantMessageForRouting);
+    const looksLikeClinicalMedicationNarrative = !pureMedicationReferenceQuestion
+      && !directApprovalReferenceQuestion
+      && !directGeriatricReferenceQuestion
+      && !directInteractionReferenceQuestion
+      && !directLabMonitoringReferenceQuestion
+      && !directEmergencyProtocolQuestion
+      && !directMedicationUseSafetyQuestion
+      && /\b(pt|patient|source|draft|note|chart|vera|unsafe|settle on|calling this|what should vera keep explicit)\b/i.test(assistantMessageForRouting);
+    const earlyMedicationReferencePayload = buildGeneralKnowledgeHelp(assistantMessageForRouting, body.context, body.recentMessages);
     if (
       earlyMedicationReferencePayload?.answerMode === 'medication_reference_answer'
       && !clinicalOverride
       && !standaloneMedicationDocumentationPrompt
       && hasEarlyMedicationAnchor
       && !looksLikeClinicalMedicationNarrative
-      && earlyMedicationReferenceIntent !== 'unknown'
-      && earlyMedicationReferenceIntent !== 'med_class_lookup'
+      && (directApprovalReferenceQuestion || directGeriatricReferenceQuestion || directInteractionReferenceQuestion || directLabMonitoringReferenceQuestion || directEmergencyProtocolQuestion || directMedicationUseSafetyQuestion || earlyMedicationReferenceIntent !== 'unknown' || earlyStructuredMedicationReferenceIntent !== 'unsupported')
+      && (earlyMedicationReferenceIntent !== 'med_class_lookup' || earlyStructuredMedicationReferenceIntent === 'class_use')
     ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
       const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
@@ -2690,9 +3262,9 @@ export async function POST(request: Request) {
     const priorClinicalState = extractPriorClinicalState(body.recentMessages);
     const knowledgeIntent = body.mode === 'reference-lookup'
       ? 'reference_help'
-      : clinicalOverride?.forcedIntent || classifyKnowledgeIntent(rawMessage);
+      : clinicalOverride?.forcedIntent || classifyKnowledgeIntent(assistantMessageForRouting);
     const pipeline = await runAssistantPipeline({
-      message: sanitizedMessage,
+      message: assistantMessageForRouting,
       sourceText: sanitizedSourceText,
       intent: knowledgeIntent,
       stage: body.stage,
@@ -2705,7 +3277,7 @@ export async function POST(request: Request) {
       knowledge: pipelineKnowledge,
     } = pipeline;
     const prefilteredReferenceSources = knowledgeIntent === 'reference_help'
-      ? await hydrateTrustedReferenceSources(sanitizedMessage, pipelineKnowledge.trustedReferences.map(trustedReferenceToAssistantSource))
+      ? await hydrateTrustedReferenceSources(assistantMessageForRouting, pipelineKnowledge.trustedReferences.map(trustedReferenceToAssistantSource))
       : pipelineKnowledge.trustedReferences.map(trustedReferenceToAssistantSource);
     const filteredKnowledgeBundle = mergeHydratedReferencesIntoBundle(pipelineKnowledge, prefilteredReferenceSources);
     const providerMemory = filterProviderMemoryByPolicy(await resolveProviderMemory(providerId, {
@@ -2734,7 +3306,7 @@ export async function POST(request: Request) {
     });
     const structuredKnowledgePrompt = safeExecute(
       () => assembleAssistantKnowledgePrompt({
-        task: sanitizedMessage,
+        task: assistantMessageForRouting,
         sourceNote: sanitizedSourceText,
         knowledgeBundle: filteredKnowledgeBundle,
         providerMemory,
@@ -2765,7 +3337,7 @@ export async function POST(request: Request) {
     const clinicalTaskPayload = standaloneMedicationDocumentationPrompt
       ? null
       : buildClinicalTaskPriorityPayload({
-          message: sanitizedMessage,
+          message: assistantMessageForRouting,
           sourceText: sanitizedSourceText,
           currentDraftText: sanitizedDraftText,
           stage: body.stage === 'review' ? 'review' : 'compose',
@@ -2877,7 +3449,7 @@ export async function POST(request: Request) {
     }
 
     if (riskAnalysis.level !== 'unclear') {
-      const riskPayload = buildRiskPriorityPayload(riskAnalysis.level, sanitizedMessage, riskAnalysis);
+      const riskPayload = buildRiskPriorityPayload(riskAnalysis.level, assistantMessageForRouting, riskAnalysis);
       if (!riskPayload) {
         throw new Error('Risk routing expected a payload for non-unclear risk level.');
       }
@@ -2923,7 +3495,10 @@ export async function POST(request: Request) {
       });
     }
 
-    const { stage, mode, message, context, recentMessages, intentTrace, payload } = orchestrateAssistantResponse(body, {
+    const assistantBodyForRouting = atlasConversation.didRewrite
+      ? { ...body, message: assistantMessageForRouting }
+      : body;
+    const { stage, mode, message, context, recentMessages, intentTrace, payload } = orchestrateAssistantResponse(assistantBodyForRouting, {
       buildBoundaryHelp,
       buildConversationalHelp,
       buildInternalKnowledgeHelp,
@@ -2961,7 +3536,7 @@ export async function POST(request: Request) {
       knowledgeAwarePayload = knowledgeSupportPayload;
     } else if (!suppressGlobalSuggestions && !bundleHasKnowledge(filteredKnowledgeBundle) && knowledgeIntent !== 'draft_support') {
       knowledgeAwarePayload = appendUniqueSuggestions(learnedPayload, [
-        'No structured psychiatry knowledge match was found here, so Atlas should stay source-only and avoid guessing.',
+        `No structured psychiatry knowledge match was found here, so ${getAssistantDisplayName(context)} should stay source-only and avoid guessing.`,
       ]);
     } else if (!suppressGlobalSuggestions && knowledgeIntent === 'diagnosis_help' && filteredKnowledgeBundle.diagnosisConcepts.length) {
       knowledgeAwarePayload = appendUniqueSuggestions(learnedPayload, [
@@ -3008,7 +3583,7 @@ export async function POST(request: Request) {
       routeLevelKnowledgeReferences,
     );
     const hydratedReferences = (mode === 'reference-lookup' || knowledgeIntent === 'reference_help' || initialReferences.length)
-      ? await hydrateTrustedReferenceSources(sanitizedMessage, initialReferences)
+      ? await hydrateTrustedReferenceSources(assistantMessageForRouting, initialReferences)
       : memoryAwarePayload.references;
     const externalAnswerMeta = (mode === 'reference-lookup' || knowledgeIntent === 'reference_help')
       ? buildExternalAnswerMeta(finalPayload.message, hydratedReferences || [])
@@ -3105,6 +3680,7 @@ export async function POST(request: Request) {
             violence: riskAnalysis.violence.length,
             graveDisability: riskAnalysis.graveDisability.length,
           },
+          conversation: buildAtlasConversationEvalMeta(atlasConversation),
         },
       } : {}),
     });

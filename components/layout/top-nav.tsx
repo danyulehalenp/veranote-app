@@ -61,20 +61,20 @@ export function TopNav() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-cyan-200/10 bg-[rgba(4,12,24,0.82)] backdrop-blur-xl">
-      <div className="flex w-full flex-col gap-3 px-3 py-3 md:px-4 lg:flex-row lg:items-center lg:justify-between lg:px-5">
+    <header className="z-40 border-b border-cyan-200/10 bg-[rgba(4,12,24,0.82)] backdrop-blur-xl md:sticky md:top-0">
+      <div className="flex w-full flex-col gap-2 px-3 py-2 md:px-4 lg:flex-row lg:items-center lg:justify-between lg:px-5">
         <div className="shrink-0">
           <Link href={workspacePath} className="inline-flex rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-300/40 focus:ring-offset-2 focus:ring-offset-[rgba(4,12,24,0.82)]">
             <BrandLockup variant="nav" subtitle="Clinical Note Intelligence Workspace" />
           </Link>
         </div>
-        <div className="flex flex-1 flex-col gap-3 lg:items-end">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-1 flex-col gap-2 lg:items-end">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             {INTERNAL_MODE_ENABLED ? <ProviderIdentitySwitcher /> : null}
             <AuthControls />
             <Link
               href={feedbackHref}
-              className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.68)] px-3.5 py-2 text-sm font-medium text-ink transition hover:border-cyan-200/20 hover:bg-[rgba(18,181,208,0.12)] hover:text-cyan-50"
+              className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.68)] px-3 py-1.5 text-sm font-medium text-ink transition hover:border-cyan-200/20 hover:bg-[rgba(18,181,208,0.12)] hover:text-cyan-50 sm:px-3.5 sm:py-2"
             >
               <span className="inline-flex items-center gap-2">
                 <span>Feedback</span>
@@ -85,12 +85,12 @@ export function TopNav() {
                 ) : null}
               </span>
             </Link>
-            <nav className="flex flex-wrap gap-2">
+	            <nav className="flex flex-wrap gap-1.5 sm:gap-2">
             {primaryLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${pathname === link.href
+	                className={`rounded-full border px-3 py-1.5 text-sm font-medium transition sm:px-4 sm:py-2 ${pathname === link.href
                   ? 'border-cyan-200/30 bg-[rgba(18,181,208,0.18)] text-cyan-50 shadow-[0_8px_24px_rgba(15,157,180,0.18)]'
                   : 'border-cyan-200/10 bg-[rgba(13,30,50,0.68)] text-ink hover:border-cyan-200/20 hover:bg-[rgba(18,181,208,0.12)] hover:text-cyan-50'}`}
               >

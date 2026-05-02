@@ -47,6 +47,7 @@ export function Composer({ disabled, placeholder, onSend, compact = false }: Com
     <form onSubmit={handleSubmit} className="grid gap-3">
       <textarea
         ref={textareaRef}
+        data-testid="assistant-composer-input"
         value={value}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={handleKeyDown}
@@ -59,6 +60,7 @@ export function Composer({ disabled, placeholder, onSend, compact = false }: Com
       <div className="flex justify-stretch sm:justify-end">
         <button
           type="submit"
+          data-testid="assistant-send-button"
           disabled={disabled || !value.trim()}
           className="aurora-primary-button w-full rounded-xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
         >

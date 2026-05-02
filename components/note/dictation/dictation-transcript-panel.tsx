@@ -36,8 +36,12 @@ export function DictationTranscriptPanel({
   pendingSegments,
   insertedSegments,
   commandLibrary,
+  insertionTargetLabel,
+  editedSegmentTexts,
+  onEditedSegmentTextChange,
   onAcceptSegment,
   onDiscardSegment,
+  onContinueDictating,
   onSelectSessionHistory,
 }: {
   enabled: boolean;
@@ -60,8 +64,12 @@ export function DictationTranscriptPanel({
   pendingSegments: TranscriptSegment[];
   insertedSegments: TranscriptSegment[];
   commandLibrary: Parameters<typeof resolveDictationCommandMatch>[1];
-  onAcceptSegment: (segmentId: string) => void;
+  insertionTargetLabel?: string;
+  editedSegmentTexts?: Record<string, string>;
+  onEditedSegmentTextChange?: (segmentId: string, text: string) => void;
+  onAcceptSegment: (segmentId: string, text?: string) => void;
   onDiscardSegment: (segmentId: string) => void;
+  onContinueDictating?: () => void;
   onSelectSessionHistory: (sessionId: string) => void;
 }) {
   return (
@@ -224,12 +232,16 @@ export function DictationTranscriptPanel({
           {pendingSegments.length ? pendingSegments.map((segment) => (
             <div key={segment.id} className="rounded-[18px] border border-amber-300/20 bg-[rgba(245,158,11,0.08)] p-3">
               {(() => {
-                const commandMatch = resolveDictationCommandMatch(segment.text, commandLibrary);
+                const editedText = editedSegmentTexts?.[segment.id] ?? segment.text;
+                const commandMatch = resolveDictationCommandMatch(editedText, commandLibrary);
                 return (
                   <>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-full border border-white/10 bg-white/8 px-2.5 py-1 text-[11px] font-medium text-cyan-50/74">
-                  final segment
+                  transcript ready for review
+                </span>
+                <span className="rounded-full border border-amber-200/20 bg-amber-200/10 px-2.5 py-1 text-[11px] font-medium text-amber-50">
+                  editable
                 </span>
                 {commandMatch ? (
                   <span className="rounded-full border border-sky-300/18 bg-[rgba(56,189,248,0.12)] px-2.5 py-1 text-[11px] font-medium text-sky-50">
@@ -242,7 +254,12 @@ export function DictationTranscriptPanel({
                   </span>
                 ))}
               </div>
-              <div className="mt-2 whitespace-pre-wrap text-sm text-white">{segment.text}</div>
+              <textarea
+                value={editedText}
+                onChange={(event) => onEditedSegmentTextChange?.(segment.id, event.target.value)}
+                className="mt-2 min-h-[128px] w-full rounded-[14px] border border-amber-200/16 bg-[rgba(2,8,18,0.36)] px-3 py-2 text-sm leading-6 text-white outline-none transition focus:border-amber-100/44 focus:ring-2 focus:ring-amber-200/18"
+                aria-label="Editable final dictation transcript"
+              />
               {commandMatch?.outputText ? (
                 <div className="mt-2 rounded-[14px] border border-sky-300/16 bg-[rgba(56,189,248,0.08)] p-3 text-sm text-cyan-50/80">
                   Applying this command will insert template text instead of the spoken phrase.
@@ -251,10 +268,10 @@ export function DictationTranscriptPanel({
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => onAcceptSegment(segment.id)}
+                  onClick={() => onAcceptSegment(segment.id, editedText)}
                   className="rounded-xl bg-[rgba(34,197,94,0.18)] px-3 py-2 text-sm font-medium text-emerald-50"
                 >
-                  {commandMatch?.outputText ? 'Apply command' : 'Insert into source'}
+                  {commandMatch?.outputText ? 'Apply command' : `Insert into ${insertionTargetLabel || 'source'}`}
                 </button>
                 <button
                   type="button"
@@ -263,6 +280,15 @@ export function DictationTranscriptPanel({
                 >
                   Discard
                 </button>
+                {onContinueDictating ? (
+                  <button
+                    type="button"
+                    onClick={onContinueDictating}
+                    className="rounded-xl bg-[rgba(56,189,248,0.16)] px-3 py-2 text-sm font-medium text-sky-50"
+                  >
+                    Continue Dictating
+                  </button>
+                ) : null}
               </div>
                   </>
                 );

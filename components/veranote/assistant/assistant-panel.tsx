@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Composer } from '@/components/veranote/assistant/composer';
+import { AssistantPersonaAvatar } from '@/components/veranote/assistant/assistant-persona-avatar';
 import { ContextPill } from '@/components/veranote/assistant/context-pill';
 import { ThreadView } from '@/components/veranote/assistant/thread-view';
 import { InlineFeedbackControl } from '@/components/veranote/feedback/inline-feedback-control';
@@ -12,6 +13,7 @@ import { publishAssistantAction } from '@/lib/veranote/assistant-context';
 import type { NoteSectionKey, OutputScope } from '@/lib/note/section-profiles';
 import { buildLanePreferencePrompt } from '@/lib/veranote/preference-draft';
 import { DEFAULT_PROVIDER_IDENTITY_ID } from '@/lib/constants/provider-identities';
+import { resolveAssistantPersona } from '@/lib/veranote/assistant-persona';
 import { getVeraCueUsageStorageKey } from '@/lib/veranote/provider-identity';
 import { veraInteractionStyleLabel, veraProactivityLabel } from '@/lib/veranote/vera-relationship';
 import { assistantMemoryService } from '@/lib/veranote/assistant-memory-service';
@@ -24,6 +26,7 @@ type AssistantPanelProps = {
   isMinimized?: boolean;
   onToggleMinimized?: () => void;
   onClose?: () => void;
+  onResetLayout?: () => void;
 };
 
 const MODE_STORAGE_KEY_PREFIX = 'veranote-assistant-mode';
@@ -192,7 +195,7 @@ function formatCueRecency(value?: string) {
   return 'recently';
 }
 
-function buildEmptyStateTitle(stage: AssistantStage, mode: AssistantMode) {
+function buildEmptyStateTitle(stage: AssistantStage, mode: AssistantMode, assistantName: string) {
   if (mode === 'prompt-builder') {
     return stage === 'review' ? 'Turn review habits into reusable preferences' : 'Shape reusable lane preferences before you generate';
   }
@@ -201,23 +204,25 @@ function buildEmptyStateTitle(stage: AssistantStage, mode: AssistantMode) {
     return 'Look up documentation terms and coding references';
   }
 
-  return stage === 'review' ? 'Use Atlas to tighten this draft without drifting from source' : 'Use Atlas to set up the lane and organize source material';
+  return stage === 'review'
+    ? `Use ${assistantName} to tighten this draft without drifting from source`
+    : `Use ${assistantName} to set up the lane and organize source material`;
 }
 
-function buildEmptyStateDescription(stage: AssistantStage, mode: AssistantMode) {
+function buildEmptyStateDescription(stage: AssistantStage, mode: AssistantMode, assistantName: string) {
   if (mode === 'prompt-builder') {
     return stage === 'review'
-      ? 'Ask Atlas to capture recurring review edits so future drafts lean closer to the way you actually revise.'
-      : 'Ask Atlas to translate your workflow into note-lane preferences, presets, or reusable setup patterns.';
+      ? `Ask ${assistantName} to capture recurring review edits so future drafts lean closer to the way you actually revise.`
+      : `Ask ${assistantName} to translate your workflow into note-lane preferences, presets, or reusable setup patterns.`;
   }
 
   if (mode === 'reference-lookup') {
-    return 'Atlas can explain note sections, documentation language, and approved reference lookups without leaving your current workflow.';
+    return `${assistantName} can explain note sections, documentation language, and approved reference lookups without leaving your current workflow.`;
   }
 
   return stage === 'review'
-    ? 'Start with a warning, a risky sentence, or a missing detail and Atlas will help you correct it conservatively.'
-    : 'Start with a note type, a source-organizing question, or a workflow problem and Atlas will help you set up the next step.';
+    ? `Start with a warning, a risky sentence, or a missing detail and ${assistantName} will help you correct it conservatively.`
+    : `Start with a note type, a source-organizing question, or a workflow problem and ${assistantName} will help you set up the next step.`;
 }
 
 function buildComposerPlaceholder(stage: AssistantStage, context: AssistantApiContext) {
@@ -281,7 +286,12 @@ function getStageStatusClassName(status: 'complete' | 'active' | 'upcoming') {
   return 'border-cyan-200/10 bg-[rgba(13,30,50,0.62)] text-cyan-50/68';
 }
 
-function buildActionPresentation(action: AssistantAction, stage: AssistantStage, context: AssistantApiContext) {
+function buildActionPresentation(
+  action: AssistantAction,
+  stage: AssistantStage,
+  context: AssistantApiContext,
+  assistantName: string,
+) {
   if (action.type === 'apply-conservative-rewrite' || action.type === 'run-review-rewrite') {
     return {
       lane: 'Fix now',
@@ -317,13 +327,23 @@ function buildActionPresentation(action: AssistantAction, stage: AssistantStage,
   }
 
   return {
-    lane: 'Teach Atlas',
-    rationale: 'Use this when Atlas needs to learn a missing capability instead of leaving the gap hidden.',
+    lane: `Teach ${assistantName}`,
+    rationale: `Use this when ${assistantName} needs to learn a missing capability instead of leaving the gap hidden.`,
   };
 }
 
-export function AssistantPanel({ stage, context, isMinimized = false, onToggleMinimized, onClose }: AssistantPanelProps) {
+export const AssistantPanel = memo(function AssistantPanel({
+  stage,
+  context,
+  isMinimized = false,
+  onToggleMinimized,
+  onClose,
+  onResetLayout,
+}: AssistantPanelProps) {
   const resolvedProviderIdentityId = context.providerIdentityId || DEFAULT_PROVIDER_IDENTITY_ID;
+  const assistantPersona = useMemo(() => resolveAssistantPersona(context), [context]);
+  const assistantName = assistantPersona.name;
+  const assistantRole = assistantPersona.role || 'Clinical Assistant';
   const [learningHydratedAt, setLearningHydratedAt] = useState(0);
   const [mode, setMode] = useState<AssistantMode>('workflow-help');
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
@@ -377,8 +397,8 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
       return null;
     }
 
-    return `This week Atlas is mostly seeing ${themes.slice(0, 2).join(' and ')}${themes.length > 2 ? ' across your workflow.' : '.'}`;
-  }, [activeNoteTypeInsight, profilePromptPreferenceSuggestion, rewritePreferenceSuggestion]);
+    return `This week ${assistantName} is mostly seeing ${themes.slice(0, 2).join(' and ')}${themes.length > 2 ? ' across your workflow.' : '.'}`;
+  }, [activeNoteTypeInsight, assistantName, profilePromptPreferenceSuggestion, rewritePreferenceSuggestion]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -668,17 +688,17 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
         };
 
         if (!response.ok) {
-          throw new Error(data.error || 'Unable to save Atlas gap feedback right now.');
+          throw new Error(data.error || `Unable to save ${assistantName} gap feedback right now.`);
         }
 
         if (data.notification?.delivered && data.notification.recipient) {
-          setActionMessage(`Atlas gap saved and emailed to ${data.notification.recipient} so this missing skill can be reviewed and added.`);
+          setActionMessage(`${assistantName} gap saved and emailed to ${data.notification.recipient} so this missing skill can be reviewed and added.`);
         } else {
-          setActionMessage('Atlas gap saved to Beta Feedback so this missing skill can be reviewed and added.');
+          setActionMessage(`${assistantName} gap saved to Beta Feedback so this missing skill can be reviewed and added.`);
         }
         setActions((current) => current.filter((item) => item !== action));
       } catch (error) {
-        setActionMessage(error instanceof Error ? error.message : 'Unable to save Atlas gap feedback right now.');
+        setActionMessage(error instanceof Error ? error.message : `Unable to save ${assistantName} gap feedback right now.`);
       }
       return;
     }
@@ -701,16 +721,16 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
 
     setActionMessage(
       action.type === 'jump-to-source-evidence'
-        ? 'Assistant jumped to the source evidence area for this review context.'
+        ? `${assistantName} jumped to the source evidence area for this review context.`
         : action.type === 'run-review-rewrite'
-        ? `Assistant started the ${action.rewriteMode.replace(/-/g, ' ')} rewrite for this review draft.`
+        ? `${assistantName} started the ${action.rewriteMode.replace(/-/g, ' ')} rewrite for this review draft.`
         : action.type === 'apply-conservative-rewrite'
-        ? 'Assistant applied a focused conservative rewrite. Please review the sentence before final use.'
+        ? `${assistantName} applied a focused conservative rewrite. Please review the sentence before final use.`
         : action.type === 'apply-note-revision'
-        ? `Atlas applied the requested revision${action.targetSectionHeading ? ` in ${action.targetSectionHeading}` : ''}. Please review it before final use.`
+        ? `${assistantName} applied the requested revision${action.targetSectionHeading ? ` in ${action.targetSectionHeading}` : ''}. Please review it before final use.`
         : action.type === 'create-preset-draft'
         ? `Preset draft sent to the current note lane as ${action.presetName}.`
-        : 'Assistant preference suggestion sent into the current note lane.',
+        : `${assistantName} preference suggestion sent into the current note lane.`,
     );
   }
 
@@ -809,7 +829,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
 
     assistantMemoryService.updateRememberedFact(editingMemoryKey, editingMemoryValue.trim(), resolvedProviderIdentityId);
     setLearningHydratedAt(Date.now());
-    setActionMessage('Updated what Atlas remembers for this provider workspace.');
+    setActionMessage(`Updated what ${assistantName} remembers for this provider workspace.`);
     cancelEditingMemory();
   }
 
@@ -820,7 +840,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
     }
 
     setLearningHydratedAt(Date.now());
-    setActionMessage('Removed that remembered workflow note from Atlas.');
+    setActionMessage(`Removed that remembered workflow note from ${assistantName}.`);
     if (editingMemoryKey === key) {
       cancelEditingMemory();
     }
@@ -833,7 +853,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
       cards.push({
         id: `profile:${profilePromptPreferenceSuggestion.key}`,
         title: 'Profile pattern is active',
-        description: `Atlas is seeing ${profilePromptPreferenceSuggestion.label} across ${profilePromptPreferenceSuggestion.noteTypes.length} note types.`,
+        description: `${assistantName} is seeing ${profilePromptPreferenceSuggestion.label} across ${profilePromptPreferenceSuggestion.noteTypes.length} note types.`,
         whyNow: 'This matters now because the same provider-level preference is repeating across multiple note lanes, which is a strong signal that it should become a reusable default.',
         actionLabel: 'Draft from this cue',
         onDraft: () => {
@@ -851,7 +871,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
         id: `rewrite:${rewritePreferenceSuggestion.noteType}:${rewritePreferenceSuggestion.optionTone}`,
         title: 'Review habit is active',
         description: `You have leaned toward the ${conservativeOptionLabel(rewritePreferenceSuggestion.optionTone)} rewrite style ${rewritePreferenceSuggestion.count} times for ${rewritePreferenceSuggestion.noteType}.`,
-        whyNow: 'This matters now because your review behavior is showing a repeat safety style that Atlas can help formalize instead of leaving it as a one-off correction pattern.',
+        whyNow: `This matters now because your review behavior is showing a repeat safety style that ${assistantName} can help formalize instead of leaving it as a one-off correction pattern.`,
         actionLabel: 'Draft from this cue',
         onDraft: () => {
           bumpCueUsage(`rewrite:${rewritePreferenceSuggestion.noteType}:${rewritePreferenceSuggestion.optionTone}`);
@@ -868,8 +888,8 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
       cards.push({
         id: cueId,
         title: 'Lane preference is active',
-        description: `Atlas is seeing a repeated setup for this note lane: ${activeNoteTypeInsight.laneSuggestion.outputScope.replace(/-/g, ' ')} scope, ${activeNoteTypeInsight.laneSuggestion.outputStyle} style, ${activeNoteTypeInsight.laneSuggestion.format} format.`,
-        whyNow: 'This matters now because the same structure keeps showing up when you work in this note lane, which usually means Atlas should help preserve that setup for you.',
+        description: `${assistantName} is seeing a repeated setup for this note lane: ${activeNoteTypeInsight.laneSuggestion.outputScope.replace(/-/g, ' ')} scope, ${activeNoteTypeInsight.laneSuggestion.outputStyle} style, ${activeNoteTypeInsight.laneSuggestion.format} format.`,
+        whyNow: `This matters now because the same structure keeps showing up when you work in this note lane, which usually means ${assistantName} should help preserve that setup for you.`,
         actionLabel: 'Draft from this cue',
         onDraft: () => {
           bumpCueUsage(cueId);
@@ -886,8 +906,8 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
       cards.push({
         id: cueId,
         title: 'Prompt pattern is active',
-        description: `Atlas is seeing this note-lane prompt pattern repeat: ${activeNoteTypeInsight.promptSuggestion.label}.`,
-        whyNow: 'This matters now because the same prompt shaping pattern is repeating enough that Atlas can turn it into something reusable and easier to maintain.',
+        description: `${assistantName} is seeing this note-lane prompt pattern repeat: ${activeNoteTypeInsight.promptSuggestion.label}.`,
+        whyNow: `This matters now because the same prompt shaping pattern is repeating enough that ${assistantName} can turn it into something reusable and easier to maintain.`,
         actionLabel: 'Draft from this cue',
         onDraft: () => {
           bumpCueUsage(cueId);
@@ -944,8 +964,8 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
   );
   const modeDefinitions = listAssistantModeDefinitions();
   const activeModeDefinition = getAssistantModeDefinition(mode);
-  const emptyStateTitle = buildEmptyStateTitle(stage, mode);
-  const emptyStateDescription = buildEmptyStateDescription(stage, mode);
+  const emptyStateTitle = buildEmptyStateTitle(stage, mode, assistantName);
+  const emptyStateDescription = buildEmptyStateDescription(stage, mode, assistantName);
   const stageActionStrip = stage === 'review'
     ? [
         { label: 'Explain warning', prompt: 'Explain the main warning on this note and tell me what to fix first.', nextMode: 'workflow-help' as AssistantMode },
@@ -977,7 +997,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
       cards.push({
         id: 'section',
         label: `Focused section: ${context.focusedSectionHeading}`,
-        detail: context.focusedSectionSentence || 'Atlas can help tighten this section without drifting from source.',
+        detail: context.focusedSectionSentence || `${assistantName} can help tighten this section without drifting from source.`,
         actionLabel: stage === 'review' ? 'Review this section' : 'Shape this section',
         prompt: stage === 'review'
           ? `I am focused on the ${context.focusedSectionHeading} section. Help me review and revise it conservatively without drifting from source.`
@@ -1092,14 +1112,14 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
     if (messages.length) {
       return {
         title: 'Continuing this thread',
-        detail: `Atlas is holding ${messages.length} recent turn${messages.length === 1 ? '' : 's'} in view for this ${stage} session.`,
+        detail: `${assistantName} is holding ${messages.length} recent turn${messages.length === 1 ? '' : 's'} in view for this ${stage} session.`,
       };
     }
 
     if (visibleMemoryHighlights.length) {
       return {
         title: 'Continuing your usual workflow',
-        detail: 'Atlas is resuming from learned provider patterns instead of starting from zero.',
+        detail: `${assistantName} is resuming from learned provider patterns instead of starting from zero.`,
       };
     }
 
@@ -1136,14 +1156,29 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
   if (isMinimized) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cyan-200/10 pb-3">
+        <div data-assistant-drag-handle="true" className="flex touch-none select-none flex-wrap items-center justify-between gap-2 border-b border-cyan-200/10 pb-3">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">Atlas</div>
-            <div className="mt-1 text-sm text-cyan-50/76">
+            <div className="flex items-center gap-3">
+              <AssistantPersonaAvatar avatar={assistantPersona.avatar} label={assistantName} size="sm" />
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">{assistantName}</div>
+                <div className="text-[10px] uppercase tracking-[0.12em] text-cyan-100/54">{assistantRole} • Verified by Veranote</div>
+              </div>
+            </div>
+            <div className="mt-2 text-sm text-cyan-50/76">
               Compact mode stays ready for a quick question without taking over the workspace.
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            {onResetLayout ? (
+              <button
+                type="button"
+                onClick={onResetLayout}
+                className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+              >
+                Reset position
+              </button>
+            ) : null}
             {onClose ? (
               <button
                 type="button"
@@ -1187,7 +1222,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="shrink-0 space-y-2 border-b border-cyan-200/10 pb-2">
+      <div data-assistant-drag-handle="true" className="shrink-0 touch-none select-none space-y-2 border-b border-cyan-200/10 pb-2">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -1209,6 +1244,15 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            {onResetLayout ? (
+              <button
+                type="button"
+                onClick={onResetLayout}
+                className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+              >
+                Reset position
+              </button>
+            ) : null}
             {onClose ? (
               <button
                 type="button"
@@ -1282,6 +1326,9 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
                 compactReviewMode={compactReviewMode}
                 onToggleCompactReviewMode={stage === 'review' ? () => setCompactReviewMode((current) => !current) : undefined}
                 focusedSectionHeading={context.focusedSectionHeading}
+                assistantName={assistantName}
+                assistantRole={assistantRole}
+                assistantAvatar={assistantPersona.avatar}
                 renderAssistantFeedback={(message, isLatestAssistant) => {
                   if (!isLatestAssistant) {
                     return null;
@@ -1291,7 +1338,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
 
                   return (
                     <InlineFeedbackControl
-                      pageContext={`Atlas assistant • ${stage} • ${context.noteType || 'Unknown note type'}`}
+                      pageContext={`${assistantName} assistant • ${stage} • ${context.noteType || 'Unknown note type'}`}
                       workflowArea={inferFeedbackWorkflowArea(message)}
                       noteType={context.noteType}
                       answerMode={message.answerMode}
@@ -1304,6 +1351,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
                       providerProfileName={context.providerProfileName}
                       providerAddressingName={context.providerAddressingName}
                       stage={stage}
+                      assistantName={assistantName}
                     />
                   );
                 }}
@@ -1341,7 +1389,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
 
                 <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(8,20,34,0.56)] px-3 py-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">What Atlas remembers</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">What {assistantName} remembers</div>
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -1366,17 +1414,17 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
                     <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
                       <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100/68">Workflow patterns</div>
                       <div className="mt-1 text-sm font-semibold text-cyan-50">{visibleMemoryHighlights.length}</div>
-                      <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">Reusable habits Atlas is actively using right now.</div>
+                      <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">Reusable habits {assistantName} is actively using right now.</div>
                     </div>
                     <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
                       <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100/68">Direct memory notes</div>
                       <div className="mt-1 text-sm font-semibold text-cyan-50">{rememberedFacts.length}</div>
-                      <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">Explicit things you taught Atlas about your workflow.</div>
+                      <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">Explicit things you taught {assistantName} about your workflow.</div>
                     </div>
                     <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-2.5">
                       <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100/68">Current continuity</div>
                       <div className="mt-1 text-sm font-semibold text-cyan-50">{context.noteType || (isReviewMode ? 'Review session' : 'Compose session')}</div>
-                      <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">The note lane and current context Atlas is carrying forward.</div>
+                      <div className="mt-1 text-[11px] leading-5 text-cyan-50/64">The note lane and current context {assistantName} is carrying forward.</div>
                     </div>
                   </div>
                   {visibleMemoryHighlights.length ? (
@@ -1389,20 +1437,20 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
                       ))}
                       <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(7,17,30,0.28)] px-3 py-2.5 text-xs leading-5 text-cyan-50/66">
                         {visibleMemoryHighlights.length === 1
-                          ? 'That is the strongest learned pattern Atlas has for this workflow right now. As more repeat habits show up, additional memory items will appear here.'
-                          : 'These are the main learned patterns Atlas is using right now. Open Memory center if you want to edit direct remembered notes.'}
+                          ? `That is the strongest learned pattern ${assistantName} has for this workflow right now. As more repeat habits show up, additional memory items will appear here.`
+                          : `These are the main learned patterns ${assistantName} is using right now. Open Memory center if you want to edit direct remembered notes.`}
                       </div>
                     </div>
                   ) : (
                     <div className="mt-2 text-xs leading-5 text-cyan-50/68">
-                      Atlas has not learned a strong provider pattern here yet. As you work, repeated note habits and review tendencies will show up in this panel.
+                      {assistantName} has not learned a strong provider pattern here yet. As you work, repeated note habits and review tendencies will show up in this panel.
                     </div>
                   )}
                   {showMemoryCenter ? (
                     <div className="mt-3 rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.54)] px-3 py-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-100/72">Editable memory notes</div>
-                        <div className="text-[11px] text-cyan-50/56">Update or remove what Atlas keeps about your workflow.</div>
+                        <div className="text-[11px] text-cyan-50/56">Update or remove what {assistantName} keeps about your workflow.</div>
                       </div>
                       {rememberedFacts.length ? (
                         <div className="mt-3 space-y-2">
@@ -1463,7 +1511,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
                         </div>
                       ) : (
                         <div className="mt-3 text-xs leading-5 text-cyan-50/66">
-                          No direct conversational memory notes are saved yet. Use “remember that...” in Atlas to teach it something explicit about your workflow.
+                          No direct conversational memory notes are saved yet. Use “remember that...” with {assistantName} to teach it something explicit about your workflow.
                         </div>
                       )}
                     </div>
@@ -1478,7 +1526,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Quick options</div>
                     <div className="mt-1 text-[11px] text-cyan-50/68">
-                      These stay below the conversation so Atlas's reply can stay clean and easy to read.
+                      These stay below the conversation so {assistantName}'s reply can stay clean and easy to read.
                     </div>
                   </div>
                   <button
@@ -1494,7 +1542,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
                     <div key={`${action.type}-${action.label}`} className="rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-3">
                       {(() => {
                         const tool = getAssistantToolDefinition(action);
-                        const presentation = buildActionPresentation(action, stage, context);
+                        const presentation = buildActionPresentation(action, stage, context, assistantName);
                         return (
                           <>
                             <div className="flex flex-wrap items-center gap-2">
@@ -1592,7 +1640,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
                       <div>
                         <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100">Live note context</div>
                         <div className="mt-1 text-xs leading-6 text-cyan-50/74">
-                          Current note context Atlas can use right now.
+                          Current note context {assistantName} can use right now.
                         </div>
                       </div>
                       <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/80">
@@ -1631,7 +1679,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
                       <div>
                         <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100">Reference policy</div>
                         <div className="mt-1 text-xs leading-6 text-cyan-50/74">
-                          How Atlas is using references in this reply.
+                          How {assistantName} is using references in this reply.
                         </div>
                       </div>
                       <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/80">
@@ -1694,7 +1742,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
                           onClick={() => setShowCurrentCues((current) => !current)}
                           className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
                         >
-                          {showCurrentCues ? 'Hide cues' : 'Atlas cues'}
+                          {showCurrentCues ? 'Hide cues' : `${assistantName} cues`}
                         </button>
                       ) : null}
                     </div>
@@ -1770,12 +1818,12 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
 
                         {profilePromptPreferenceSuggestion ? (
                           <div>
-                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Atlas profile insight</div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{assistantName} profile insight</div>
                             <div className="mt-2 text-sm text-ink">
-                              Atlas has noticed a repeated provider pattern for <span className="font-semibold">{context.providerProfileName || 'this profile'}</span>: <span className="font-semibold">{profilePromptPreferenceSuggestion.label}</span>.
+                              {assistantName} has noticed a repeated provider pattern for <span className="font-semibold">{context.providerProfileName || 'this profile'}</span>: <span className="font-semibold">{profilePromptPreferenceSuggestion.label}</span>.
                             </div>
                             <div className="mt-2 text-xs leading-6 text-muted">
-                              This has shown up across {profilePromptPreferenceSuggestion.noteTypes.length} note types. If that feels right, Atlas can draft it as a broader reusable preference instead of leaving it as a one-off habit.
+                              This has shown up across {profilePromptPreferenceSuggestion.noteTypes.length} note types. If that feels right, {assistantName} can draft it as a broader reusable preference instead of leaving it as a one-off habit.
                             </div>
                             <div className="mt-2 text-xs text-cyan-50/70">
                               Seen in: {profilePromptPreferenceSuggestion.noteTypes.join(' • ')}
@@ -1801,7 +1849,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
 
                         {showCurrentCues && currentCueCards.length ? (
                           <div>
-                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Current Atlas cues</div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Current {assistantName} cues</div>
                             {weeklyTheme ? (
                               <div className="mt-2 rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-2 text-xs leading-6 text-cyan-50/72">
                                 {weeklyTheme}
@@ -1836,7 +1884,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
                                     </button>
                                     {card.usageCount > 0 ? (
                                       <span className="text-[11px] text-cyan-50/70">
-                                        Used from Atlas {card.usageCount} time{card.usageCount === 1 ? '' : 's'}
+                                        Used from {assistantName} {card.usageCount} time{card.usageCount === 1 ? '' : 's'}
                                       </span>
                                     ) : null}
                                   </div>
@@ -1845,7 +1893,7 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
                             </div>
                             {assistantActivityTimeline.length ? (
                               <div className="mt-3 rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-3">
-                                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Assistant activity timeline</div>
+                                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{assistantName} activity timeline</div>
                                 <div className="mt-2 space-y-2">
                                   {assistantActivityTimeline.map((item) => (
                                     <div key={item.id} className="text-xs text-cyan-50/72">
@@ -1879,4 +1927,4 @@ export function AssistantPanel({ stage, context, isMinimized = false, onToggleMi
       </div>
     </div>
   );
-}
+});

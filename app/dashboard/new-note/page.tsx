@@ -7,6 +7,9 @@ export default function NewNotePage() {
     <AppShell
       title="New Note Workspace"
       subtitle="Choose a note type, paste your rough source, and generate a draft to review."
+      hidePageHeader
+      fullWidth
+      showFeedback={false}
     >
       <Suspense fallback={null}>
         <NewNoteForm />

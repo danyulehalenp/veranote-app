@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import nodemailer from '@veranote/nodemailer';
 import type { BetaFeedbackItem } from '@/types/beta-feedback';
 
 export type FeedbackNotificationResult = {

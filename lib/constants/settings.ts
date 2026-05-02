@@ -1,5 +1,11 @@
 import type { OutputDestination } from '@/lib/veranote/output-destinations';
 import type { OutputNoteFocus, OutputProfile } from '@/lib/veranote/output-destinations';
+import {
+  DEFAULT_ASSISTANT_AVATAR,
+  DEFAULT_ASSISTANT_NAME,
+  DEFAULT_ASSISTANT_ROLE,
+  type AssistantAvatarId,
+} from '@/lib/veranote/assistant-persona';
 import type { DictationCommandDefinition, DictationVoiceProfile } from '@/types/dictation';
 
 export type { OutputDestination } from '@/lib/veranote/output-destinations';
@@ -12,6 +18,9 @@ export type ProviderSettings = {
   providerProfileId: string;
   providerFirstName: string;
   providerLastName: string;
+  userAiName: string;
+  userAiRole: string;
+  userAiAvatar: AssistantAvatarId;
   veraPreferredAddress: string;
   veraAddressPreference: VeraAddressPreference;
   veraInteractionStyle: VeraInteractionStyle;
@@ -34,6 +43,9 @@ export const DEFAULT_PROVIDER_SETTINGS: ProviderSettings = {
   providerProfileId: '',
   providerFirstName: '',
   providerLastName: '',
+  userAiName: DEFAULT_ASSISTANT_NAME,
+  userAiRole: DEFAULT_ASSISTANT_ROLE,
+  userAiAvatar: DEFAULT_ASSISTANT_AVATAR,
   veraPreferredAddress: '',
   veraAddressPreference: 'provider-profile',
   veraInteractionStyle: 'warm-professional',

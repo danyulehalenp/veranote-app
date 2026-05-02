@@ -113,6 +113,20 @@ describe('psych medication knowledge layer v1', () => {
     expect(lithium.text).toContain('capsule');
     expect(lithium.text).toContain('extended-release tablet');
 
+    const lamotrigine = answerMedicationReferenceQuestion('what mg formulations does lamotrigine come in?');
+    expect(lamotrigine.text).toContain('25 mg');
+    expect(lamotrigine.text).toContain('100 mg');
+    expect(lamotrigine.text).toContain('150 mg');
+    expect(lamotrigine.text).toContain('200 mg');
+    expect(lamotrigine.text).toContain('chewable/dispersible tablet');
+    expect(lamotrigine.text).toContain('orally disintegrating tablet');
+    expect(lamotrigine.text).toContain('Exact strengths and formulations can vary by manufacturer or product.');
+
+    const quetiapine = answerMedicationReferenceQuestion('what strengths does quetiapine come in?');
+    expect(quetiapine.text).toContain('25 mg');
+    expect(quetiapine.text).toContain('400 mg');
+    expect(quetiapine.text).toContain('extended-release tablet');
+
     const depakote = answerMedicationReferenceQuestion('tablet strengths for Depakote');
     expect(depakote.text).toContain('125 mg');
     expect(depakote.text).toContain('250 mg');

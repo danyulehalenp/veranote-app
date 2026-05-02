@@ -265,6 +265,29 @@ describe('section profiles', () => {
     expect(plan.requiresStandaloneMse).toBe(true);
   });
 
+  it('uses medical-H&P-specific sections for medical H&P notes', () => {
+    const plan = planSections({
+      noteType: 'Medical H&P',
+      requestedScope: 'full-note',
+    });
+
+    expect(plan.profile?.id).toBe('medical-h-and-p');
+    expect(plan.sections).toEqual([
+      'medicalHpReasonAdmissionContext',
+      'sourceOfInformation',
+      'medicalHpHistoryOfPresentIllness',
+      'medicalHpPastMedicalHistory',
+      'medicalHpMedicationsAllergies',
+      'medicalHpReviewOfSystems',
+      'medicalHpPhysicalExamObservations',
+      'medicalHpPertinentLabsVitalsDiagnostics',
+      'medicalHpAssessmentMedicalProblems',
+      'medicalHpPlanRecommendations',
+      'sourceLimitations',
+    ]);
+    expect(plan.requiresStandaloneMse).toBe(false);
+  });
+
   it('includes larger adult eval structure for psych initial adult eval full-note scope', () => {
     const plan = planSections({
       noteType: 'Inpatient psych initial adult eval',

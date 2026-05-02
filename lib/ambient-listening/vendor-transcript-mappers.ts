@@ -1,4 +1,9 @@
-import type { AmbientParticipantRole, AmbientTranscriptIngressEvent, AmbientTranscriptIngressTurn } from '@/types/ambient-listening';
+import type {
+  AmbientParticipantRole,
+  AmbientSttSegment,
+  AmbientTranscriptIngressEvent,
+  AmbientTranscriptIngressTurn,
+} from '@/types/ambient-listening';
 
 const SPEAKER_REVIEW_THRESHOLD = 0.9;
 
@@ -103,5 +108,38 @@ export function mapOpenAIRealtimeSegmentsToAmbientIngressEvents(input: {
       ...segment,
       segmentId: segment.segmentId || segment.itemId || segment.responseId,
     })),
+  });
+}
+
+export function mapAmbientSttSegmentsToAmbientIngressEvents(input: {
+  segments: AmbientSttSegment[];
+}) {
+  return input.segments.map((segment): AmbientTranscriptIngressEvent => {
+    const attributionNeedsReview = true;
+    return {
+      id: segment.segmentId,
+      eventType: segment.isFinal ? 'final_turn' : 'interim_turn',
+      turn: {
+        id: segment.segmentId,
+        startMs: segment.startMs,
+        endMs: segment.endMs,
+        speakerRole: 'unknown',
+        speakerLabel: segment.speakerLabel || null,
+        speakerConfidence: segment.speakerConfidence ?? 0.5,
+        text: segment.text,
+        normalizedText: segment.text,
+        textConfidence: segment.textConfidence ?? 0.5,
+        isFinal: segment.isFinal,
+        clinicalConcepts: [],
+        riskMarkers: [],
+        reviewHints: {
+          severityBadges: ['speaker review'],
+          attributionNeedsReview,
+          textNeedsReview: false,
+          linkedDraftSentenceIds: [],
+          providerConfirmed: false,
+        },
+      },
+    };
   });
 }

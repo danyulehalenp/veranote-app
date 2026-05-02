@@ -1,5 +1,6 @@
 import type {
   AmbientCareSetting,
+  AmbientCaptureRuntime,
   AmbientConsentMethod,
   AmbientConsentScope,
   AmbientDraftSentence,
@@ -14,6 +15,7 @@ import type {
 export type AmbientSessionSetupDraft = {
   mode: AmbientListeningMode;
   careSetting: AmbientCareSetting;
+  captureRuntime: AmbientCaptureRuntime;
   transcriptSimulator: Extract<AmbientTranscriptSourceKind, 'mock_seeded' | 'live_stream_adapter'>;
   providerState?: string | null;
   patientState?: string | null;
@@ -68,6 +70,7 @@ export function getAmbientMockSetupDraft(): AmbientSessionSetupDraft {
   return {
     mode: 'ambient_in_room',
     careSetting: 'outpatient_psychiatry',
+    captureRuntime: 'simulation',
     transcriptSimulator: 'mock_seeded',
     providerState: 'TX',
     patientState: 'TX',

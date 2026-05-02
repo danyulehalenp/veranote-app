@@ -31,6 +31,7 @@ type InlineFeedbackControlProps = {
   providerAddressingName?: string;
   stage?: 'compose' | 'review';
   promptLabel?: string;
+  assistantName?: string;
 };
 
 export function InlineFeedbackControl({
@@ -49,6 +50,7 @@ export function InlineFeedbackControl({
   providerAddressingName,
   stage,
   promptLabel = 'Was this useful?',
+  assistantName = 'Assistant',
 }: InlineFeedbackControlProps) {
   const [selected, setSelected] = useState<BetaFeedbackLabel | null>(null);
   const [userComment, setUserComment] = useState('');
@@ -100,7 +102,7 @@ export function InlineFeedbackControl({
         throw new Error(data.error || 'Unable to save feedback right now.');
       }
 
-      setStatus('Thanks — this helps improve Atlas.');
+      setStatus(`Thanks — this helps improve ${assistantName}.`);
       setSelected(null);
       setUserComment('');
       setDesiredBehavior('');
@@ -159,7 +161,7 @@ export function InlineFeedbackControl({
             />
           </label>
           <label className="grid gap-1.5">
-            <span className="text-[11px] font-medium text-cyan-50/80">What should Atlas have done? Optional.</span>
+            <span className="text-[11px] font-medium text-cyan-50/80">What should {assistantName} have done? Optional.</span>
             <textarea
               value={desiredBehavior}
               onChange={(event) => setDesiredBehavior(event.target.value)}

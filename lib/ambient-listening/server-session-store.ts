@@ -7,7 +7,12 @@ import {
   type AmbientSessionSetupDraft,
   type AmbientTranscriptTurnViewModel,
 } from '@/lib/ambient-listening/mock-data';
-import { resolveAmbientServerTranscriptAdapter } from '@/lib/ambient-listening/server-transcript-adapters';
+import {
+  resolveAmbientBatchTranscriptionProviderSelection,
+  normalizeAmbientTranscriptIngressEvents,
+  resolveAmbientServerTranscriptAdapter,
+  transcribeAmbientAudioWithPreferredProvider,
+} from '@/lib/ambient-listening/server-transcript-adapters';
 import type {
   AmbientTranscriptAdapterDescriptor,
   AmbientParticipant,
@@ -47,8 +52,15 @@ type AmbientTranscriptEvent = {
   id: string;
   eventType: AmbientTranscriptEventType;
   occurredAt: string;
-  sourceKind: 'mock_seeded' | 'live_stream_adapter';
+  sourceKind: Exclude<AmbientTranscriptSourceKind, 'none'>;
   turn: AmbientTranscriptTurnViewModel;
+};
+
+type AmbientTranscriptionAudioUpload = {
+  base64Audio: string;
+  mimeType: string;
+  sizeBytes: number;
+  capturedAt: string;
 };
 
 const serverAmbientSessions = new Map<string, ServerAmbientSessionRecord>();
@@ -242,6 +254,57 @@ function seedMockTranscript(record: ServerAmbientSessionRecord): ServerAmbientSe
   };
 }
 
+function buildSectionsFromTranscribedTurns(turns: AmbientTranscriptTurnViewModel[]) {
+  if (!turns.length) {
+    return [] satisfies AmbientDraftSectionViewModel[];
+  }
+
+  return [
+    {
+      sectionId: 'transcript-review',
+      label: 'Transcript review',
+      sentences: turns.map((turn, index) => ({
+        sentenceId: `sentence-transcript-${index + 1}`,
+        text: turn.text,
+        evidenceAnchors: [
+          {
+            turnId: turn.id,
+            startChar: 0,
+            endChar: turn.text.length,
+            supportType: 'direct' as const,
+            confidence: turn.textConfidence,
+          },
+        ],
+        assertionType: 'unknown' as const,
+        confidence: turn.textConfidence,
+        supportSummary: '1 direct ambient transcript turn',
+        primaryTurnIds: [turn.id],
+        blockingFlagIds: turn.attributionNeedsReview && !turn.providerConfirmed ? ['flag-speaker-1'] : [],
+        accepted: false,
+        rejected: false,
+      })),
+    },
+  ] satisfies AmbientDraftSectionViewModel[];
+}
+
+function buildFlagsFromTranscribedTurns(turns: AmbientTranscriptTurnViewModel[]) {
+  const unresolvedTurns = turns.filter((turn) => turn.attributionNeedsReview && !turn.providerConfirmed);
+  if (!unresolvedTurns.length) {
+    return [] satisfies AmbientReviewFlag[];
+  }
+
+  return [
+    {
+      flagId: 'flag-speaker-1',
+      category: 'speaker_attribution',
+      severity: 'high',
+      message: 'Transcribed ambient audio is currently unlabeled for speaker identity. Confirm whether each turn belongs to provider, patient, or collateral before using it as source-backed note material.',
+      sourceTurnIds: unresolvedTurns.map((turn) => turn.id),
+      status: 'open',
+    },
+  ] satisfies AmbientReviewFlag[];
+}
+
 function applyTranscriptEvent(record: ServerAmbientSessionRecord, event: AmbientTranscriptEvent) {
   const existingTurnIndex = record.turns.findIndex((turn) => turn.id === event.turn.id);
   const nextTurns = cloneTurns(record.turns);
@@ -308,6 +371,17 @@ export function createServerAmbientSession(input: {
 }) {
   const sessionId = createId('ambient-session');
   const transcriptAdapter = resolveAmbientServerTranscriptAdapter(input.setupDraft.transcriptSimulator);
+  let preferredBatchProvider: ReturnType<typeof resolveAmbientBatchTranscriptionProviderSelection> | null = null;
+  if (input.setupDraft.captureRuntime === 'real_microphone') {
+    try {
+      preferredBatchProvider = resolveAmbientBatchTranscriptionProviderSelection({
+        requestedProvider: 'auto',
+        allowMockSimulationFallback: false,
+      });
+    } catch {
+      preferredBatchProvider = null;
+    }
+  }
   const record: ServerAmbientSessionRecord = {
     sessionId,
     providerIdentityId: input.providerIdentityId,
@@ -320,8 +394,8 @@ export function createServerAmbientSession(input: {
     sections: [],
     reviewFlags: [],
     pendingTranscriptEvents: [],
-    transcriptAdapterId: transcriptAdapter.adapterId,
-    transcriptAdapterLabel: transcriptAdapter.adapterLabel,
+    transcriptAdapterId: preferredBatchProvider?.activeProvider || transcriptAdapter.adapterId,
+    transcriptAdapterLabel: preferredBatchProvider?.activeProviderLabel || transcriptAdapter.adapterLabel,
     transcriptSourceKind: 'none',
     lastTranscriptDeliveryTransport: 'none',
     createdAt: new Date().toISOString(),
@@ -409,7 +483,12 @@ export function setServerAmbientSessionState(input: {
     nextRecord.startedAt = new Date().toISOString();
   }
 
-  if (input.state === 'recording' && !record.turns.length && !record.pendingTranscriptEvents.length) {
+  if (
+    input.state === 'recording'
+    && record.setupDraft.captureRuntime !== 'real_microphone'
+    && !record.turns.length
+    && !record.pendingTranscriptEvents.length
+  ) {
     const transcriptAdapter = resolveAmbientServerTranscriptAdapter(record.setupDraft.transcriptSimulator);
     nextRecord.pendingTranscriptEvents = transcriptAdapter.buildTranscriptEvents({
       sessionId: record.sessionId,
@@ -428,7 +507,12 @@ export function setServerAmbientSessionState(input: {
     }
   }
 
-  if (input.state === 'draft_generation_pending' && !nextRecord.turns.length && !nextRecord.pendingTranscriptEvents.length) {
+  if (
+    input.state === 'draft_generation_pending'
+    && record.setupDraft.captureRuntime !== 'real_microphone'
+    && !nextRecord.turns.length
+    && !nextRecord.pendingTranscriptEvents.length
+  ) {
     nextRecord = seedMockTranscript(nextRecord);
   }
 
@@ -436,6 +520,63 @@ export function setServerAmbientSessionState(input: {
     nextRecord = reconcileStateForReview(nextRecord);
     nextRecord.state = hasBlockingAttribution(nextRecord.turns) ? 'needs_review' : 'draft_ready';
   }
+
+  persistServerAmbientSession(nextRecord);
+  return nextRecord;
+}
+
+export async function transcribeServerAmbientAudio(input: {
+  sessionId: string;
+  providerIdentityId: string;
+  audio: AmbientTranscriptionAudioUpload;
+}) {
+  const record = getServerAmbientSession(input.sessionId, input.providerIdentityId);
+  if (!record) {
+    throw new Error('Ambient session not found.');
+  }
+
+  if (!input.audio.base64Audio || !input.audio.mimeType || !input.audio.sizeBytes) {
+    throw new Error('Ambient audio upload is incomplete.');
+  }
+
+  const transcription = await transcribeAmbientAudioWithPreferredProvider({
+    base64Audio: input.audio.base64Audio,
+    mimeType: input.audio.mimeType,
+    requestedProvider: 'auto',
+  });
+
+  const occurredAt = input.audio.capturedAt || new Date().toISOString();
+  const envelopes = normalizeAmbientTranscriptIngressEvents({
+    sessionId: record.sessionId,
+    sourceKind: 'batch_transcription',
+    events: transcription.ingressEvents,
+    createId,
+  });
+  const transcribedTurns: AmbientTranscriptTurnViewModel[] = envelopes
+    .filter((event) => event.turn.isFinal)
+    .map((event, index) => ({
+      ...event.turn,
+      severityBadges: [...(event.reviewHints?.severityBadges || ['speaker review'])],
+      attributionNeedsReview: event.reviewHints?.attributionNeedsReview ?? true,
+      textNeedsReview: event.reviewHints?.textNeedsReview ?? false,
+      linkedDraftSentenceIds: [`sentence-transcript-${index + 1}`],
+      providerConfirmed: event.reviewHints?.providerConfirmed ?? false,
+    }));
+
+  const nextRecord = reconcileStateForReview({
+    ...record,
+    state: 'draft_ready',
+    turns: transcribedTurns,
+    sections: buildSectionsFromTranscribedTurns(transcribedTurns),
+    reviewFlags: buildFlagsFromTranscribedTurns(transcribedTurns),
+    pendingTranscriptEvents: [],
+    transcriptAdapterId: transcription.selection.activeProvider,
+    transcriptAdapterLabel: transcription.selection.activeProviderLabel,
+    transcriptSourceKind: 'batch_transcription',
+    lastTranscriptDeliveryTransport: 'none',
+    transcriptEventCount: transcribedTurns.length,
+    stoppedAt: occurredAt,
+  });
 
   persistServerAmbientSession(nextRecord);
   return nextRecord;

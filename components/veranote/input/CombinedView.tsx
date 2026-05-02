@@ -10,7 +10,7 @@ export function CombinedView({
       <div>
         <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Combined source preview</div>
         <p className="mt-2 text-sm leading-6 text-muted">
-          This is the assembled source packet Atlas sees before draft generation.
+          This is the assembled source packet used before draft generation.
         </p>
       </div>
       <div className="min-h-[240px] whitespace-pre-wrap rounded-[20px] border border-border bg-white px-4 py-4 text-[15px] leading-7 text-ink sm:min-h-[280px]">

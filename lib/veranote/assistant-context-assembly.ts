@@ -20,6 +20,9 @@ export function assembleAssistantApiContext(snapshot?: Partial<AssistantContextS
 
   return {
     stage: snapshot.stage,
+    userAiName: snapshot.userAiName,
+    userAiRole: snapshot.userAiRole,
+    userAiAvatar: snapshot.userAiAvatar,
     noteType: snapshot.noteType,
     specialty: snapshot.specialty,
     currentDraftText: snapshot.currentDraftText,
