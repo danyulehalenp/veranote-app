@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolvePrototypeDataDir, resolvePrototypeDbPath } from '@/lib/db/client';
+import { resolvePrototypeDataDir, resolvePrototypeDbPath, shouldUseDurableSupabaseStorage } from '@/lib/db/client';
 
 describe('prototype db path resolution', () => {
   it('uses the local project data directory outside serverless runtime', () => {
@@ -16,5 +16,26 @@ describe('prototype db path resolution', () => {
   it('honors explicit prototype storage overrides', () => {
     expect(resolvePrototypeDataDir({ PROTOTYPE_DATA_DIR: '/custom/data', VERCEL: '1' }, '/workspace/app')).toBe('/custom/data');
     expect(resolvePrototypeDbPath({ PROTOTYPE_DB_PATH: '/custom/db.json', VERCEL: '1' }, '/workspace/app')).toBe('/custom/db.json');
+  });
+
+  it('requires an explicit durable storage flag before using Supabase', () => {
+    expect(shouldUseDurableSupabaseStorage({
+      VERCEL: '1',
+      SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+    })).toBe(false);
+
+    expect(shouldUseDurableSupabaseStorage({
+      VERANOTE_DB_BACKEND: 'supabase',
+      SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+    })).toBe(true);
+
+    expect(shouldUseDurableSupabaseStorage({
+      VERANOTE_DB_BACKEND: 'prototype',
+      VERANOTE_USE_SUPABASE_DB: '1',
+      SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+    })).toBe(false);
   });
 });

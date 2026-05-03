@@ -10,6 +10,7 @@ import { buildDraftRecoveryState, getDraftPriorityScore } from '@/lib/veranote/d
 import { createEmptyAssistantLearningStore, type AssistantLearningStore } from '@/lib/veranote/assistant-learning';
 import { buildVeraMemoryLedger } from '@/lib/veranote/vera-memory-ledger';
 import type { DraftSession, PersistedDraftSession } from '@/types/session';
+import { getSupabaseAdminClient } from '@/lib/db/supabase-client';
 import type {
   BetaFeedbackCategory,
   BetaFeedbackItem,
@@ -59,6 +60,28 @@ export function resolvePrototypeDbPath(env: NodeJS.ProcessEnv = process.env, cwd
 
 const DATA_DIR = resolvePrototypeDataDir();
 const DB_PATH = resolvePrototypeDbPath();
+
+export function shouldUseDurableSupabaseStorage(env: NodeJS.ProcessEnv = process.env) {
+  if (env.VERANOTE_DB_BACKEND === 'prototype') {
+    return false;
+  }
+
+  const explicitlyEnabled = env.VERANOTE_DB_BACKEND === 'supabase' || env.VERANOTE_USE_SUPABASE_DB === '1';
+
+  if (!explicitlyEnabled) {
+    return false;
+  }
+
+  return Boolean(env.SUPABASE_URL?.trim() && env.SUPABASE_SERVICE_ROLE_KEY?.trim());
+}
+
+function getDurableSupabaseClient() {
+  if (!shouldUseDurableSupabaseStorage()) {
+    return null;
+  }
+
+  return getSupabaseAdminClient();
+}
 
 const defaultDb: PrototypeDb = {
   drafts: [],
@@ -302,7 +325,531 @@ function hasMeaningfulDraftChanges(previous: DraftRecord, next: DraftSession) {
     || JSON.stringify(previous.flags || []) !== JSON.stringify(next.flags || []);
 }
 
+function assertDurableResult(error: unknown, action: string): asserts error is null {
+  if (error) {
+    const message = error instanceof Error ? error.message : JSON.stringify(error);
+    throw new Error(`Unable to ${action} in durable storage: ${message}`);
+  }
+}
+
+type JsonRow<T> = {
+  data: T;
+};
+
+type DraftRow = JsonRow<Partial<DraftRecord>> & {
+  id: string;
+  provider_id: string;
+};
+
+function buildIdentitySeedSettings(providerId: string) {
+  const identity = findProviderIdentity(providerId);
+
+  return {
+    ...DEFAULT_PROVIDER_SETTINGS,
+    providerProfileId: identity?.defaultProviderProfileId || DEFAULT_PROVIDER_SETTINGS.providerProfileId,
+    providerFirstName: identity?.firstName || DEFAULT_PROVIDER_SETTINGS.providerFirstName,
+    providerLastName: identity?.lastName || DEFAULT_PROVIDER_SETTINGS.providerLastName,
+    veraPreferredAddress: identity?.displayName || DEFAULT_PROVIDER_SETTINGS.veraPreferredAddress,
+  };
+}
+
+async function listDurableDraftRows(providerId: string, options?: { includeArchived?: boolean }) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  let query = supabase
+    .from('veranote_drafts')
+    .select('id, provider_id, data')
+    .eq('provider_id', providerId)
+    .order('updated_at', { ascending: false })
+    .limit(100);
+
+  if (!options?.includeArchived) {
+    query = query.is('archived_at', null);
+  }
+
+  const { data, error } = await query;
+  assertDurableResult(error, 'list drafts');
+
+  return ((data || []) as DraftRow[]).map((row) => normalizeDraftRecord({
+    ...row.data,
+    id: row.id,
+    providerIdentityId: row.provider_id,
+  }));
+}
+
+async function getDurableDraftRecord(draftId: string, providerId: string, options?: { includeArchived?: boolean }) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  let query = supabase
+    .from('veranote_drafts')
+    .select('id, provider_id, data')
+    .eq('id', draftId)
+    .eq('provider_id', providerId)
+    .limit(1);
+
+  if (!options?.includeArchived) {
+    query = query.is('archived_at', null);
+  }
+
+  const { data, error } = await query.maybeSingle();
+  assertDurableResult(error, 'read draft');
+
+  if (!data) {
+    return null;
+  }
+
+  const row = data as DraftRow;
+  return normalizeDraftRecord({
+    ...row.data,
+    id: row.id,
+    providerIdentityId: row.provider_id,
+  });
+}
+
+async function upsertDurableDraft(record: DraftRecord, providerId: string) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { error } = await supabase
+    .from('veranote_drafts')
+    .upsert({
+      id: record.id,
+      provider_id: providerId,
+      version: record.version,
+      data: record,
+      created_at: record.createdAt,
+      updated_at: record.updatedAt,
+      last_saved_at: record.lastSavedAt || record.updatedAt,
+      last_opened_at: record.lastOpenedAt || null,
+      archived_at: record.archivedAt || null,
+    }, { onConflict: 'id' });
+
+  assertDurableResult(error, 'save draft');
+  return record;
+}
+
+async function saveDraftDurable(draft: DraftSession, providerId: string) {
+  const now = new Date().toISOString();
+  const requestedDraftId = typeof draft.draftId === 'string' && draft.draftId ? draft.draftId : undefined;
+  const activeDrafts = await listDurableDraftRows(providerId);
+  const existingRecord = activeDrafts?.find((item) => (
+    (requestedDraftId && item.id === requestedDraftId)
+    || (
+      !requestedDraftId
+      && createDraftFingerprint(item) === createDraftFingerprint(draft)
+    )
+  )) || null;
+  const contentChanged = existingRecord ? hasMeaningfulDraftChanges(existingRecord, draft) : true;
+  const version = existingRecord
+    ? (contentChanged ? existingRecord.version + 1 : existingRecord.version)
+    : 1;
+  const record = normalizeDraftRecord({
+    ...(existingRecord || {}),
+    ...draft,
+    id: existingRecord?.id || requestedDraftId || createDraftId(),
+    draftId: existingRecord?.id || requestedDraftId,
+    providerIdentityId: providerId,
+    updatedAt: now,
+    lastSavedAt: now,
+    createdAt: existingRecord?.createdAt || now,
+    version,
+    draftVersion: version,
+    archivedAt: undefined,
+    recoveryState: buildDraftRecoveryState(draft, {
+      workflowStage: draft.recoveryState?.workflowStage,
+      composeLane: draft.recoveryState?.composeLane,
+      lastOpenedAt: existingRecord?.lastOpenedAt || draft.recoveryState?.lastOpenedAt,
+      updatedAt: now,
+    }),
+    lastOpenedAt: existingRecord?.lastOpenedAt || draft.recoveryState?.lastOpenedAt,
+  });
+
+  return upsertDurableDraft(record, providerId);
+}
+
+async function saveDictationAuditEventDurable(event: DictationAuditEvent, providerId: string) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const normalizedEvent: DictationAuditEvent = {
+    ...event,
+    actorUserId: providerId,
+  };
+
+  const { error } = await supabase
+    .from('veranote_dictation_audit_events')
+    .upsert({
+      id: normalizedEvent.id,
+      provider_id: providerId,
+      session_id: normalizedEvent.dictationSessionId,
+      occurred_at: normalizedEvent.occurredAt,
+      data: normalizedEvent,
+    }, { onConflict: 'id' });
+
+  assertDurableResult(error, 'save dictation audit event');
+  return normalizedEvent;
+}
+
+async function listDictationAuditEventsDurable(input?: {
+  providerId?: string;
+  sessionId?: string;
+  limit?: number;
+}) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const providerId = input?.providerId || DEFAULT_PROVIDER_IDENTITY_ID;
+  let query = supabase
+    .from('veranote_dictation_audit_events')
+    .select('data')
+    .eq('provider_id', providerId)
+    .order('occurred_at', { ascending: false })
+    .limit(input?.limit || 25);
+
+  if (input?.sessionId) {
+    query = query.eq('session_id', input.sessionId);
+  }
+
+  const { data, error } = await query;
+  assertDurableResult(error, 'list dictation audit events');
+
+  return ((data || []) as JsonRow<DictationAuditEvent>[]).map((row) => row.data);
+}
+
+async function saveProviderSettingsDurable(settings: ProviderSettings, providerId: string) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const nextSettings = applyAssistantPersonaDefaults({
+    ...DEFAULT_PROVIDER_SETTINGS,
+    ...settings,
+  });
+
+  const { error } = await supabase
+    .from('veranote_provider_settings')
+    .upsert({
+      provider_id: providerId,
+      data: nextSettings,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'provider_id' });
+
+  assertDurableResult(error, 'save provider settings');
+  await saveVeraMemoryLedgerDurable(buildVeraMemoryLedger({
+    providerId,
+    settings: nextSettings,
+    learningStore: await getAssistantLearning(providerId),
+  }), providerId);
+
+  return nextSettings;
+}
+
+async function getProviderSettingsDurable(providerId: string) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('veranote_provider_settings')
+    .select('data')
+    .eq('provider_id', providerId)
+    .maybeSingle();
+
+  assertDurableResult(error, 'read provider settings');
+
+  return applyAssistantPersonaDefaults({
+    ...buildIdentitySeedSettings(providerId),
+    ...((data as JsonRow<Partial<ProviderSettings>> | null)?.data || {}),
+  });
+}
+
+async function listNotePresetsDurable(providerId: string) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('veranote_note_presets')
+    .select('data')
+    .eq('provider_id', providerId)
+    .maybeSingle();
+
+  assertDurableResult(error, 'list note presets');
+
+  return mergePresetCatalog(Array.isArray((data as JsonRow<NotePreset[]> | null)?.data)
+    ? (data as JsonRow<NotePreset[]>).data
+    : []);
+}
+
+async function saveNotePresetsDurable(presets: NotePreset[], providerId: string) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const mergedPresets = mergePresetCatalog(presets);
+  const { error } = await supabase
+    .from('veranote_note_presets')
+    .upsert({
+      provider_id: providerId,
+      data: mergedPresets,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'provider_id' });
+
+  assertDurableResult(error, 'save note presets');
+  return mergedPresets;
+}
+
+async function getAssistantLearningDurable(providerId: string) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('veranote_assistant_learning')
+    .select('data')
+    .eq('provider_id', providerId)
+    .maybeSingle();
+
+  assertDurableResult(error, 'read assistant learning');
+
+  return {
+    ...createEmptyAssistantLearningStore(),
+    ...((data as JsonRow<AssistantLearningStore> | null)?.data || {}),
+  };
+}
+
+async function saveAssistantLearningDurable(learningStore: AssistantLearningStore, providerId: string) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const merged = {
+    ...createEmptyAssistantLearningStore(),
+    ...(learningStore || {}),
+  };
+  const { error } = await supabase
+    .from('veranote_assistant_learning')
+    .upsert({
+      provider_id: providerId,
+      data: merged,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'provider_id' });
+
+  assertDurableResult(error, 'save assistant learning');
+  await saveVeraMemoryLedgerDurable(buildVeraMemoryLedger({
+    providerId,
+    settings: await getProviderSettings(providerId),
+    learningStore: merged,
+  }), providerId);
+
+  return merged;
+}
+
+async function getVeraMemoryLedgerDurable(providerId: string) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('veranote_memory_ledgers')
+    .select('data')
+    .eq('provider_id', providerId)
+    .maybeSingle();
+
+  assertDurableResult(error, 'read memory ledger');
+
+  return (data as JsonRow<VeraMemoryLedger> | null)?.data
+    || buildVeraMemoryLedger({
+      providerId,
+      settings: await getProviderSettings(providerId),
+      learningStore: await getAssistantLearning(providerId),
+    });
+}
+
+async function saveVeraMemoryLedgerDurable(ledger: VeraMemoryLedger, providerId: string) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { error } = await supabase
+    .from('veranote_memory_ledgers')
+    .upsert({
+      provider_id: providerId,
+      data: ledger,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'provider_id' });
+
+  assertDurableResult(error, 'save memory ledger');
+  return ledger;
+}
+
+async function listBetaFeedbackDurable() {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('veranote_beta_feedback')
+    .select('data')
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  assertDurableResult(error, 'list beta feedback');
+
+  return ((data || []) as JsonRow<Partial<BetaFeedbackItem>>[]).map((row) => normalizeBetaFeedbackItem(row.data));
+}
+
+async function saveBetaFeedbackDurable(feedback: {
+  pageContext: string;
+  category: BetaFeedbackCategory;
+  message: string;
+  workflowArea?: BetaFeedbackItem['workflowArea'];
+  noteType?: string;
+  feedbackLabel?: BetaFeedbackItem['feedbackLabel'];
+  severity?: BetaFeedbackItem['severity'];
+  answerMode?: string;
+  builderFamily?: string;
+  routeTaken?: string;
+  model?: string;
+  promptSummary?: string;
+  responseSummary?: string;
+  userComment?: string;
+  desiredBehavior?: string;
+  phiRiskFlag?: boolean;
+  adminNotes?: string;
+  convertedToRegression?: boolean;
+  regressionCaseId?: string;
+  metadata?: BetaFeedbackMetadata;
+}) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const record = normalizeBetaFeedbackItem({
+    ...feedback,
+    id: createFeedbackId(),
+    createdAt: new Date().toISOString(),
+    status: 'new',
+  });
+  const { error } = await supabase
+    .from('veranote_beta_feedback')
+    .insert({
+      id: record.id,
+      provider_id: record.metadata?.providerId || null,
+      category: record.category,
+      status: record.status,
+      created_at: record.createdAt,
+      data: record,
+    });
+
+  assertDurableResult(error, 'save beta feedback');
+  return record;
+}
+
+async function updateBetaFeedbackDurable(id: string, patch: Partial<Pick<
+  BetaFeedbackItem,
+  'status' | 'adminNotes' | 'convertedToRegression' | 'regressionCaseId'
+>>) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('veranote_beta_feedback')
+    .select('data')
+    .eq('id', id)
+    .maybeSingle();
+  assertDurableResult(error, 'read beta feedback');
+
+  if (!data) {
+    return null;
+  }
+
+  const current = normalizeBetaFeedbackItem((data as JsonRow<Partial<BetaFeedbackItem>>).data);
+  const updated = {
+    ...current,
+    status: patch.status || current.status || 'new',
+    adminNotes: patch.adminNotes ?? current.adminNotes,
+    convertedToRegression: patch.convertedToRegression ?? current.convertedToRegression,
+    regressionCaseId: patch.regressionCaseId ?? current.regressionCaseId,
+  };
+  const { error: updateError } = await supabase
+    .from('veranote_beta_feedback')
+    .update({
+      status: updated.status,
+      data: updated,
+    })
+    .eq('id', id);
+  assertDurableResult(updateError, 'update beta feedback');
+
+  return updated;
+}
+
+async function getAppStateValueDurable(key: string) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('veranote_app_state')
+    .select('value')
+    .eq('key', key)
+    .maybeSingle();
+  assertDurableResult(error, 'read app state');
+
+  return typeof (data as { value?: unknown } | null)?.value === 'string'
+    ? (data as { value: string }).value
+    : null;
+}
+
+async function saveAppStateValueDurable(key: string, value: string) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { error } = await supabase
+    .from('veranote_app_state')
+    .upsert({
+      key,
+      value,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'key' });
+  assertDurableResult(error, 'save app state');
+
+  return value;
+}
+
 export async function saveDraft(draft: DraftSession, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const durableDraft = await saveDraftDurable(draft, providerId);
+  if (durableDraft) {
+    return durableDraft;
+  }
+
   const db = await readDb();
   const now = new Date().toISOString();
   const requestedDraftId = typeof draft.draftId === 'string' && draft.draftId ? draft.draftId : undefined;
@@ -353,6 +900,11 @@ export async function saveDictationAuditEvent(
   event: DictationAuditEvent,
   providerId = DEFAULT_PROVIDER_IDENTITY_ID,
 ) {
+  const durableEvent = await saveDictationAuditEventDurable(event, providerId);
+  if (durableEvent) {
+    return durableEvent;
+  }
+
   const db = await readDb();
   const normalizedEvent: DictationAuditEvent = {
     ...event,
@@ -371,6 +923,11 @@ export async function listDictationAuditEvents(input?: {
   sessionId?: string;
   limit?: number;
 }) {
+  const durableEvents = await listDictationAuditEventsDurable(input);
+  if (durableEvents) {
+    return durableEvents;
+  }
+
   const providerId = input?.providerId || DEFAULT_PROVIDER_IDENTITY_ID;
   const db = await readDb();
   const events = db.dictationAuditEvents
@@ -384,6 +941,11 @@ export async function listDictationAuditEvents(input?: {
 }
 
 export async function getLatestDraft(providerId = DEFAULT_PROVIDER_IDENTITY_ID, options?: { includeArchived?: boolean }) {
+  const durableDrafts = await listDurableDraftRows(providerId, options);
+  if (durableDrafts) {
+    return sortDrafts(durableDrafts)[0] ?? null;
+  }
+
   const db = await readDb();
   const drafts = sortDrafts(db.drafts.filter((draft) => (
     draft.providerIdentityId === providerId && (options?.includeArchived ? true : !draft.archivedAt)
@@ -392,6 +954,11 @@ export async function getLatestDraft(providerId = DEFAULT_PROVIDER_IDENTITY_ID, 
 }
 
 export async function listDrafts(providerId = DEFAULT_PROVIDER_IDENTITY_ID, options?: { includeArchived?: boolean }) {
+  const durableDrafts = await listDurableDraftRows(providerId, options);
+  if (durableDrafts) {
+    return sortDrafts(durableDrafts);
+  }
+
   const db = await readDb();
   return sortDrafts(db.drafts.filter((draft) => (
     draft.providerIdentityId === providerId && (options?.includeArchived ? true : !draft.archivedAt)
@@ -399,6 +966,15 @@ export async function listDrafts(providerId = DEFAULT_PROVIDER_IDENTITY_ID, opti
 }
 
 export async function getDraftById(draftId: string, providerId = DEFAULT_PROVIDER_IDENTITY_ID, options?: { includeArchived?: boolean }) {
+  const durableDraft = await getDurableDraftRecord(draftId, providerId, options);
+  if (durableDraft) {
+    return durableDraft;
+  }
+
+  if (getDurableSupabaseClient()) {
+    return null;
+  }
+
   const db = await readDb();
   return db.drafts.find((draft) => (
     draft.id === draftId
@@ -412,6 +988,28 @@ export async function markDraftOpened(
   providerId = DEFAULT_PROVIDER_IDENTITY_ID,
   recoveryState?: DraftSession['recoveryState'],
 ) {
+  const durableDraft = await getDurableDraftRecord(draftId, providerId);
+  if (durableDraft) {
+    const now = new Date().toISOString();
+    const next = normalizeDraftRecord({
+      ...durableDraft,
+      lastOpenedAt: now,
+      updatedAt: durableDraft.updatedAt,
+      recoveryState: buildDraftRecoveryState(durableDraft, {
+        workflowStage: recoveryState?.workflowStage || durableDraft.recoveryState?.workflowStage,
+        composeLane: recoveryState?.composeLane || durableDraft.recoveryState?.composeLane,
+        lastOpenedAt: now,
+        updatedAt: durableDraft.updatedAt,
+      }),
+    });
+
+    return upsertDurableDraft(next, providerId);
+  }
+
+  if (getDurableSupabaseClient()) {
+    return null;
+  }
+
   const db = await readDb();
   const index = db.drafts.findIndex((draft) => draft.id === draftId && draft.providerIdentityId === providerId);
   if (index < 0) {
@@ -438,6 +1036,20 @@ export async function markDraftOpened(
 }
 
 export async function archiveDraft(draftId: string, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const durableDraft = await getDurableDraftRecord(draftId, providerId);
+  if (durableDraft) {
+    const now = new Date().toISOString();
+    return upsertDurableDraft(normalizeDraftRecord({
+      ...durableDraft,
+      archivedAt: now,
+      updatedAt: now,
+    }), providerId);
+  }
+
+  if (getDurableSupabaseClient()) {
+    return null;
+  }
+
   const db = await readDb();
   const index = db.drafts.findIndex((draft) => draft.id === draftId && draft.providerIdentityId === providerId);
   if (index < 0) {
@@ -458,6 +1070,20 @@ export async function archiveDraft(draftId: string, providerId = DEFAULT_PROVIDE
 }
 
 export async function restoreDraft(draftId: string, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const durableDraft = await getDurableDraftRecord(draftId, providerId, { includeArchived: true });
+  if (durableDraft) {
+    const now = new Date().toISOString();
+    return upsertDurableDraft(normalizeDraftRecord({
+      ...durableDraft,
+      archivedAt: undefined,
+      updatedAt: now,
+    }), providerId);
+  }
+
+  if (getDurableSupabaseClient()) {
+    return null;
+  }
+
   const db = await readDb();
   const index = db.drafts.findIndex((draft) => draft.id === draftId && draft.providerIdentityId === providerId);
   if (index < 0) {
@@ -478,6 +1104,17 @@ export async function restoreDraft(draftId: string, providerId = DEFAULT_PROVIDE
 }
 
 export async function deleteDraft(draftId: string, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const supabase = getDurableSupabaseClient();
+  if (supabase) {
+    const { error, count } = await supabase
+      .from('veranote_drafts')
+      .delete({ count: 'exact' })
+      .eq('id', draftId)
+      .eq('provider_id', providerId);
+    assertDurableResult(error, 'delete draft');
+    return Boolean(count);
+  }
+
   const db = await readDb();
   const beforeCount = db.drafts.length;
   db.drafts = db.drafts.filter((draft) => !(draft.id === draftId && draft.providerIdentityId === providerId));
@@ -490,6 +1127,11 @@ export async function deleteDraft(draftId: string, providerId = DEFAULT_PROVIDER
 }
 
 export async function saveProviderSettings(settings: ProviderSettings, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const durableSettings = await saveProviderSettingsDurable(settings, providerId);
+  if (durableSettings) {
+    return durableSettings;
+  }
+
   const db = await readDb();
   const nextSettings = applyAssistantPersonaDefaults({
     ...DEFAULT_PROVIDER_SETTINGS,
@@ -513,34 +1155,46 @@ export async function saveProviderSettings(settings: ProviderSettings, providerI
 }
 
 export async function getProviderSettings(providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const durableSettings = await getProviderSettingsDurable(providerId);
+  if (durableSettings) {
+    return durableSettings;
+  }
+
   const db = await readDb();
-  const identity = findProviderIdentity(providerId);
   const scopedSettings = db.providerSettingsByProviderId?.[providerId];
-  const identitySeedSettings = {
-    ...DEFAULT_PROVIDER_SETTINGS,
-    providerProfileId: identity?.defaultProviderProfileId || DEFAULT_PROVIDER_SETTINGS.providerProfileId,
-    providerFirstName: identity?.firstName || DEFAULT_PROVIDER_SETTINGS.providerFirstName,
-    providerLastName: identity?.lastName || DEFAULT_PROVIDER_SETTINGS.providerLastName,
-    veraPreferredAddress: identity?.displayName || DEFAULT_PROVIDER_SETTINGS.veraPreferredAddress,
-  };
 
   return applyAssistantPersonaDefaults({
-    ...identitySeedSettings,
+    ...buildIdentitySeedSettings(providerId),
     ...(scopedSettings || db.providerSettings || {}),
   });
 }
 
 export async function getCurrentProviderIdentityId() {
+  const durableValue = await getAppStateValueDurable('currentProviderId');
+  if (durableValue) {
+    return durableValue;
+  }
+
   const db = await readDb();
   return db.currentProviderId || DEFAULT_PROVIDER_IDENTITY_ID;
 }
 
 export async function getCurrentProviderAccountId() {
+  const durableValue = await getAppStateValueDurable('currentProviderAccountId');
+  if (durableValue) {
+    return durableValue;
+  }
+
   const db = await readDb();
   return db.currentProviderAccountId || DEFAULT_PROVIDER_ACCOUNT_ID;
 }
 
 export async function saveCurrentProviderIdentityId(providerId: string) {
+  const durableValue = await saveAppStateValueDurable('currentProviderId', providerId || DEFAULT_PROVIDER_IDENTITY_ID);
+  if (durableValue) {
+    return durableValue;
+  }
+
   const db = await readDb();
   db.currentProviderId = providerId || DEFAULT_PROVIDER_IDENTITY_ID;
   await writeDb(db);
@@ -548,6 +1202,11 @@ export async function saveCurrentProviderIdentityId(providerId: string) {
 }
 
 export async function saveCurrentProviderAccountId(providerAccountId: string) {
+  const durableValue = await saveAppStateValueDurable('currentProviderAccountId', providerAccountId || DEFAULT_PROVIDER_ACCOUNT_ID);
+  if (durableValue) {
+    return durableValue;
+  }
+
   const db = await readDb();
   db.currentProviderAccountId = providerAccountId || DEFAULT_PROVIDER_ACCOUNT_ID;
   await writeDb(db);
@@ -555,11 +1214,21 @@ export async function saveCurrentProviderAccountId(providerAccountId: string) {
 }
 
 export async function listNotePresets(providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const durablePresets = await listNotePresetsDurable(providerId);
+  if (durablePresets) {
+    return durablePresets;
+  }
+
   const db = await readDb();
   return mergePresetCatalog(db.notePresetsByProviderId?.[providerId] || db.notePresets);
 }
 
 export async function saveNotePresets(presets: NotePreset[], providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const durablePresets = await saveNotePresetsDurable(presets, providerId);
+  if (durablePresets) {
+    return durablePresets;
+  }
+
   const db = await readDb();
   const mergedPresets = mergePresetCatalog(presets);
   db.notePresets = mergedPresets;
@@ -572,6 +1241,18 @@ export async function saveNotePresets(presets: NotePreset[], providerId = DEFAUL
 }
 
 export async function getDbStatus() {
+  const durableDrafts = await listDurableDraftRows(DEFAULT_PROVIDER_IDENTITY_ID, { includeArchived: true });
+  if (durableDrafts) {
+    return {
+      status: 'supabase-durable',
+      path: 'supabase:veranote_drafts',
+      draftCount: durableDrafts.length,
+      notePresetCount: (await listNotePresets(DEFAULT_PROVIDER_IDENTITY_ID)).length,
+      veranoteBuildTaskCount: 0,
+      assistantLearningProviderCount: 0,
+    };
+  }
+
   const db = await readDb();
 
   return {
@@ -597,6 +1278,11 @@ export async function saveVeranoteBuildTasks(tasks: VeranoteBuildTask[]) {
 }
 
 export async function listBetaFeedback() {
+  const durableFeedback = await listBetaFeedbackDurable();
+  if (durableFeedback) {
+    return durableFeedback;
+  }
+
   const db = await readDb();
   return db.betaFeedback;
 }
@@ -623,6 +1309,11 @@ export async function saveBetaFeedback(feedback: {
   regressionCaseId?: string;
   metadata?: BetaFeedbackMetadata;
 }) {
+  const durableFeedback = await saveBetaFeedbackDurable(feedback);
+  if (durableFeedback) {
+    return durableFeedback;
+  }
+
   const db = await readDb();
   const record: BetaFeedbackItem = {
     id: createFeedbackId(),
@@ -664,6 +1355,11 @@ export async function updateBetaFeedback(id: string, patch: Partial<Pick<
   BetaFeedbackItem,
   'status' | 'adminNotes' | 'convertedToRegression' | 'regressionCaseId'
 >>) {
+  const durableFeedback = await updateBetaFeedbackDurable(id, patch);
+  if (durableFeedback) {
+    return durableFeedback;
+  }
+
   const db = await readDb();
   let updated: BetaFeedbackItem | null = null;
 
@@ -687,6 +1383,11 @@ export async function updateBetaFeedback(id: string, patch: Partial<Pick<
 }
 
 export async function getAssistantLearning(providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const durableLearning = await getAssistantLearningDurable(providerId);
+  if (durableLearning) {
+    return durableLearning;
+  }
+
   const db = await readDb();
   return {
     ...createEmptyAssistantLearningStore(),
@@ -695,6 +1396,11 @@ export async function getAssistantLearning(providerId = DEFAULT_PROVIDER_IDENTIT
 }
 
 export async function saveAssistantLearning(learningStore: AssistantLearningStore, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const durableLearning = await saveAssistantLearningDurable(learningStore, providerId);
+  if (durableLearning) {
+    return durableLearning;
+  }
+
   const db = await readDb();
   const merged = {
     ...createEmptyAssistantLearningStore(),
@@ -717,6 +1423,11 @@ export async function saveAssistantLearning(learningStore: AssistantLearningStor
 }
 
 export async function getVeraMemoryLedger(providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const durableLedger = await getVeraMemoryLedgerDurable(providerId);
+  if (durableLedger) {
+    return durableLedger;
+  }
+
   const db = await readDb();
   return db.veraMemoryLedgerByProviderId?.[providerId]
     || buildVeraMemoryLedger({
