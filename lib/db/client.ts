@@ -1,4 +1,5 @@
 import { promises as fs } from 'fs';
+import { tmpdir } from 'os';
 import path from 'path';
 import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '@/lib/constants/settings';
 import { DEFAULT_PROVIDER_ACCOUNT_ID } from '@/lib/constants/provider-accounts';
@@ -36,12 +37,28 @@ type PrototypeDb = {
   betaFeedback: BetaFeedbackItem[];
 };
 
-const DATA_DIR = process.env.PROTOTYPE_DATA_DIR
-  ? path.resolve(process.env.PROTOTYPE_DATA_DIR)
-  : path.join(process.cwd(), '.prototype-data');
-const DB_PATH = process.env.PROTOTYPE_DB_PATH
-  ? path.resolve(process.env.PROTOTYPE_DB_PATH)
-  : path.join(DATA_DIR, 'prototype-db.json');
+export function resolvePrototypeDataDir(env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()) {
+  if (env.PROTOTYPE_DATA_DIR) {
+    return path.resolve(env.PROTOTYPE_DATA_DIR);
+  }
+
+  if (env.VERCEL || env.AWS_LAMBDA_FUNCTION_NAME || env.NEXT_RUNTIME) {
+    return path.join(tmpdir(), 'veranote-prototype-data');
+  }
+
+  return path.join(cwd, '.prototype-data');
+}
+
+export function resolvePrototypeDbPath(env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()) {
+  if (env.PROTOTYPE_DB_PATH) {
+    return path.resolve(env.PROTOTYPE_DB_PATH);
+  }
+
+  return path.join(resolvePrototypeDataDir(env, cwd), 'prototype-db.json');
+}
+
+const DATA_DIR = resolvePrototypeDataDir();
+const DB_PATH = resolvePrototypeDbPath();
 
 const defaultDb: PrototypeDb = {
   drafts: [],
