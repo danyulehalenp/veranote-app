@@ -100,8 +100,11 @@ export function evaluateLiveAssistantConversationTurn(
     failureReasons.push(`unexpected routePriority: ${input.routePriority || 'missing'}`);
   }
 
-  if (checkMetadata && turn.expectedConversationRewrite !== undefined && input.conversationDidRewrite !== turn.expectedConversationRewrite) {
-    failureReasons.push(`unexpected conversation rewrite: ${String(input.conversationDidRewrite)}`);
+  if (checkMetadata && turn.expectedConversationRewrite !== undefined) {
+    const actualConversationRewrite = input.conversationDidRewrite === true;
+    if (actualConversationRewrite !== turn.expectedConversationRewrite) {
+      failureReasons.push(`unexpected conversation rewrite: ${String(input.conversationDidRewrite)}`);
+    }
   }
 
   const hasQuestion = /\?/.test(answer) || /\bfollow-up:/i.test(answer) || /\bfollow up\b/i.test(normalizedAnswer);

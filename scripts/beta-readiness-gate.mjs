@@ -15,9 +15,9 @@ import path from 'node:path';
 const OUTPUT_DIR = process.env.BETA_GATE_OUTPUT_DIR || 'test-results';
 const COMMANDS = [
   {
-    name: 'Production domain smoke check',
-    command: 'curl',
-    args: ['-I', '--max-time', '25', 'https://app.veranote.org'],
+    name: 'Production sign-in smoke QA',
+    command: 'npm',
+    args: ['run', 'production:smoke'],
     required: true,
   },
   {

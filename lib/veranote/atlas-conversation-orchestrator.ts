@@ -51,6 +51,10 @@ type AtlasConversationInput = {
 
 const COMMON_CLINICAL_SPELLING_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bu\b/g, 'you'],
+  [/\bwat\b/g, 'what'],
+  [/\bwht\b/g, 'what'],
+  [/\bshuld\b/g, 'should'],
+  [/\bshoud\b/g, 'should'],
   [/\belaberat(e|ed|ing)?\b/g, 'elaborate'],
   [/\belaborat\b/g, 'elaborate'],
   [/\bcritera\b/g, 'criteria'],
@@ -84,6 +88,8 @@ const COMMON_CLINICAL_SPELLING_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bplz\b/g, 'please'],
   [/\bseziure\b/g, 'seizure'],
   [/\bsezur(e|es)?\b/g, 'seizure'],
+  [/\bintreaction\b/g, 'interaction'],
+  [/\binteracton\b/g, 'interaction'],
   [/\bsuicdal\b/g, 'suicidal'],
   [/\bcollaterol\b/g, 'collateral'],
   [/\bhalucinations\b/g, 'hallucinations'],
@@ -492,6 +498,34 @@ export function buildAtlasConversationFallbackPayload(
   const original = normalizeText(conversation.originalMessage);
   const prior = normalizeText(conversation.activeTopic.providerQuestion);
   const combined = `${prior} ${original}`;
+
+  if (
+    conversation.routeHint === 'medication_reference'
+    && /\bwellbutrin|bupropion\b/.test(combined)
+    && /\bpaxil|paroxetine\b/.test(combined)
+  ) {
+    if (/\bverify|check|document\b/.test(original)) {
+      return {
+        message: 'For bupropion plus paroxetine, verify the exact medication list/doses, seizure risk factors, eating-disorder history, alcohol or sedative withdrawal risk, blood pressure/activation/anxiety, other serotonergic or CYP2D6-sensitive medications, and the current interaction reference. Keep the answer as interaction review, not a medication-change instruction.',
+        suggestions: [
+          'Bupropion can lower seizure threshold and inhibit CYP2D6.',
+          'Paroxetine is also clinically relevant for serotonin effects and CYP2D6 considerations.',
+        ],
+        answerMode: 'medication_reference_answer',
+        builderFamily: 'medication-boundary',
+      };
+    }
+
+    return {
+      message: 'The main bupropion/paroxetine issues are interaction review and patient-specific risk checks: bupropion lowers seizure threshold and can inhibit CYP2D6, while paroxetine adds SSRI-related considerations and CYP2D6 relevance. Verify seizure/eating-disorder/withdrawal risk, activation or BP concerns, other meds, and a current interaction source before documenting.',
+      suggestions: [
+        'Do not frame the combination as automatically safe.',
+        'Avoid patient-specific prescribing instructions unless the clinician has made that decision.',
+      ],
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+    };
+  }
 
   if (
     conversation.routeHint === 'medication_reference'

@@ -2,6 +2,7 @@ import { loadEnvConfig } from '@next/env';
 import fs from 'node:fs';
 import { buildSourceInputFromSections } from '@/lib/ai/source-sections';
 import { generateNote } from '@/lib/ai/generate-note';
+import { buildReviewedDocumentSourceBlock } from '@/lib/document-intake/source-document-intake';
 import type { SourceSections } from '@/types/session';
 
 type RequiredPattern = {
@@ -241,6 +242,53 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'medical clearance invented', pattern: /medically cleared for|cleared for psychiatric admission|cleared for psych/i },
       { label: 'schizophrenia diagnosis invented', pattern: /diagnosed with schizophrenia|schizophrenia is diagnosed|meets criteria for schizophrenia/i },
       { label: 'OCR uncertainty erased', pattern: /CBC (?:normal|within normal limits)|UDS confirms no substance use/i },
+    ],
+  },
+  {
+    id: 'reviewed-document-source-preserves-pending-labs-and-collateral',
+    title: 'Reviewed outside document block preserves pending labs, collateral, and discharge uncertainty',
+    noteType: 'Inpatient Psych Progress Note',
+    customInstructions: 'Treat the reviewed document block as source material. Preserve pending labs and collateral without converting them into confirmed clearance or discharge readiness.',
+    sourceSections: {
+      intakeCollateral: buildReviewedDocumentSourceBlock({
+        fileName: 'ER referral packet.pdf',
+        mimeType: 'application/pdf',
+        sourceKind: 'pdf',
+        extractionMode: 'manual-ocr-review',
+        reviewedText: [
+          'Provider-reviewed OCR from ER referral packet:',
+          '- Lithium level ordered but result pending at time of transfer.',
+          '- Mother collateral reports patient stopped medication after recent discharge.',
+          '- ED note does not include a final discharge plan.',
+          '- Medical clearance wording is not present in the reviewed source.',
+        ].join('\n'),
+      }),
+      clinicianNotes: [
+        'Live visit notes:',
+        '- Patient requests discharge and says he feels fine.',
+        '- Patient states he took medication yesterday, but timing is vague.',
+        '- Mood irritable; sleep poor last night.',
+        '- Denies current SI/HI.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nPatient: "My mom worries too much. I took something yesterday, I think."',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Do not state lithium level is normal.',
+        '- Do not state medically cleared.',
+        '- Do not state safe for discharge.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'pending lithium result remains visible', pattern: /lithium(?: level)?.{0,80}pending|pending.{0,80}lithium/i },
+      { label: 'mother collateral remains visible', pattern: /mother|collateral/i },
+      { label: 'medication nonadherence concern remains visible', pattern: /stopped medication|nonadher|medication adherence|took medication yesterday|timing is vague/i },
+      { label: 'discharge uncertainty remains visible', pattern: /discharge.{0,80}(?:not documented|not established|unclear|no final|uncertain)|no final discharge plan/i },
+    ],
+    forbidden: [
+      { label: 'medical clearance invented', pattern: /medically cleared|cleared for psych|cleared for psychiatric/i },
+      { label: 'safe discharge invented', pattern: /safe for discharge|stable for discharge/i },
+      { label: 'lithium result invented', pattern: /lithium (?:level )?(?:normal|within normal limits|wnl|therapeutic)/i },
+      { label: 'collateral conflict erased', pattern: /adherent with medication|taking as prescribed|mother confirms adherence/i },
     ],
   },
   {
@@ -496,7 +544,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
     forbidden: [
       { label: 'adherence overstated', pattern: /taking as prescribed|perfect adherence|fully adherent|good adherence|adherent with medication/i },
       { label: 'side effect erased', pattern: /no side effects|denies side effects|tolerating without side effects/i },
-      { label: 'dose change invented', pattern: /increase sertraline|decrease sertraline|adjust sertraline|sertraline[^.\n]{0,80}(?:increased|decreased|adjusted)|(?:sertraline dose|dose of sertraline)[^.\n]{0,80}(?:increased|decreased|adjusted)/i },
+      { label: 'dose change invented', pattern: /(?:increase|decrease|adjust)\s+sertraline\b|sertraline[^.\n]{0,80}\b(?:increased|decreased)\b|(?:sertraline dose|dose of sertraline)(?![^.\n]{0,80}\b(?:not|no)\b)[^.\n]{0,80}\badjusted\b/i },
       { label: 'provider instruction leaked', pattern: /treat misspellings as rushed typing|perfect adherence|Provider Add-On/i },
     ],
   },

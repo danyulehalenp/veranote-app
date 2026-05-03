@@ -4,6 +4,7 @@ import {
   buildReviewedDocumentSourceBlock,
   canReadDocumentAsBrowserText,
   classifyDocumentSourceKind,
+  getDocumentIntakePlan,
   inferDocumentSourceBucket,
   normalizeReviewedDocumentText,
   sanitizeDocumentFileName,
@@ -22,6 +23,28 @@ describe('document source intake', () => {
     expect(canReadDocumentAsBrowserText('nursing-intake.md', '')).toBe(true);
     expect(canReadDocumentAsBrowserText('scan.pdf', 'application/pdf')).toBe(false);
     expect(canReadDocumentAsBrowserText('prior-note.docx', '')).toBe(false);
+  });
+
+  it('describes current and future intake automation by file type', () => {
+    expect(getDocumentIntakePlan('nursing-intake.md').capability).toBe('browser-text-now');
+    expect(getDocumentIntakePlan('ER packet.pdf', 'application/pdf')).toMatchObject({
+      sourceKind: 'pdf',
+      extractionMode: 'manual-ocr-review',
+      capability: 'future-pdf-text-extraction',
+      targetSourceLane: 'Pre-Visit Data',
+    });
+    expect(getDocumentIntakePlan('scan.jpeg', 'image/jpeg')).toMatchObject({
+      extractionMode: 'manual-ocr-review',
+      capability: 'future-image-ocr',
+    });
+    expect(getDocumentIntakePlan('prior-note.docx')).toMatchObject({
+      extractionMode: 'manual-summary',
+      capability: 'future-word-parser',
+    });
+    expect(getDocumentIntakePlan('labs.xlsx')).toMatchObject({
+      extractionMode: 'manual-summary',
+      capability: 'future-spreadsheet-parser',
+    });
   });
 
   it('normalizes noisy extracted text without inventing content', () => {

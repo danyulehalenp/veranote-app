@@ -2,6 +2,24 @@ export const DOCUMENT_INTAKE_MAX_CHARACTERS = 30_000;
 
 export type DocumentSourceKind = 'text' | 'pdf' | 'image' | 'word' | 'spreadsheet' | 'unknown';
 export type DocumentExtractionMode = 'browser-text' | 'manual-ocr-review' | 'manual-summary';
+export type DocumentIntakeAutomationCapability =
+  | 'browser-text-now'
+  | 'provider-reviewed-ocr-now'
+  | 'provider-summary-now'
+  | 'future-pdf-text-extraction'
+  | 'future-image-ocr'
+  | 'future-word-parser'
+  | 'future-spreadsheet-parser';
+
+export type DocumentIntakePlan = {
+  sourceKind: DocumentSourceKind;
+  extractionMode: DocumentExtractionMode;
+  canAutoReadBrowserText: boolean;
+  capability: DocumentIntakeAutomationCapability;
+  providerInstruction: string;
+  futureAutomation: string;
+  targetSourceLane: 'Pre-Visit Data';
+};
 
 export type ReviewedDocumentSourceInput = {
   fileName?: string;
@@ -59,6 +77,81 @@ export function classifyDocumentSourceKind(fileName = '', mimeType = ''): Docume
 
 export function canReadDocumentAsBrowserText(fileName = '', mimeType = '') {
   return classifyDocumentSourceKind(fileName, mimeType) === 'text';
+}
+
+export function getDocumentIntakePlan(fileName = '', mimeType = ''): DocumentIntakePlan {
+  const sourceKind = classifyDocumentSourceKind(fileName, mimeType);
+  const canAutoReadBrowserText = canReadDocumentAsBrowserText(fileName, mimeType);
+
+  if (canAutoReadBrowserText) {
+    return {
+      sourceKind,
+      extractionMode: 'browser-text',
+      canAutoReadBrowserText,
+      capability: 'browser-text-now',
+      providerInstruction: 'Readable text can be extracted locally. Review it before loading it into Pre-Visit Data.',
+      futureAutomation: 'Already supported for browser-readable text files.',
+      targetSourceLane: 'Pre-Visit Data',
+    };
+  }
+
+  if (sourceKind === 'pdf') {
+    return {
+      sourceKind,
+      extractionMode: 'manual-ocr-review',
+      canAutoReadBrowserText,
+      capability: 'future-pdf-text-extraction',
+      providerInstruction: 'PDF packets need reviewed text first. Paste OCR output or a provider-reviewed summary before loading source.',
+      futureAutomation: 'Phase 2 target: PDF text extraction with provider review before drafting.',
+      targetSourceLane: 'Pre-Visit Data',
+    };
+  }
+
+  if (sourceKind === 'image') {
+    return {
+      sourceKind,
+      extractionMode: 'manual-ocr-review',
+      canAutoReadBrowserText,
+      capability: 'future-image-ocr',
+      providerInstruction: 'Scans and photos need OCR/manual review first. Paste reviewed OCR text before loading source.',
+      futureAutomation: 'Phase 2 target: image OCR with confidence warnings and provider review.',
+      targetSourceLane: 'Pre-Visit Data',
+    };
+  }
+
+  if (sourceKind === 'word') {
+    return {
+      sourceKind,
+      extractionMode: 'manual-summary',
+      canAutoReadBrowserText,
+      capability: 'future-word-parser',
+      providerInstruction: 'Word documents need copied text or a provider-reviewed summary before loading source.',
+      futureAutomation: 'Phase 2 target: Word document text extraction with section detection.',
+      targetSourceLane: 'Pre-Visit Data',
+    };
+  }
+
+  if (sourceKind === 'spreadsheet') {
+    return {
+      sourceKind,
+      extractionMode: 'manual-summary',
+      canAutoReadBrowserText,
+      capability: 'future-spreadsheet-parser',
+      providerInstruction: 'Spreadsheets need reviewed lab/table text or a provider summary before loading source.',
+      futureAutomation: 'Phase 2 target: spreadsheet/table extraction for labs and objective data.',
+      targetSourceLane: 'Pre-Visit Data',
+    };
+  }
+
+  return {
+    sourceKind,
+    extractionMode: 'manual-summary',
+    canAutoReadBrowserText,
+    capability: 'provider-summary-now',
+    providerInstruction: 'Paste provider-reviewed text or a summary before loading this document into source.',
+    futureAutomation: 'Future automation depends on the file type and extraction confidence.',
+    targetSourceLane: 'Pre-Visit Data',
+  };
 }
 
 export function normalizeReviewedDocumentText(value: string, maxCharacters = DOCUMENT_INTAKE_MAX_CHARACTERS) {

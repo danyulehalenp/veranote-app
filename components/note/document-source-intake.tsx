@@ -4,9 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
   buildReviewedDocumentSourceBlock,
-  canReadDocumentAsBrowserText,
-  classifyDocumentSourceKind,
   documentExtractionModeLabel,
+  getDocumentIntakePlan,
   normalizeReviewedDocumentText,
   type DocumentExtractionMode,
   type DocumentSourceKind,
@@ -44,6 +43,7 @@ export function DocumentSourceIntake({ onCommitToSource }: DocumentSourceIntakeP
   const [status, setStatus] = useState('Choose a file, paste OCR text, or type a reviewed summary.');
   const [error, setError] = useState('');
   const [isHydrated, setIsHydrated] = useState(false);
+  const intakePlan = getDocumentIntakePlan(fileName, mimeType);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -57,12 +57,13 @@ export function DocumentSourceIntake({ onCommitToSource }: DocumentSourceIntakeP
       return;
     }
 
-    const nextSourceKind = classifyDocumentSourceKind(file.name, file.type);
+    const nextPlan = getDocumentIntakePlan(file.name, file.type);
+    const nextSourceKind = nextPlan.sourceKind;
     setFileName(file.name);
     setMimeType(file.type);
     setSourceKind(nextSourceKind);
 
-    if (canReadDocumentAsBrowserText(file.name, file.type)) {
+    if (nextPlan.canAutoReadBrowserText) {
       try {
         const extractedText = normalizeReviewedDocumentText(await file.text());
         setReviewText(extractedText);
@@ -78,8 +79,8 @@ export function DocumentSourceIntake({ onCommitToSource }: DocumentSourceIntakeP
     }
 
     setReviewText('');
-    setExtractionMode(nextSourceKind === 'pdf' || nextSourceKind === 'image' ? 'manual-ocr-review' : 'manual-summary');
-    setStatus('This file needs OCR/manual review first. Paste reviewed OCR text or a provider summary below.');
+    setExtractionMode(nextPlan.extractionMode);
+    setStatus(nextPlan.providerInstruction);
   }
 
   function handleCommit() {
@@ -154,6 +155,8 @@ export function DocumentSourceIntake({ onCommitToSource }: DocumentSourceIntakeP
               <div>File: <span className="font-semibold text-white">{fileName || 'None selected'}</span></div>
               <div>Type: <span className="font-semibold text-white">{sourceKindLabel(sourceKind)}</span></div>
               <div>Mode: <span className="font-semibold text-white">{documentExtractionModeLabel(extractionMode)}</span></div>
+              <div>Target: <span className="font-semibold text-white">{intakePlan.targetSourceLane}</span></div>
+              <div>Automation: <span className="font-semibold text-white">{intakePlan.futureAutomation}</span></div>
               <div className="pt-1 text-cyan-50/68">{status}</div>
             </div>
           </div>
