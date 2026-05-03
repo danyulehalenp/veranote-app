@@ -309,7 +309,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
     },
     required: [
       { label: 'day-two follow-up content visible', pattern: /Day 2|day two|follow-up|f\/u/i },
-      { label: 'sleep and medication-taking detail visible', pattern: /slept 5|5 hrs|took scheduled meds|took the meds/i },
+      { label: 'sleep and medication-taking detail visible', pattern: /slept 5|5 (?:hrs?|hours?)|took scheduled med(?:s|ications)|took the meds/i },
       { label: 'SI/HI denial visible', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
       { label: 'limited MSE remains visible', pattern: /MSE.*(?:limited|not documented|not detailed)|mental status.*(?:limited|not documented|not detailed)|detailed MSE/i },
     ],
@@ -317,6 +317,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'invented normal MSE', pattern: /thought process (?:is )?(?:linear|logical)|insight and judgment (?:are )?(?:good|intact)|alert and oriented x ?[34]/i },
       { label: 'discharge readiness invented', pattern: /ready for discharge|stable for discharge|safe for discharge/i },
       { label: 'unsupported low-risk conclusion', pattern: /\blow[-\s]?risk\b|\brisk is low\b/i },
+      { label: 'unsupported medical stability conclusion', pattern: /\bmedically stable\b/i },
       { label: 'group attendance invented', pattern: /attended group|participated in group/i },
     ],
   },

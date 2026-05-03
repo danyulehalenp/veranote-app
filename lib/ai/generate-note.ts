@@ -228,20 +228,97 @@ function hardenRiskReassuranceWording(note: string, noteType: string) {
   .replace(/\bcontract(?:ed)?\s+for\s+safety\b/gi, 'safety planning status requires documentation');
 }
 
-function removeProviderAddOnInstructionEcho(note: string) {
+function preserveDocumentedSleepDetail(note: string, noteType: string, sourceInput: string) {
+ if (!/inpatient psych day two|inpatient psych progress/i.test(noteType)) return note;
+
+ const sleepMatch = sourceInput.match(/\b(?:slept\s*)?(\d+(?:\.\d+)?)\s*(?:hrs?|hours?)\b/i);
+ if (!sleepMatch?.[0]) return note;
+ if (new RegExp(`\\b${escapeRegExp(sleepMatch[1])}\\s*(?:hrs?|hours?)\\b`, 'i').test(note)) return note;
+
+ const sleepDetail = sleepMatch[0].replace(/^slept\s*/i, '').trim();
+ const sentence = `Overnight sleep duration was documented as ${sleepDetail}.`;
+ if (/Medications \/ Early Tolerability \/ Side Effects:/i.test(note)) {
+  return note.replace(
+   /(Medications \/ Early Tolerability \/ Side Effects:\s*)/i,
+   `$1${sentence} `,
+  );
+ }
+
+ return `${note.trim()}\n\nSleep / Overnight Nursing:\n${sentence}`;
+}
+
+function removeUnsupportedMedicalStability(note: string, sourceInput: string) {
+ if (/\bmedically stable|medical stability\b/i.test(sourceInput)) return note;
+
  return note
+  .replace(/\bthe patient (?:remains|is|was) medically stable\b/gi, 'Medical stability is not established from the provided source')
+  .replace(/\bpatient (?:remains|is|was) medically stable\b/gi, 'Medical stability is not established from the provided source')
+  .replace(/\b(?:remains|is|was) medically stable\b/gi, 'Medical stability is not established from the provided source');
+}
+
+function preserveMedicalClearanceUncertainty(note: string, sourceInput: string) {
+ const sourceHasUncertainClearance = /\bmed clear\?|medical(?:ly)? clear\?|do not state medically cleared|medical clearance.*(?:pending|unclear|question|not documented)|cbc not (?:visible|visable)|lab sheet not included/i.test(sourceInput);
+ if (!sourceHasUncertainClearance) return note;
+ if (/\bmedical clearance\b|med clear\?|clearance.{0,80}(?:unclear|question|not established|not documented)|not medically cleared/i.test(note)) return note;
+
+ return `${note.trim()}\n\nMedical Clearance / Source Limitation:\nMedical clearance is not established from the provided source; the transfer note included \"med clear?\" and source documentation is incomplete.`;
+}
+
+function hardenSourceBoundRiskWording(note: string, sourceInput: string) {
+ const hasRiskNuance = /(passive death|wish .*not wake|wish .*wouldn[’']?t wake|passive si|suicid|self-harm|do not summarize as low[-\s]?risk)/i.test(sourceInput);
+ if (!hasRiskNuance) return note;
+
+ return note
+  .replace(/\blow[-\s]?risk\b/gi, 'risk not fully established from the provided source')
+  .replace(/\brisk\s+is\s+low\b/gi, 'risk is not fully established from the provided source')
+  .replace(/\bno\s+acute\s+safety\s+concerns?\b/gi, 'acute safety risk is not fully established from the provided source')
+  .replace(/\bno\s+safety\s+concerns?\b/gi, 'safety risk is not fully established from the provided source');
+}
+
+function providerAddOnDirectiveLines(sourceInput: string) {
+ const match = sourceInput.match(/\bProvider Add-On:\s*([\s\S]*)$/i);
+ if (!match?.[1]) return [];
+
+ return match[1]
+  .split(/\r?\n/)
+  .map((line) => line.replace(/^\s*[-*]\s*/, '').trim())
+  .filter((line) => /^(?:do not|don['’]t|preserve|keep|include|avoid|use|mention|named prompt|diagnosis preference|cpt preference|billing code)\b/i.test(line));
+}
+
+function removeProviderAddOnInstructionEcho(note: string, sourceInput = '') {
+ let cleaned = note
   .replace(/\s*,?\s*(?:and\s+)?provider add[-\s]?on(?:\s+instructions?)?/gi, '')
   .replace(/\bprovider add[-\s]?on(?:\s+instructions?)?\b/gi, 'provider guidance')
   .replace(/(?:^|\n)\s*provider guidance\s*:\s*[\s\S]*?(?=\n\n[A-Z][^\n]{1,90}:|$)/gim, '')
   .replace(/(?:^|\n)\s*provider guidance\s+(?:instructs|says|notes?|states)[^\n.]*(?:\.\s*)?/gim, '\n')
   .replace(/(?:^|[\s.])instructs?\s+to\s+(?:preserve|keep|avoid|not|use)[^\n.]*(?:\.\s*)?/gi, ' ')
   .replace(/(?:^|\n)\s*Billing code[^.\n]*(?:\.\s*)?/gim, '')
+  .replace(/\bBilling code\b[^.\n]*(?:\.\s*)?/gi, '')
+  .replace(/\b(?:CPT preference|Named prompt|Diagnosis preference)\b[^.\n]*(?:\.\s*)?/gi, '')
   .replace(/\bdo not summarize as low[-\s]?risk\b/gi, '')
   .replace(/\bdo not state confirmed hallucinations\b/gi, '')
   .replace(/\bdo not diagnose substance-induced psychosis\b/gi, '')
+  .replace(/[ \t]{2,}/g, ' ');
+
+ for (const directive of providerAddOnDirectiveLines(sourceInput)) {
+  cleaned = cleaned.replace(new RegExp(`(?:^|[\\n.\\s])${escapeRegExp(directive)}(?:[.\\s]*|$)`, 'gi'), ' ');
+ }
+
+ return cleaned
   .replace(/[ \t]{2,}/g, ' ')
   .replace(/\n{3,}/g, '\n\n')
   .trim();
+}
+
+function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
+ const withRequiredHeadings = enforceProgressNoteHeadings(note, input.noteType);
+ const withRiskHardened = hardenRiskReassuranceWording(withRequiredHeadings, input.noteType);
+ const withSleepPreserved = preserveDocumentedSleepDetail(withRiskHardened, input.noteType, input.sourceInput);
+ const withoutUnsupportedMedicalStability = removeUnsupportedMedicalStability(withSleepPreserved, input.sourceInput);
+ const withMedicalClearancePreserved = preserveMedicalClearanceUncertainty(withoutUnsupportedMedicalStability, input.sourceInput);
+ const withSourceBoundRisk = hardenSourceBoundRiskWording(withMedicalClearancePreserved, input.sourceInput);
+
+ return removeProviderAddOnInstructionEcho(withSourceBoundRisk, input.sourceInput);
 }
 
 export async function generateNote(input: GenerateNoteInput): Promise<GenerateNoteWithMetaResult> {
@@ -250,10 +327,7 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
 
  if (!apiKey) {
  const fallback = generateMockNote(input.sourceInput, input.noteType, input.flagMissingInfo);
- const fallbackNote = removeProviderAddOnInstructionEcho(hardenRiskReassuranceWording(
-  enforceProgressNoteHeadings(fallback.note, input.noteType),
-  input.noteType,
- ));
+ const fallbackNote = finalizeGeneratedNote(fallback.note, input);
  return {
  ...fallback,
  note: fallbackNote,
@@ -397,10 +471,7 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
  const parsed = JSON.parse(outputText);
  const validated = GenerateNoteResponseSchema.parse(parsed);
 
-	 const liveNote = removeProviderAddOnInstructionEcho(hardenRiskReassuranceWording(
-	  enforceProgressNoteHeadings(validated.note, input.noteType),
-	  input.noteType,
-	 ));
+	 const liveNote = finalizeGeneratedNote(validated.note, input);
 
 	 return {
 	 note: liveNote,
@@ -417,10 +488,7 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
  };
  } catch (error) {
  const fallback = generateMockNote(input.sourceInput, input.noteType, input.flagMissingInfo);
- const fallbackNote = removeProviderAddOnInstructionEcho(hardenRiskReassuranceWording(
-  enforceProgressNoteHeadings(fallback.note, input.noteType),
-  input.noteType,
- ));
+ const fallbackNote = finalizeGeneratedNote(fallback.note, input);
 
  return {
  ...fallback,
