@@ -227,16 +227,32 @@ function hardenRiskReassuranceWording(note: string, noteType: string) {
   .replace(/\bcontract(?:ed)?\s+for\s+safety\b/gi, 'safety planning status requires documentation');
 }
 
+function removeProviderAddOnInstructionEcho(note: string) {
+ return note
+  .replace(/\s*,?\s*(?:and\s+)?provider add[-\s]?on(?:\s+instructions?)?/gi, '')
+  .replace(/\bprovider add[-\s]?on(?:\s+instructions?)?\b/gi, 'provider guidance')
+  .replace(/(?:^|\n)\s*provider guidance\s*:\s*[\s\S]*?(?=\n\n[A-Z][^\n]{1,90}:|$)/gim, '')
+  .replace(/(?:^|\n)\s*provider guidance\s+(?:instructs|says|notes?|states)[^\n.]*(?:\.\s*)?/gim, '\n')
+  .replace(/(?:^|[\s.])instructs?\s+to\s+(?:preserve|keep|avoid|not|use)[^\n.]*(?:\.\s*)?/gi, ' ')
+  .replace(/(?:^|\n)\s*Billing code[^.\n]*(?:\.\s*)?/gim, '')
+  .replace(/\bdo not summarize as low[-\s]?risk\b/gi, '')
+  .replace(/\bdo not state confirmed hallucinations\b/gi, '')
+  .replace(/\bdo not diagnose substance-induced psychosis\b/gi, '')
+  .replace(/[ \t]{2,}/g, ' ')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+}
+
 export async function generateNote(input: GenerateNoteInput): Promise<GenerateNoteWithMetaResult> {
  const apiKey = process.env.OPENAI_API_KEY;
  const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 
  if (!apiKey) {
  const fallback = generateMockNote(input.sourceInput, input.noteType, input.flagMissingInfo);
- const fallbackNote = hardenRiskReassuranceWording(
+ const fallbackNote = removeProviderAddOnInstructionEcho(hardenRiskReassuranceWording(
   enforceProgressNoteHeadings(fallback.note, input.noteType),
   input.noteType,
- );
+ ));
  return {
  ...fallback,
  note: fallbackNote,
@@ -380,10 +396,10 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
  const parsed = JSON.parse(outputText);
  const validated = GenerateNoteResponseSchema.parse(parsed);
 
-	 const liveNote = hardenRiskReassuranceWording(
+	 const liveNote = removeProviderAddOnInstructionEcho(hardenRiskReassuranceWording(
 	  enforceProgressNoteHeadings(validated.note, input.noteType),
 	  input.noteType,
-	 );
+	 ));
 
 	 return {
 	 note: liveNote,
@@ -400,10 +416,10 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
  };
  } catch (error) {
  const fallback = generateMockNote(input.sourceInput, input.noteType, input.flagMissingInfo);
- const fallbackNote = hardenRiskReassuranceWording(
+ const fallbackNote = removeProviderAddOnInstructionEcho(hardenRiskReassuranceWording(
   enforceProgressNoteHeadings(fallback.note, input.noteType),
   input.noteType,
- );
+ ));
 
  return {
  ...fallback,

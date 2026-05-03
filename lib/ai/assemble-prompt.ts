@@ -29,6 +29,11 @@ type AssemblePromptInput = {
 export function assemblePrompt(input: AssemblePromptInput) {
   const sanitizedSourceInput = sanitizePHI(input.sourceInput).sanitizedText;
   const constraints = summarizeSourceConstraints(sanitizedSourceInput);
+  const sourceHasVeranoteInputLanes =
+    /\bPre-Visit Data\s*:/i.test(sanitizedSourceInput)
+    || /\bLive Visit Notes\s*:/i.test(sanitizedSourceInput)
+    || /\bAmbient Transcript\s*:/i.test(sanitizedSourceInput)
+    || /\bProvider Add-On\s*:/i.test(sanitizedSourceInput);
 
   const styleSettings = [
     `Specialty: ${input.specialty}`,
@@ -40,6 +45,15 @@ export function assemblePrompt(input: AssemblePromptInput) {
   ].join('\n');
 
   const sourceShapeDirectives = [
+    sourceHasVeranoteInputLanes
+      ? 'The source packet is divided into Veranote input lanes. Treat Pre-Visit Data, Live Visit Notes, Ambient Transcript, and Provider Add-On as separate source types; preserve attribution when they disagree instead of blending them into one settled narrative.'
+      : null,
+    sourceHasVeranoteInputLanes
+      ? 'Provider Add-On may contain provider instructions, billing/code preferences, plan preferences, or site-specific formatting needs. Use it to guide drafting when appropriate, but do not treat it as patient-reported history, objective data, or completed clinical action unless the source explicitly says so.'
+      : null,
+    sourceHasVeranoteInputLanes
+      ? 'Do not quote, label, or summarize Provider Add-On instructions inside the clinical note. If a Provider Add-On says "do not..." or names a formatting/billing preference, obey that instruction silently or surface it as a separate review flag only when needed.'
+      : null,
     constraints.sourceIsVerySparse
       ? 'Very-sparse-input mode: the source contains only a few facts. Stay near-literal. Do not add summary sentences such as "status unchanged," "no new symptoms," or other completeness language unless the source itself says that.'
       : constraints.sourceIsSparse

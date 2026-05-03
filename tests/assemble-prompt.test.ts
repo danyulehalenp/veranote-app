@@ -24,6 +24,31 @@ describe('assemblePrompt', () => {
     expect(prompt).toContain('only generate HPI');
   });
 
+  it('treats Veranote four-field source packet labels as separate source lanes', () => {
+    const prompt = assemblePrompt({
+      ...baseInput,
+      sourceInput: [
+        'Pre-Visit Data:',
+        'Nursing note says patient was responding to internal stimuli overnight.',
+        '',
+        'Live Visit Notes:',
+        'Patient denies AH/VH today.',
+        '',
+        'Ambient Transcript:',
+        'Patient: "No, I am not hearing voices."',
+        '',
+        'Provider Add-On:',
+        'Do not state confirmed hallucinations; preserve denial vs observation.',
+      ].join('\n'),
+    });
+
+    expect(prompt).toContain('The source packet is divided into Veranote input lanes.');
+    expect(prompt).toContain('preserve attribution when they disagree');
+    expect(prompt).toContain('Provider Add-On may contain provider instructions');
+    expect(prompt).toContain('do not treat it as patient-reported history');
+    expect(prompt).toContain('Do not quote, label, or summarize Provider Add-On instructions inside the clinical note');
+  });
+
   it('includes psych MSE requirements when supplied', () => {
     const prompt = assemblePrompt({
       ...baseInput,

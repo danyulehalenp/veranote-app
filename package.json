@@ -18,7 +18,8 @@
     "generate": "node lib/note/generate-notes.js",
     "import:psych-meds": "node scripts/import-psych-med-seed.mjs",
     "import:psych-terms": "node scripts/import-psych-terminology-seed.mjs",
-    "import:psych-dx": "node scripts/import-psych-diagnosis-seed.mjs"
+    "import:psych-dx": "node scripts/import-psych-diagnosis-seed.mjs",
+    "note:gate": "node scripts/note-generation-regression-gate.mjs"
   },
   "dependencies": {
     "@auth/pg-adapter": "^1.11.2",
