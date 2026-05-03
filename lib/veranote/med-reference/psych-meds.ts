@@ -1485,6 +1485,8 @@ const MEDICATION_SPELLING_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bpaxill\b/g, 'paxil'],
   [/\bparoxitine\b/g, 'paroxetine'],
   [/\bparoxatine\b/g, 'paroxetine'],
+  [/\bseziure\b/g, 'seizure'],
+  [/\bsezur(e|es)?\b/g, 'seizure'],
   [/\blamictle\b/g, 'lamictal'],
   [/\blamictel\b/g, 'lamictal'],
   [/\blamictol\b/g, 'lamictal'],

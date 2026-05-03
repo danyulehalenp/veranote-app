@@ -34,8 +34,26 @@ const PURE_DIAGNOSTIC_CONCEPT_CUE =
 const MEDICATION_USE_SAFETY_CUE =
   /\b(can i|should i|could i)\s+(use|give|start|restart|prescribe|try)\b.*\b(stimulant|antidepressant|antipsychotic|lamotrigine|lamictal|lithium|valproate|depakote|clozapine|ssri|snri|maoi|benzo|benzodiazepine)\b/i;
 
+const DIAGNOSTIC_SAFETY_SPELLING_NORMALIZATIONS: Array<[RegExp, string]> = [
+  [/\bpt\b/g, 'patient'],
+  [/\bslep\b/g, 'slept'],
+  [/\btalkign\b/g, 'talking'],
+  [/\btalkin\b/g, 'talking'],
+  [/\bbiploar\b/g, 'bipolar'],
+  [/\bbioplar\b/g, 'bipolar'],
+  [/\bschizoafective\b/g, 'schizoaffective'],
+  [/\bcritera\b/g, 'criteria'],
+  [/\bmissng\b/g, 'missing'],
+  [/\bmising\b/g, 'missing'],
+];
+
 function normalizeMessage(message: string) {
-  return message.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim();
+  const normalized = message.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim();
+
+  return DIAGNOSTIC_SAFETY_SPELLING_NORMALIZATIONS.reduce(
+    (current, [pattern, replacement]) => current.replace(pattern, replacement),
+    normalized,
+  ).replace(/\s+/g, ' ').trim();
 }
 
 function unique(values: string[]) {
@@ -53,7 +71,7 @@ function compactList(items: string[], maxItems: number) {
 function buildReasoningHints(normalized: string, profile: DiagnosticSafetyProfile) {
   const hints = [...profile.missing];
 
-  if (/\bbipolar|mania|manic|hypomania|talks fast|racing thoughts|slept\b/.test(normalized)) {
+  if (/\b(bipolar|mania|manic|hypomania|talks fast|talking fast|racing thoughts|slept)\b/.test(normalized)) {
     hints.push('baseline change', 'sustained episode pattern', 'substance or medication effects');
   } else if (/\bschizophrenia|psychosis|paranoia|hallucinations?|voices?\b/.test(normalized)) {
     hints.push('timeline of psychosis', 'substance/medical rule-outs', 'collateral');
@@ -69,7 +87,7 @@ function buildReasoningHints(normalized: string, profile: DiagnosticSafetyProfil
 }
 
 function buildDeepReasoningOutline(normalized: string, profile: DiagnosticSafetyProfile) {
-  if (/\bbipolar|mania|manic|hypomania|talks fast|racing thoughts|slept\b/.test(normalized)) {
+  if (/\b(bipolar|mania|manic|hypomania|talks fast|talking fast|racing thoughts|slept)\b/.test(normalized)) {
     return 'Clinical reasoning: - Bipolar disorder remains only a possibility until there is a sustained episode pattern, baseline change, and impairment. - Sleep deprivation, substances, medications, trauma/stressor context, and medical causes can mimic manic-spectrum symptoms. - Document the observed symptoms while keeping the diagnosis provisional.';
   }
 
@@ -145,7 +163,7 @@ function buildProfile(normalized: string): DiagnosticSafetyProfile {
     };
   }
 
-  if (/\bbipolar|mania|manic|hypomania|racing thoughts|talks fast|elevated mood|mood swings\b/.test(normalized)) {
+  if (/\b(bipolar|mania|manic|hypomania|racing thoughts|talks fast|talking fast|elevated mood|mood swings)\b/.test(normalized)) {
     restraint = 'This is not enough to diagnose bipolar disorder.';
     missing.splice(0, missing.length, 'duration', 'baseline', 'impairment', 'context');
     ruleOuts.push('Substance-induced, medication-induced, sleep-deprivation, trauma/stressor, and medical causes should remain rule-outs when relevant.');

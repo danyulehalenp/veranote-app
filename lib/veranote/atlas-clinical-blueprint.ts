@@ -624,7 +624,7 @@ function hasDiagnosticSafetyAnchor(text: string) {
   return hasAny(text, [
     /\b(can i diagnose|should i diagnose|does this meet|is this (?:bipolar|mania|psychosis|schizophrenia|ptsd|gad|adhd|mdd)|diagnosis\?|call it|list .* diagnosis)\b/,
     /\b(?:can i|should i|could i)\s+(?:say|write|document|chart|call)\b.*\b(?:bipolar|mania|psychosis|schizophrenia|ptsd|gad|adhd|mdd|personality disorder|borderline|noncompliant)\b/,
-    /\b(patient|pt|slept|talks fast|paranoia|hallucinations?|meth|confusion|low sodium|inattentive|since last month)\b.*\b(bipolar|mania|psychosis|schizophrenia|ptsd|gad|adhd|mdd)\?\s*$/,
+    /\b(patient|pt|slep|slept|talks fast|talking fast|talkign fast|paranoia|hallucinations?|meth|confusion|low sodium|inattentive|since last month)\b.*\b(bipolar|biploar|mania|psychosis|schizophrenia|ptsd|gad|adhd|mdd)\?\s*$/,
   ]);
 }
 

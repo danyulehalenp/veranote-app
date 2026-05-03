@@ -69,10 +69,26 @@ const COMMON_CLINICAL_SPELLING_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bpsychottic\b/g, 'psychotic'],
   [/\bbiploar\b/g, 'bipolar'],
   [/\bbioplar\b/g, 'bipolar'],
+  [/\bslep\b/g, 'slept'],
+  [/\btalkign\b/g, 'talking'],
+  [/\btalkin\b/g, 'talking'],
+  [/\bspeach\b/g, 'speech'],
   [/\bhypomnaia\b/g, 'hypomania'],
   [/\bhypomannia\b/g, 'hypomania'],
   [/\bdepresion\b/g, 'depression'],
   [/\bdepresson\b/g, 'depression'],
+  [/\bmissng\b/g, 'missing'],
+  [/\bmising\b/g, 'missing'],
+  [/\bels\b/g, 'else'],
+  [/\bbfore\b/g, 'before'],
+  [/\bplz\b/g, 'please'],
+  [/\bseziure\b/g, 'seizure'],
+  [/\bsezur(e|es)?\b/g, 'seizure'],
+  [/\bsuicdal\b/g, 'suicidal'],
+  [/\bcollaterol\b/g, 'collateral'],
+  [/\bhalucinations\b/g, 'hallucinations'],
+  [/\bhallucinatons\b/g, 'hallucinations'],
+  [/\binternaly\b/g, 'internally'],
   [/\bwelbutrin\b/g, 'wellbutrin'],
   [/\bwellbutrinn\b/g, 'wellbutrin'],
   [/\bbuproprion\b/g, 'bupropion'],
@@ -155,7 +171,7 @@ function classifyFollowupIntent(message: string): AtlasConversationFollowupInten
     return 'elaborate';
   }
 
-  if (/^(what should i verify|what should i check|what do i need to verify|what do i need to check|what is the key .*issue|what is the main .*risk|what is the biggest .*risk|what exactly do you mean|what does that mean|what is missing|what else is missing|what should i document instead|what belongs\b|give me .*chart[-\s]?ready|give me .*sentence|give me safer wording|give me safe wording|safer wording|chart this safer|word this safer|can you give me exact orders|give me exact orders)\b/.test(normalized)) {
+  if (/^(what should i verify|what should i check|what do i need to verify|what do i need to check|what is the key .*issue|what is the main .*issue|what is the key timeline issue|what is the main timeline issue|what is the timeline issue|what timeline issue|what is the main .*risk|what is the biggest .*risk|what exactly do you mean|what does that mean|what is missing|what else is missing|what should i document instead|what belongs\b|give me .*chart[-\s]?ready|give me .*sentence|give me safer wording|give me safe wording|safer wording|chart this safer|word this safer|can you give me exact orders|give me exact orders)\b/.test(normalized)) {
     return 'clarify';
   }
 
