@@ -234,7 +234,7 @@ function classifyRouteHintFromText(message: string, answerMode?: AssistantAnswer
     /\b(schizoaffective|schizophrenia|bipolar|psychosis|psychotic|mood disorder|mania|hypomania|major depressive|depression|borderline|bpd|ptsd|ocd|adhd|dsm|diagnostic criteria|criteria|diagnosis|diagnostic|differential)\b/.test(normalized)
     && !/\b(fda approved|approved for|dose|dosing|mg|interaction|taken together|combine|contraindicat)\b/.test(normalized)
   ) {
-    const pureDiagnosticReference = /^(what is|what are|difference between|how long|duration requirement|criteria for|symptoms of|compare)\b/.test(normalized);
+    const pureDiagnosticReference = /^(what is|what are|what about|how about|difference between|how long|duration requirement|criteria for|symptoms of|compare)\b/.test(normalized);
 
     if (
       !pureDiagnosticReference
@@ -262,16 +262,107 @@ function classifyRouteHintFromText(message: string, answerMode?: AssistantAnswer
   return 'unknown';
 }
 
+function uniqueValues(values: string[]) {
+  return Array.from(new Set(values));
+}
+
+function extractClinicalTopicAnchors(message: string) {
+  const normalized = normalizeText(message);
+  const anchors: string[] = [];
+
+  const anchorPatterns: Array<[RegExp, string]> = [
+    [/\bwellbutrin|bupropion\b/, 'med:bupropion'],
+    [/\bpaxil|paroxetine\b/, 'med:paroxetine'],
+    [/\bcelexa|citalopram\b/, 'med:citalopram'],
+    [/\blamictal|lamotrigine\b/, 'med:lamotrigine'],
+    [/\blithium\b/, 'med:lithium'],
+    [/\bdepakote|valproate|valproic acid\b/, 'med:valproate'],
+    [/\bclozapine|clozaril\b/, 'med:clozapine'],
+    [/\bpaliperidone|invega\b/, 'med:paliperidone'],
+    [/\brisperidone|risperdal\b/, 'med:risperidone'],
+    [/\bsertraline|zoloft\b/, 'med:sertraline'],
+    [/\bfluoxetine|prozac\b/, 'med:fluoxetine'],
+    [/\bquetiapine|seroquel\b/, 'med:quetiapine'],
+    [/\bolanzapine|zyprexa\b/, 'med:olanzapine'],
+    [/\baripiprazole|abilify\b/, 'med:aripiprazole'],
+    [/\bschizoaffective\b/, 'dx:schizoaffective'],
+    [/\bschizophrenia\b/, 'dx:schizophrenia'],
+    [/\bbipolar\b/, 'dx:bipolar'],
+    [/\bhypomania\b/, 'dx:hypomania'],
+    [/\bmania|manic\b/, 'dx:mania'],
+    [/\bpsychosis|psychotic\b/, 'dx:psychosis'],
+    [/\bborderline|bpd\b/, 'dx:borderline-personality'],
+    [/\bptsd\b/, 'dx:ptsd'],
+    [/\bocd\b/, 'dx:ocd'],
+    [/\badhd\b/, 'dx:adhd'],
+    [/\bmajor depressive|mdd\b/, 'dx:major-depression'],
+    [/\bgeneralized anxiety|\bgad\b/, 'dx:gad'],
+    [/\bpanic disorder\b/, 'dx:panic-disorder'],
+  ];
+
+  for (const [pattern, anchor] of anchorPatterns) {
+    if (pattern.test(normalized)) {
+      anchors.push(anchor);
+    }
+  }
+
+  return uniqueValues(anchors);
+}
+
+function hasSharedAnchor(left: string[], right: string[]) {
+  return left.some((anchor) => right.includes(anchor));
+}
+
+function isPronounAnchoredFollowup(message: string) {
+  return /\b(that|this|it|same|above|previous|prior)\b/.test(normalizeText(message));
+}
+
+function shouldSwitchToNewTopic(
+  intent: AtlasConversationFollowupIntent,
+  topic: AtlasConversationTopic | null,
+  message: string,
+  currentRouteHint: AtlasConversationRouteHint,
+) {
+  if (intent === 'none' || !topic || currentRouteHint === 'unknown') {
+    return false;
+  }
+
+  if (currentRouteHint !== topic.routeHint) {
+    return true;
+  }
+
+  const currentAnchors = extractClinicalTopicAnchors(message);
+  if (!currentAnchors.length || isPronounAnchoredFollowup(message)) {
+    return false;
+  }
+
+  const priorAnchors = extractClinicalTopicAnchors(topic.providerQuestion);
+  if (!priorAnchors.length) {
+    return false;
+  }
+
+  return !hasSharedAnchor(currentAnchors, priorAnchors);
+}
+
 function isRecoverableTopicTurn(turn: AssistantThreadTurn) {
   if (turn.role !== 'provider' || !turn.content?.trim()) {
     return false;
   }
 
-  if (classifyFollowupIntent(turn.content) !== 'none') {
+  const routeHint = classifyRouteHintFromText(turn.content, turn.answerMode, turn.builderFamily);
+  if (routeHint === 'unknown') {
     return false;
   }
 
-  return classifyRouteHintFromText(turn.content, turn.answerMode, turn.builderFamily) !== 'unknown';
+  const followupIntent = classifyFollowupIntent(turn.content);
+  if (followupIntent === 'none') {
+    return true;
+  }
+
+  // A provider can start a new clinical topic with follow-up-shaped language:
+  // "What about Lamictal rash?" after a diagnostic answer should become the
+  // active medication topic for the next "can you elaborate?" turn.
+  return extractClinicalTopicAnchors(turn.content).length > 0;
 }
 
 function findActiveTopic(recentMessages?: AssistantThreadTurn[]): AtlasConversationTopic | null {
@@ -295,8 +386,17 @@ function findActiveTopic(recentMessages?: AssistantThreadTurn[]): AtlasConversat
   };
 }
 
-function shouldRewriteFollowup(intent: AtlasConversationFollowupIntent, topic: AtlasConversationTopic | null, message: string) {
+function shouldRewriteFollowup(
+  intent: AtlasConversationFollowupIntent,
+  topic: AtlasConversationTopic | null,
+  message: string,
+  currentRouteHint: AtlasConversationRouteHint,
+) {
   if (intent === 'none' || !topic) {
+    return false;
+  }
+
+  if (shouldSwitchToNewTopic(intent, topic, message, currentRouteHint)) {
     return false;
   }
 
@@ -355,10 +455,11 @@ export function orchestrateAtlasConversation(input: AtlasConversationInput): Atl
   const originalMessage = input.message || '';
   const followupIntent = classifyFollowupIntent(originalMessage);
   const activeTopic = findActiveTopic(input.recentMessages);
-  const didRewrite = shouldRewriteFollowup(followupIntent, activeTopic, originalMessage);
-  const routeHint = activeTopic && followupIntent !== 'none'
+  const currentRouteHint = classifyRouteHintFromText(originalMessage);
+  const didRewrite = shouldRewriteFollowup(followupIntent, activeTopic, originalMessage, currentRouteHint);
+  const routeHint = activeTopic && followupIntent !== 'none' && didRewrite
     ? activeTopic.routeHint
-    : classifyRouteHintFromText(originalMessage);
+    : currentRouteHint;
   const effectiveMessage = didRewrite && activeTopic
     ? buildEffectiveMessage(originalMessage, followupIntent, activeTopic)
     : originalMessage;
@@ -373,6 +474,7 @@ export function orchestrateAtlasConversation(input: AtlasConversationInput): Atl
     hiddenScratchpad: [
       `followup_intent:${followupIntent}`,
       `active_topic:${activeTopic?.routeHint || 'none'}`,
+      `current_topic:${currentRouteHint}`,
       `rewrite:${didRewrite ? 'yes' : 'no'}`,
       'safety:existing_clinical_lanes_remain_authoritative',
     ],

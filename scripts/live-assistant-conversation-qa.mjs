@@ -128,6 +128,50 @@ async function waitForVisible(locator, timeout = 2500) {
   }
 }
 
+async function waitForAnyVisible(locators, timeout = 30000) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    for (const locator of locators) {
+      const count = await locator.count().catch(() => 0);
+      for (let index = 0; index < count; index += 1) {
+        if (await locator.nth(index).isVisible().catch(() => false)) {
+          return locator.nth(index);
+        }
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  return null;
+}
+
+async function clickFirstVisible(locator, timeout = 2500) {
+  const visibleLocator = await waitForAnyVisible([locator], timeout);
+  if (!visibleLocator) {
+    return false;
+  }
+  await visibleLocator.click();
+  return true;
+}
+
+async function getAssistantThreadSnapshot(page) {
+  return page.evaluate(() => {
+    const messages = Array.from(document.querySelectorAll('[data-testid="assistant-message"]'));
+    const latest = document.querySelector('[data-testid="assistant-message"][data-assistant-message-latest="true"]');
+    const latestBody = latest?.querySelector('[data-testid="assistant-message-body"]');
+    const earlierToggle = Array.from(document.querySelectorAll('button'))
+      .map((button) => button.textContent || '')
+      .find((text) => /Show earlier messages \(\d+\)/i.test(text));
+    const earlierCount = Number(earlierToggle?.match(/\((\d+)\)/)?.[1] || 0);
+
+    return {
+      messageCount: messages.length,
+      latestId: latest instanceof HTMLElement ? latest.dataset.assistantMessageId || null : null,
+      latestText: latestBody?.textContent || '',
+      earlierCount,
+    };
+  });
+}
+
 function toMarkdown(summary, results) {
   const lines = [
     '# Live Atlas Conversation QA',
@@ -168,6 +212,14 @@ async function openAssistantPanel(page) {
     return;
   }
 
+  const reviewDockAskButton = page.getByTestId('atlas-review-dock-ask-button');
+  if (await clickFirstVisible(reviewDockAskButton)) {
+    if (await waitForVisible(composerInput, 5000)) {
+      return;
+    }
+    throw new Error('Review dock assistant control opened, but the assistant composer did not become visible.');
+  }
+
   const openButton = page.getByTestId('assistant-open-button');
   if (await waitForVisible(openButton)) {
     await openButton.click();
@@ -195,11 +247,17 @@ async function openAssistantPanel(page) {
     throw new Error('Assistant expand control opened, but the assistant composer did not become visible.');
   }
 
-  const fallbackOpenButton = page.getByRole('button', { name: /open|assistant|atlas|precision/i }).first();
-  if (await waitForVisible(fallbackOpenButton)) {
-    await fallbackOpenButton.click();
-    if (await waitForVisible(composerInput, 5000)) {
-      return;
+  const fallbackOpenButtons = [
+    page.getByRole('button', { name: /^(open|ask)\s+(assistant|atlas|precision)$/i }),
+    page.getByRole('button', { name: /^review\s+(draft\s+)?with\s+(assistant|atlas|precision)$/i }),
+    page.getByRole('button', { name: /^(assistant|atlas|precision)$/i }),
+  ];
+  for (const fallbackOpenButton of fallbackOpenButtons) {
+    if (await clickFirstVisible(fallbackOpenButton, 700)) {
+      if (await waitForVisible(composerInput, 5000)) {
+        return;
+      }
+      throw new Error('Assistant fallback control clicked, but the assistant composer did not become visible.');
     }
   }
 
@@ -236,11 +294,20 @@ async function gotoWorkspace(page, appUrl) {
     await signInForQa(page, appUrl);
   }
 
-  const assistantShellReady = page.getByTestId('assistant-open-button')
-    .or(page.getByTestId('assistant-expand-button'))
-    .or(page.getByTestId('workspace-assistant-open-button'))
-    .or(page.getByTestId('assistant-composer-input'));
-  await assistantShellReady.first().waitFor({ state: 'visible', timeout: 30000 });
+  const assistantShellReady = await waitForAnyVisible([
+    page.getByTestId('assistant-composer-input'),
+    page.getByTestId('atlas-review-dock-ask-button'),
+    page.getByTestId('assistant-open-button'),
+    page.getByTestId('assistant-expand-button'),
+    page.getByTestId('workspace-assistant-open-button'),
+  ]);
+
+  if (!assistantShellReady) {
+    throw new Error(
+      `Assistant entry point did not become visible on ${page.url()}. `
+      + 'Expected the composer, review dock Ask control, or legacy assistant launcher.',
+    );
+  }
 }
 
 async function askVisibleAssistantTurn(page, prompt) {
@@ -249,11 +316,7 @@ async function askVisibleAssistantTurn(page, prompt) {
   await input.waitFor({ state: 'visible', timeout: 15000 });
   await send.waitFor({ state: 'visible', timeout: 15000 });
 
-  const beforeAssistantCount = await page.getByTestId('assistant-message').count();
-  const beforeLatestAssistantId = await page
-    .locator('[data-testid="assistant-message"][data-assistant-message-latest="true"]')
-    .getAttribute('data-assistant-message-id')
-    .catch(() => null);
+  const beforeSnapshot = await getAssistantThreadSnapshot(page);
   await input.scrollIntoViewIfNeeded();
   await input.fill(prompt);
   await page.waitForFunction(
@@ -267,16 +330,23 @@ async function askVisibleAssistantTurn(page, prompt) {
   await send.click();
   try {
     await page.waitForFunction(
-      ({ count, latestId }) => {
-        const messages = document.querySelectorAll('[data-testid="assistant-message"]');
+      (before) => {
+        const messages = Array.from(document.querySelectorAll('[data-testid="assistant-message"]'));
         const latest = document.querySelector('[data-testid="assistant-message"][data-assistant-message-latest="true"]');
-        return messages.length > count || (
-          latest instanceof HTMLElement
-          && latest.dataset.assistantMessageId
-          && latest.dataset.assistantMessageId !== latestId
-        );
+        const latestBody = latest?.querySelector('[data-testid="assistant-message-body"]');
+        const earlierToggle = Array.from(document.querySelectorAll('button'))
+          .map((button) => button.textContent || '')
+          .find((text) => /Show earlier messages \(\d+\)/i.test(text));
+        const earlierCount = Number(earlierToggle?.match(/\((\d+)\)/)?.[1] || 0);
+        const latestId = latest instanceof HTMLElement ? latest.dataset.assistantMessageId || null : null;
+        const latestText = latestBody?.textContent || '';
+
+        return messages.length > before.messageCount
+          || earlierCount > before.earlierCount
+          || (latestId && latestId !== before.latestId)
+          || (latestText && latestText !== before.latestText);
       },
-      { count: beforeAssistantCount, latestId: beforeLatestAssistantId },
+      beforeSnapshot,
       { timeout: 30000 },
     );
   } catch (error) {

@@ -307,7 +307,7 @@ export function SavedDraftsList() {
   async function handleOpenDraft(draft: SavedDraft, stageOverride?: 'compose' | 'review') {
     const session = buildDraftSession(draft, stageOverride);
     await rememberDraftOpen(draft, session);
-    router.push('/#workspace');
+    router.push(`/dashboard/new-note?draftId=${encodeURIComponent(draft.id)}#workspace`);
   }
 
   async function handleDraftAction(draft: SavedDraft, action: 'archive' | 'restore' | 'delete') {
@@ -368,7 +368,7 @@ export function SavedDraftsList() {
       <div className="aurora-panel grid gap-4 rounded-[28px] p-6">
         <div>
           <h2 className="text-lg font-semibold">Draft Recovery</h2>
-          <p className="mt-1 text-sm text-muted">Use this as a provider-scoped recovery board. Resume the right working draft, clean up stale ones, and keep active notes from turning into duplicates.</p>
+          <p className="mt-1 text-sm text-muted">Use this as the recovery lane for the provider path. Resume the right working draft, clean up stale ones, and return directly to the main workspace.</p>
         </div>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(220px,0.8fr)_minmax(220px,0.8fr)_minmax(220px,0.8fr)_minmax(220px,0.8fr)]">
           <label className="grid gap-2 text-sm font-medium text-ink">
@@ -486,7 +486,7 @@ export function SavedDraftsList() {
               onClick={() => void handleOpenDraft(resumeCandidate)}
               className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white transition hover:opacity-90"
             >
-              Resume last draft
+              Resume in workspace
             </button>
             {resumeCandidate.note?.trim() ? (
               <button
@@ -494,7 +494,7 @@ export function SavedDraftsList() {
                 onClick={() => void handleOpenDraft(resumeCandidate, 'review')}
                 className="rounded-full border border-border bg-paper px-4 py-2 text-sm font-medium text-ink transition hover:border-ink"
               >
-                Jump to review
+                Review in workspace
               </button>
             ) : (
               <button
@@ -502,7 +502,7 @@ export function SavedDraftsList() {
                 onClick={() => void handleOpenDraft(resumeCandidate, 'compose')}
                 className="rounded-full border border-border bg-paper px-4 py-2 text-sm font-medium text-ink transition hover:border-ink"
               >
-                Return to source entry
+                Source entry in workspace
               </button>
             )}
           </div>
@@ -580,14 +580,14 @@ export function SavedDraftsList() {
                         onClick={() => void handleOpenDraft(draft)}
                         className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white transition hover:opacity-90"
                       >
-                        Resume recommended step
+                        Resume in workspace
                       </button>
                       <button
                         type="button"
                         onClick={() => void handleOpenDraft(draft, 'compose')}
                         className="rounded-full border border-border bg-paper px-4 py-2 text-sm font-medium text-ink transition hover:border-ink"
                       >
-                        Open source/setup
+                        Source/setup in workspace
                       </button>
                       {draft.note?.trim() ? (
                         <button
@@ -595,7 +595,7 @@ export function SavedDraftsList() {
                           onClick={() => void handleOpenDraft(draft, 'review')}
                           className="rounded-full border border-border bg-paper px-4 py-2 text-sm font-medium text-ink transition hover:border-ink"
                         >
-                          Open review
+                          Review in workspace
                         </button>
                       ) : null}
                       <button

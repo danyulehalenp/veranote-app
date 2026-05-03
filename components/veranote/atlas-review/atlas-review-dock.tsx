@@ -81,6 +81,7 @@ export function AtlasNudgeStrip({
               <button
                 type="button"
                 onClick={() => onAskAtlas(item)}
+                data-testid="atlas-review-dock-ask-button"
                 className="rounded-full border border-cyan-200/18 bg-[rgba(8,27,44,0.86)] px-3 py-1.5 text-xs font-medium text-cyan-50"
               >
                 Ask {assistantName}
@@ -197,6 +198,7 @@ export function AtlasReviewDock({
                         <button
                           type="button"
                           onClick={() => onAskAtlas(item)}
+                          data-testid="atlas-review-dock-ask-button"
                           className="rounded-full border border-cyan-200/18 bg-[rgba(8,27,44,0.9)] px-3 py-1.5 text-xs font-medium text-cyan-50"
                         >
                           Ask {assistantName}

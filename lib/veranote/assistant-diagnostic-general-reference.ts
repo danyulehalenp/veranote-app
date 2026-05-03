@@ -36,7 +36,7 @@ const DIAGNOSTIC_REFERENCE_ENTRIES: DiagnosticReferenceEntry[] = [
   },
   {
     id: 'adhd-core',
-    matches: [/core symptoms of adhd|adhd.*core symptoms/],
+    matches: [/core symptoms of adhd|adhd.*core symptoms|what is adhd|what about adhd|how about adhd/],
     summary: 'ADHD centers on persistent inattention and/or hyperactivity-impulsivity that causes impairment across settings and is developmentally inappropriate. Developmental history and cross-setting impairment matter more than a single symptom snapshot.',
   },
   {

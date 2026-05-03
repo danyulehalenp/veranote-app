@@ -522,6 +522,7 @@ function AtlasReviewDock({
             onClick={action.onClick}
             disabled={action.disabled}
             title={action.title}
+            data-testid={action.disabled ? undefined : 'atlas-review-dock-ask-button'}
 	            className={`${!action.disabled && !action.primary ? 'workspace-action-card' : ''} rounded-[16px] border px-3.5 py-3 text-left text-sm font-semibold transition ${
               action.disabled
                 ? 'cursor-not-allowed border-white/8 bg-white/[0.03] text-cyan-50/42'
@@ -4406,13 +4407,13 @@ export function NewNoteForm() {
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-cyan-50/76">
                   Working note: <span className="font-semibold text-white">{generatedSession.noteType}</span>. Adjust source on the left, review and finish on the right, then copy or export when the note reads truthfully.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => router.push('/dashboard/review')}
-                  className="mt-2 text-sm font-medium text-cyan-100 underline decoration-cyan-200/40 underline-offset-4 transition hover:text-white"
-                >
-                  Open the dedicated review page only if you want a separate deep-review screen.
-                </button>
+	                <button
+	                  type="button"
+	                  onClick={() => router.push('/dashboard/review')}
+	                  className="mt-2 text-sm font-medium text-cyan-100 underline decoration-cyan-200/40 underline-offset-4 transition hover:text-white"
+	                >
+	                  Open the deep-review screen only if you want to separate review from this workspace.
+	                </button>
               </div>
               <div className="flex flex-wrap gap-2 lg:justify-end">
                 <button type="button" onClick={handleReturnToCompose} className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium">
@@ -4509,8 +4510,8 @@ export function NewNoteForm() {
 	      <aside className="workspace-left-rail">
 	        <div className="workspace-left-rail-header">
 	          <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-100/54">Veranote</div>
-	          <div className="mt-1 text-lg font-semibold leading-tight tracking-[-0.03em] text-white">Note controls</div>
-	          <p className="mt-1 text-xs leading-5 text-cyan-50/60">Pick on the left. Work on the right.</p>
+          <div className="mt-1 text-lg font-semibold leading-tight tracking-[-0.03em] text-white">Provider path</div>
+          <p className="mt-1 text-xs leading-5 text-cyan-50/60">Workspace first. Draft recovery always nearby.</p>
 	        </div>
 
 	        <div className="grid gap-2">
@@ -4540,16 +4541,23 @@ export function NewNoteForm() {
 	          >
 	            Ask {assistantPersona.name}
 	          </button>
+	          <button
+	            type="button"
+	            onClick={() => router.push('/dashboard/drafts')}
+	            className="workspace-rail-tab"
+	          >
+	            Saved Drafts
+	          </button>
 	        </div>
 
 	        <div className="workspace-rail-section">
-	          <div className="workspace-rail-section-title">Main workflow</div>
+	          <div className="workspace-rail-section-title">Provider path</div>
 	          <div className="grid gap-1.5">
 	            {[
 	              { label: 'Setup', lane: 'setup' as const },
 	              { label: 'Source Packet', lane: 'source' as const },
-	              { label: `Review with ${assistantPersona.name}`, lane: 'finish' as const },
-	              { label: 'Support Tools', lane: 'support' as const },
+	              { label: 'Review Draft', lane: 'finish' as const },
+	              { label: 'Optional Support', lane: 'support' as const },
 	            ].map((item) => (
 	              <button
 	                key={item.lane}
@@ -4640,7 +4648,7 @@ export function NewNoteForm() {
 	            <button type="button" onClick={scrollToDraftControls} className="workspace-rail-tab">Draft Settings</button>
 	            <button type="button" onClick={scrollToMyNotePrompt} className="workspace-rail-tab">My Note Prompt</button>
 	            <button type="button" onClick={scrollToOutputPreferences} className="workspace-rail-tab">Preferences</button>
-	            <button type="button" onClick={() => router.push('/dashboard/drafts')} className="workspace-rail-tab">Saved Drafts</button>
+	            <button type="button" onClick={() => router.push('/dashboard/review')} className="workspace-rail-tab">Deep Review Screen</button>
 	          </div>
 	        </div>
 	      </aside>
