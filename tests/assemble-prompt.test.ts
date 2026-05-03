@@ -47,6 +47,8 @@ describe('assemblePrompt', () => {
     expect(prompt).toContain('Provider Add-On may contain provider instructions');
     expect(prompt).toContain('do not treat it as patient-reported history');
     expect(prompt).toContain('Do not quote, label, or summarize Provider Add-On instructions inside the clinical note');
+    expect(prompt).toContain('obvious misspellings, rushed shorthand, or OCR/scanned-document noise');
+    expect(prompt).toContain('Do not turn unclear OCR text, abbreviations, or typo-heavy phrases into new clinical facts');
   });
 
   it('includes psych MSE requirements when supplied', () => {
@@ -111,6 +113,38 @@ describe('assemblePrompt', () => {
 
     expect(prompt).toContain('document only the refill request');
     expect(prompt).toContain('A refill request alone does not prove the refill was sent');
+  });
+
+  it('preserves diagnostic uncertainty when source mentions psychosis concern or differential cues', () => {
+    const prompt = assemblePrompt({
+      ...baseInput,
+      sourceInput: [
+        'Outpatient follow-up.',
+        '- Mood stable per patient.',
+        '- Insomnia and past psychosis concern mentioned.',
+        '- Asks about stimulant.',
+        '- Exact timeline and full med list not provided.',
+      ].join('\n'),
+    });
+
+    expect(prompt).toContain('diagnostic-uncertainty or differential-diagnosis cues');
+    expect(prompt).toContain('Do not turn a past concern, rule-out, or mixed source into a confirmed diagnosis');
+  });
+
+  it('preserves specific sleep duration and sleep-change data', () => {
+    const prompt = assemblePrompt({
+      ...baseInput,
+      sourceInput: [
+        'Overnight nursing:',
+        '- Slept 5 hrs.',
+        '- Took scheduled meds.',
+        'Live note:',
+        '- Mood ok.',
+      ].join('\n'),
+    });
+
+    expect(prompt).toContain('specific sleep duration, sleep loss, or sleep-change data');
+    expect(prompt).toContain('Do not replace documented sleep data with generic status wording');
   });
 
   it('tightens literal handling for sparse "about the same" status language', () => {

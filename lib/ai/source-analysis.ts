@@ -31,6 +31,8 @@ export type SourceConstraintSummary = {
   sourceHasPassiveDeathWishNuance: boolean;
   sourceHasViolenceRiskNuance: boolean;
   sourceHasObjectiveNarrativeMismatch: boolean;
+  sourceHasDiagnosticUncertainty: boolean;
+  sourceHasSleepDurationOrChange: boolean;
 };
 
 export function summarizeSourceConstraints(sourceInput: string): SourceConstraintSummary {
@@ -69,6 +71,8 @@ export function summarizeSourceConstraints(sourceInput: string): SourceConstrain
     && /(denies intent|denies plan|not going to do it|haven[’']?t planned anything|no recent assaultive behavior|weapon access)/i.test(sourceInput);
   const sourceHasObjectiveNarrativeMismatch = /(objective data|medication list still shows|medication list shows|mar shows|bp today:|urine drug screen positive|uds positive|nursing note|responding to internal stimuli|laughing to self|appeared internally preoccupied)/i.test(sourceInput)
     && /(patient says|patient reports|denies|better overall|calmer today|about the same|nothing major changed|follow-up for|transcript)/i.test(sourceInput);
+  const sourceHasDiagnosticUncertainty = /\b(?:past psychosis concern|psychosis concern|diagnostic uncertainty|differential|rule[-\s]?out|r\/o|medical contributor|substance timing|medical red flags?|workup|unclear diagnosis|diagnosis unclear)\b/i.test(sourceInput);
+  const sourceHasSleepDurationOrChange = /\b(?:slept\s*\d+|sleep (?:improved|worse|poor|remains poor)|\d+\s*(?:hrs?|hours?)\s*(?:to|->)\s*\d+\s*(?:hrs?|hours?)|no sleep|not sleeping)\b/i.test(sourceInput);
   const sourceHasConflictSignals = sourceHasTranscriptClinicianConflict
     || sourceHasSubstanceConflict
     || sourceHasPsychosisObservationConflict
@@ -103,6 +107,8 @@ export function summarizeSourceConstraints(sourceInput: string): SourceConstrain
     sourceHasPassiveDeathWishNuance,
     sourceHasViolenceRiskNuance,
     sourceHasObjectiveNarrativeMismatch,
+    sourceHasDiagnosticUncertainty,
+    sourceHasSleepDurationOrChange,
   };
 }
 

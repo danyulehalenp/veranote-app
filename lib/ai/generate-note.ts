@@ -207,7 +207,7 @@ function enforceProgressNoteHeadings(note: string, noteType: string) {
 }
 
 function hardenRiskReassuranceWording(note: string, noteType: string) {
- const appliesToFinalRiskBatch = /inpatient psych initial adult|inpatient psych discharge|risk-heavy|risk heavy/i.test(noteType);
+ const appliesToFinalRiskBatch = /inpatient psych initial adult|inpatient psych day two|inpatient psych progress|inpatient psych discharge|risk-heavy|risk heavy/i.test(noteType);
  if (!appliesToFinalRiskBatch) return note;
 
  return note
@@ -216,6 +216,7 @@ function hardenRiskReassuranceWording(note: string, noteType: string) {
    'Unsupported risk-minimization pressure is present; broader safety risk requires documented assessment, and unresolved domains remain visible.',
   )
   .replace(/\blow[-\s]?risk\b/gi, 'risk-minimized')
+  .replace(/\brisk\s+is\s+low\b/gi, 'risk is not fully established from the provided source')
   .replace(/\bsafe\s+(?:for|to)\s+discharge\b/gi, 'discharge readiness not established')
   .replace(/\bstable\s+for\s+discharge\b/gi, 'discharge condition not established')
   .replace(/\bdischarge\s+ready\b/gi, 'discharge readiness not established')

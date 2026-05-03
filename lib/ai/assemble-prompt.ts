@@ -54,6 +54,9 @@ export function assemblePrompt(input: AssemblePromptInput) {
     sourceHasVeranoteInputLanes
       ? 'Do not quote, label, or summarize Provider Add-On instructions inside the clinical note. If a Provider Add-On says "do not..." or names a formatting/billing preference, obey that instruction silently or surface it as a separate review flag only when needed.'
       : null,
+    sourceHasVeranoteInputLanes
+      ? 'If source text includes obvious misspellings, rushed shorthand, or OCR/scanned-document noise, normalize clear clinical terms in the output while preserving uncertainty for unclear fragments. Do not turn unclear OCR text, abbreviations, or typo-heavy phrases into new clinical facts.'
+      : null,
     constraints.sourceIsVerySparse
       ? 'Very-sparse-input mode: the source contains only a few facts. Stay near-literal. Do not add summary sentences such as "status unchanged," "no new symptoms," or other completeness language unless the source itself says that.'
       : constraints.sourceIsSparse
@@ -91,6 +94,9 @@ export function assemblePrompt(input: AssemblePromptInput) {
       : null,
     constraints.sourceHasPartialImprovementLanguage
       ? 'The source describes partial or qualified improvement. Keep residual symptoms, continued limitations, and hedged wording visible. Do not translate partial improvement into resolution, stability, or global control.'
+      : null,
+    constraints.sourceHasSleepDurationOrChange
+      ? 'The source includes specific sleep duration, sleep loss, or sleep-change data. Preserve that sleep detail explicitly, including numbers and direction of change when provided. Do not replace documented sleep data with generic status wording.'
       : null,
     constraints.sourceHasExplicitNoSiOrRiskLine
       ? 'If the source explicitly says no SI, no self-harm, denial of plan/intent, or similar no-risk language, preserve that negative safety wording in the note rather than dropping it.'
@@ -145,6 +151,9 @@ export function assemblePrompt(input: AssemblePromptInput) {
       : null,
     constraints.sourceHasObjectiveNarrativeMismatch
       ? 'In Plan, do not imply that an objective conflict was resolved unless the source explicitly documents the resolution or decision. If objective findings matter but no action is documented, keep the plan minimal and source-literal.'
+      : null,
+    constraints.sourceHasDiagnosticUncertainty
+      ? 'The source contains diagnostic-uncertainty or differential-diagnosis cues. Preserve that uncertainty explicitly in Assessment using source-bound language such as "diagnostic uncertainty remains," "differential remains," or "not established from the provided source" when applicable. Do not turn a past concern, rule-out, or mixed source into a confirmed diagnosis.'
       : null,
     constraints.sourceHasMedicationConflict
       ? 'If medication conflict is present, Plan must not silently choose a final regimen unless the source actually resolves it. It is acceptable for the note to say that the current documentation does not fully resolve the active regimen today.'

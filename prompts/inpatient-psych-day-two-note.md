@@ -23,6 +23,7 @@ Rules:
 - If the source includes prior-day or admission content for reference, do not document that prior content as if it happened today unless today's note explicitly reaffirms it.
 - Use prior-day content only as baseline context.
 - Document today's date and today's current clinical status.
+- If same-day or overnight nursing/source material includes sleep duration, medication-taking, aggression/restraint status, or group participation/gaps, preserve those details explicitly rather than replacing them with generic "no change" wording.
 - If medications were just started and the source indicates no meaningful response can yet be determined, preserve that logic.
 - Do not invent improvement, stabilization, or response unless supported by today's note.
 - Do not carry forward explicit current-day denials/endorsements of SI, HI, AVH, etc. unless they are documented in today's note.
