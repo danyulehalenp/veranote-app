@@ -102,8 +102,43 @@ async function waitForUrl(url, timeoutMs = 60000) {
   return false;
 }
 
+function listPortPids(port) {
+  return new Promise((resolve) => {
+    const child = spawn('lsof', ['-ti', `tcp:${port}`], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let output = '';
+    child.stdout.on('data', (chunk) => {
+      output += chunk.toString();
+    });
+    child.on('close', () => {
+      resolve(output.split(/\s+/).map((pid) => pid.trim()).filter(Boolean));
+    });
+    child.on('error', () => resolve([]));
+  });
+}
+
+async function stopUnresponsivePortProcesses(port) {
+  const pids = await listPortPids(port);
+  if (!pids.length) {
+    return;
+  }
+
+  console.log(`Stopping unresponsive local dev server process(es) on port ${port}: ${pids.join(', ')}`);
+  for (const pid of pids) {
+    try {
+      process.kill(Number(pid), 'SIGTERM');
+    } catch {
+      // Ignore processes that exit between lsof and kill.
+    }
+  }
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+}
+
 async function ensureServer(url, shouldStartServer) {
   if (await requestUrl(url)) {
+    return null;
+  }
+
+  if (await waitForUrl(url, 5000)) {
     return null;
   }
 
@@ -114,6 +149,11 @@ async function ensureServer(url, shouldStartServer) {
   const appUrl = new URL(url);
   const appOrigin = appUrl.origin;
   const appPort = appUrl.port || (appUrl.protocol === 'https:' ? '443' : '80');
+  await stopUnresponsivePortProcesses(appPort);
+  if (await waitForUrl(url, 5000)) {
+    return null;
+  }
+
   const child = spawn('npm', ['run', 'dev', '--', '--port', appPort], {
     stdio: 'inherit',
     env: {

@@ -86,14 +86,25 @@ The review screen should be split:
 
 ## First MVP
 
-The first implementation should only extract text and route it into the existing four source fields:
+The first implementation now keeps document intake inside the Source lane and routes reviewed text into the existing four source-field model.
 
-- Pre-visit data
-- Live visit notes
-- Ambient transcript
-- Provider add-on
+Current MVP behavior:
 
-For scanned documents, the MVP can require provider confirmation before generation.
+- Text-like files (`.txt`, `.md`, `.csv`, `.json`, `.rtf`, `.log`) are read locally in the browser.
+- PDFs, images/scans, Word files, and spreadsheets are not silently parsed yet.
+- For PDFs/images/scans, the provider pastes reviewed OCR output or a provider summary into the review textarea.
+- Reviewed document text is loaded into Pre-Visit Data only after the provider clicks the load button.
+- The loaded block includes source type, likely bucket, extraction mode, and a reminder to preserve attribution and uncertainty.
+
+For scanned documents, the MVP requires provider confirmation before generation.
+
+Validated path:
+
+```bash
+npm run live:document-intake
+```
+
+This browser QA confirms reviewed document text can be committed into Pre-Visit Data before note generation.
 
 ## Later Expansion
 

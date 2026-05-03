@@ -21,6 +21,18 @@ const COMMANDS = [
     required: true,
   },
   {
+    name: 'Document source intake unit tests',
+    command: 'npx',
+    args: ['vitest', 'run', '--silent=true', '--maxWorkers=1', 'tests/document-source-intake.test.ts'],
+    required: true,
+  },
+  {
+    name: 'Live document source intake QA',
+    command: 'npm',
+    args: ['run', 'live:document-intake'],
+    required: true,
+  },
+  {
     name: 'Live note end-to-end QA',
     command: 'npm',
     args: ['run', 'live:note:e2e'],
@@ -72,21 +84,28 @@ function formatDuration(ms) {
 
 function runCommand(step) {
   const startedAt = Date.now();
+  const envPrefix = step.env
+    ? Object.entries(step.env).map(([key, value]) => `${key}=${value}`).join(' ')
+    : '';
+  const displayCommand = [envPrefix, step.command, ...step.args].filter(Boolean).join(' ');
 
   return new Promise((resolve) => {
     console.log(`\n=== ${step.name} ===`);
-    console.log(`$ ${[step.command, ...step.args].join(' ')}`);
+    console.log(`$ ${displayCommand}`);
 
     const child = spawn(step.command, step.args, {
       stdio: 'inherit',
-      env: process.env,
+      env: {
+        ...process.env,
+        ...(step.env || {}),
+      },
     });
 
     child.on('close', (code, signal) => {
       const durationMs = Date.now() - startedAt;
       resolve({
         name: step.name,
-        command: [step.command, ...step.args].join(' '),
+        command: displayCommand,
         required: step.required,
         status: code === 0 ? 'passed' : 'failed',
         exitCode: code,

@@ -16,6 +16,7 @@ import {
   type AmbientResumeSnapshot,
 } from '@/lib/ambient-listening/resume-storage';
 import { ReviewWorkspace } from '@/components/note/review-workspace';
+import { DocumentSourceIntake } from '@/components/note/document-source-intake';
 import {
   AmbientEncounterWorkspace,
   type AmbientSessionPersistenceSnapshot,
@@ -3209,6 +3210,35 @@ export function NewNoteForm() {
     );
   }
 
+  function handleReviewedDocumentSourceCommit(sourceBlock: string) {
+    const trimmedSourceBlock = sourceBlock.trim();
+
+    if (!trimmedSourceBlock) {
+      setEvalBanner('Document source is empty. Review OCR text or a summary before loading it into source.');
+      return;
+    }
+
+    setSourceSections((current) => {
+      const existing = current.intakeCollateral.trim();
+
+      return {
+        ...current,
+        intakeCollateral: existing ? `${existing}\n\n${trimmedSourceBlock}` : trimmedSourceBlock,
+      };
+    });
+    setActiveComposeLane('source');
+    setActiveSourceTab('intakeCollateral');
+    setSourceWorkspaceMode('manual');
+    setEvalBanner('Loaded reviewed document text into Pre-Visit Data. Review it there before generating a draft.');
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const target = document.getElementById('source-field-intakeCollateral');
+        target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+  }
+
   async function ensureServerDictationSession(targetSection: DictationTargetSection) {
     if (isServerDictationSessionId(dictationSession.sessionId) && dictationSession.uiState !== 'stopped') {
       return dictationSession.sessionId;
@@ -3720,6 +3750,18 @@ export function NewNoteForm() {
         window.setTimeout(() => {
           target?.querySelector('textarea')?.focus({ preventScroll: true });
         }, 120);
+      });
+    });
+  }
+
+  function handleDocumentSourceJump() {
+    setActiveComposeLane('source');
+    setSourceWorkspaceMode('manual');
+    setEvalBanner('Use Source documents to review outside records, OCR text, or a summary before loading it into Pre-Visit Data.');
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.getElementById('document-source-intake')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
     });
   }
@@ -4645,6 +4687,7 @@ export function NewNoteForm() {
 	        <div className="workspace-rail-section">
 	          <div className="workspace-rail-section-title">Quick links</div>
 	          <div className="grid gap-1.5">
+	            <button type="button" onClick={handleDocumentSourceJump} className="workspace-rail-tab">Source Documents</button>
 	            <button type="button" onClick={scrollToDraftControls} className="workspace-rail-tab">Draft Settings</button>
 	            <button type="button" onClick={scrollToMyNotePrompt} className="workspace-rail-tab">My Note Prompt</button>
 	            <button type="button" onClick={scrollToOutputPreferences} className="workspace-rail-tab">Preferences</button>
@@ -5406,6 +5449,10 @@ export function NewNoteForm() {
 
             {sourceWorkspaceMode === 'manual' || sourceWorkspaceMode === 'dictation' || sourceWorkspaceMode === 'transcript' ? (
               <div className="grid gap-3">
+                <div id="document-source-intake">
+                  <DocumentSourceIntake onCommitToSource={handleReviewedDocumentSourceCommit} />
+                </div>
+
                 <div className="workspace-subpanel rounded-[20px] p-3">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>

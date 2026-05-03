@@ -11,12 +11,14 @@ npm run beta:gate
 ## What The Gate Checks
 
 1. Production domain reachability at `https://app.veranote.org`.
-2. One complete browser workflow from source entry to draft generation, save, reopen, and export.
-3. A broader browser workflow matrix across note types, source fields, EHR destinations, dictation controls, and ambient controls.
-4. Atlas clinical regression gate.
-5. Note generation regression gate.
-6. Production build.
-7. Git patch whitespace check.
+2. Document source intake unit tests.
+3. Live browser document intake from reviewed text into Pre-Visit Data.
+4. One complete browser workflow from source entry to draft generation, save, reopen, and export.
+5. A broader browser workflow matrix across note types, source fields, EHR destinations, dictation controls, and ambient controls.
+6. Atlas clinical regression gate.
+7. Note generation regression gate.
+8. Production build.
+9. Git patch whitespace check.
 
 ## EHR Coverage
 

@@ -14,6 +14,7 @@
     "atlas:live-conversation:route": "npx vitest run --silent=true --maxWorkers=1 tests/live-assistant-conversation-route.test.ts",
     "live:assistant:qa": "npx tsx scripts/live-assistant-webpage-qa.mjs",
     "live:assistant:route-qa": "npx tsx scripts/run-live-assistant-route-qa.mjs",
+    "live:document-intake": "npx tsx scripts/live-document-source-intake-qa.mjs",
     "live:note:e2e": "npx tsx scripts/live-note-end-to-end-qa.mjs",
     "live:note:matrix": "npx tsx scripts/live-note-workflow-matrix-qa.mjs",
     "live:note:qa": "npx tsx scripts/live-note-workflow-qa.mjs",

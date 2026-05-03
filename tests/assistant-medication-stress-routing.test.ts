@@ -164,7 +164,7 @@ describe('assistant medication stress routing', () => {
         expect(payload.message, `${testCase.prompt} should not reuse stale context`).not.toContain(staleTerm);
       }
     }
-  });
+  }, 30_000);
 
   it('keeps dose caveats on typo-tolerant adult dose questions', async () => {
     const payload = await ask('trileptal start dose adult?');

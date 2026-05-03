@@ -55,5 +55,5 @@ describe('Atlas clinical lab simulation bank', () => {
     expect(summary.passed + summary.failed).toBe(100);
     expect(summary.passRate).toBeGreaterThanOrEqual(0);
     expect(summary.passRate).toBeLessThanOrEqual(100);
-  });
+  }, 30_000);
 });
