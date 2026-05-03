@@ -275,6 +275,35 @@ function hardenSourceBoundRiskWording(note: string, sourceInput: string) {
   .replace(/\bno\s+safety\s+concerns?\b/gi, 'safety risk is not fully established from the provided source');
 }
 
+function preserveDiagnosticUncertainty(note: string, sourceInput: string) {
+ const sourceHasDiagnosticUncertaintyCue = /\b(?:psychosis concern|past psychosis|past concern about psychosis|differential|rule[-\s]?out|r\/o|diagnostic uncertainty|medical red flags?|medical contributor|substance timing|stimulant|no confirmed prior .*diagnosis|manic-like|cannabis use)\b/i.test(sourceInput)
+  && /\b(?:psychosis|diagnos|differential|rule[-\s]?out|medical|substance|stimulant|insomnia|bipolar|manic|cannabis)\b/i.test(sourceInput);
+ if (!sourceHasDiagnosticUncertaintyCue) return note;
+ if (/\b(?:differential|diagnostic uncertainty|uncertain|uncertainty|not established|not enough|cannot determine|reassess|rule[-\s]?out)\b/i.test(note)) return note;
+
+ return `${note.trim()}\n\nDiagnostic Uncertainty / Source Limitation:\nDiagnostic uncertainty remains from the provided source; mixed cues such as past psychosis concern, insomnia, stimulant request, medical factors, or substance factors should not be converted into a confirmed diagnosis.`;
+}
+
+function removeUnsupportedMedicationActionPlan(note: string, sourceInput: string) {
+ let cleaned = note;
+
+ const sourceSupportsBuprenorphineContinuation = /\b(?:continue|continued|dose unchanged|remain(?:ed)? on|no dose change)\b.{0,80}\bbuprenorphine|\bbuprenorphine\b.{0,80}\b(?:continue|continued|dose unchanged|no dose change)\b/i.test(sourceInput);
+ if (!sourceSupportsBuprenorphineContinuation) {
+  cleaned = cleaned
+   .replace(/\bContinue current buprenorphine\/naloxone dose[^.\n]*(?:\.\s*)?/gi, 'No buprenorphine dose change is documented from this source. ')
+   .replace(/\bContinue buprenorphine\/naloxone[^.\n]*(?:\.\s*)?/gi, 'No buprenorphine dose change is documented from this source. ');
+ }
+
+ const sourceDocumentsNaloxoneProvision = /\b(?:naloxone|narcan)\b.{0,80}\b(?:provided|given|dispensed|prescribed|sent)\b|\b(?:provided|given|dispensed|prescribed|sent)\b.{0,80}\b(?:naloxone|narcan)\b/i.test(sourceInput);
+ if (!sourceDocumentsNaloxoneProvision) {
+  cleaned = cleaned
+   .replace(/\bProvide (?:a )?new (?:naloxone|Narcan) kit[^.\n]*(?:\.\s*)?/g, 'Naloxone replacement need/request is documented; provision is not documented from this source. ')
+   .replace(/\b(?:Naloxone|Narcan) kit (?:provided|dispensed|prescribed|sent)[^.\n]*(?:\.\s*)?/g, 'Naloxone replacement need/request is documented; provision is not documented from this source. ');
+ }
+
+ return cleaned;
+}
+
 function providerAddOnDirectiveLines(sourceInput: string) {
  const match = sourceInput.match(/\bProvider Add-On:\s*([\s\S]*)$/i);
  if (!match?.[1]) return [];
@@ -291,6 +320,8 @@ function removeProviderAddOnInstructionEcho(note: string, sourceInput = '') {
   .replace(/\bprovider add[-\s]?on(?:\s+instructions?)?\b/gi, 'provider guidance')
   .replace(/(?:^|\n)\s*provider guidance\s*:\s*[\s\S]*?(?=\n\n[A-Z][^\n]{1,90}:|$)/gim, '')
   .replace(/(?:^|\n)\s*provider guidance\s+(?:instructs|says|notes?|states)[^\n.]*(?:\.\s*)?/gim, '\n')
+  .replace(/(^|[.!?]\s+)[^.!?\n]*\bper provider (?:instructions?|guidance|add[-\s]?on)[^.!?\n]*(?:[.!?]\s*)?/gi, '$1')
+  .replace(/\s+per provider (?:instructions?|guidance|add[-\s]?on)\b/gi, '')
   .replace(/(?:^|[\s.])instructs?\s+to\s+(?:preserve|keep|avoid|not|use)[^\n.]*(?:\.\s*)?/gi, ' ')
   .replace(/(?:^|\n)\s*Billing code[^.\n]*(?:\.\s*)?/gim, '')
   .replace(/\bBilling code\b[^.\n]*(?:\.\s*)?/gi, '')
@@ -317,8 +348,10 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withoutUnsupportedMedicalStability = removeUnsupportedMedicalStability(withSleepPreserved, input.sourceInput);
  const withMedicalClearancePreserved = preserveMedicalClearanceUncertainty(withoutUnsupportedMedicalStability, input.sourceInput);
  const withSourceBoundRisk = hardenSourceBoundRiskWording(withMedicalClearancePreserved, input.sourceInput);
+ const withDiagnosticUncertainty = preserveDiagnosticUncertainty(withSourceBoundRisk, input.sourceInput);
+ const withoutUnsupportedMedicationAction = removeUnsupportedMedicationActionPlan(withDiagnosticUncertainty, input.sourceInput);
 
- return removeProviderAddOnInstructionEcho(withSourceBoundRisk, input.sourceInput);
+ return removeProviderAddOnInstructionEcho(withoutUnsupportedMedicationAction, input.sourceInput);
 }
 
 export async function generateNote(input: GenerateNoteInput): Promise<GenerateNoteWithMetaResult> {

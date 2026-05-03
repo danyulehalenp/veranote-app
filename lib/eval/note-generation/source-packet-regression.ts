@@ -17,6 +17,9 @@ type ForbiddenPattern = {
 export type SourcePacketRegressionCase = {
   id: string;
   title: string;
+  specialty?: string;
+  role?: string;
+  ehr?: string;
   noteType: string;
   customInstructions?: string;
   sourceSections: SourceSections;
@@ -243,7 +246,8 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
   {
     id: 'tebra-outpatient-eval-referral-history-not-confirmed',
     title: 'Outpatient evaluation from prior-provider referral keeps historical diagnoses and current assessment separate',
-    noteType: 'Outpatient Psych Evaluation',
+    ehr: 'Tebra/Kareo',
+    noteType: 'Outpatient Psychiatric Evaluation',
     customInstructions: 'Use Tebra-friendly labeled sections. Keep prior diagnoses as historical/reported unless independently supported.',
     sourceSections: {
       intakeCollateral: [
@@ -364,6 +368,8 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
   {
     id: 'therapy-progress-note-dictated-cbt-no-medical-plan',
     title: 'Therapy progress note turns dictated therapy content into psychotherapy note structure without medication plan',
+    specialty: 'Therapy',
+    role: 'Therapist',
     noteType: 'Therapy Progress Note',
     customInstructions: 'Use therapy progress-note sections. Do not add medication management or psychiatric prescribing plan.',
     sourceSections: {
@@ -442,6 +448,258 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'side effects overstated or erased', pattern: /no side effects|denies side effects|tolerating without side effects/i },
     ],
   },
+  {
+    id: 'telehealth-followup-video-limited-mse-missed-dose',
+    title: 'Telehealth follow-up keeps video limitation, missed-dose detail, and limited MSE visible',
+    specialty: 'Psychiatry',
+    ehr: 'Tebra/Kareo',
+    noteType: 'Outpatient Psych Telehealth Follow-Up',
+    customInstructions: 'Use telehealth-friendly follow-up sections. Do not invent vitals, full MSE, or medication changes.',
+    sourceSections: {
+      intakeCollateral: [
+        'Portal pre-visit:',
+        '- Pt msg: "camera keeps freezing."',
+        '- Last PHQ-9 14 two months ago; no new scale today.',
+        '- Pharmacy fill date 31 days ago.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Live telehealth note:',
+        '- Anxiety better some on buspirone.',
+        '- Missed night dose 3x this week because fell asleep.',
+        '- Denies SI/HI.',
+        '- Video froze, MSE limited to speech and reported mood.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nPatient: "The medicine helps some but I forget the night one when I pass out early."',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Do not say adherence is good.',
+        '- Do not list normal vitals.',
+        '- Mention telehealth/video limitation if MSE is included.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'telehealth or video limitation visible', pattern: /telehealth|video.*(?:froze|limited|freezing)|camera/i },
+      { label: 'missed nighttime doses visible', pattern: /missed.*(?:night|dose).*(?:3|three)|forgets?.*night|fell asleep/i },
+      { label: 'partial benefit visible', pattern: /helps? some|better some|partial/i },
+      { label: 'SI/HI denial visible', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
+    ],
+    forbidden: [
+      { label: 'adherence overstated', pattern: /adherence is good|good adherence|taking as prescribed|fully adherent/i },
+      { label: 'normal vitals invented', pattern: /vitals (?:stable|normal)|BP .*normal|heart rate .*normal/i },
+      { label: 'full normal MSE invented', pattern: /thought process (?:is )?(?:linear|logical)|insight and judgment (?:are )?(?:good|intact)|alert and oriented x ?[34]/i },
+    ],
+  },
+  {
+    id: 'adolescent-initial-eval-parent-school-conflict',
+    title: 'Adolescent intake keeps teen denial, parent collateral, and school report separated',
+    specialty: 'Psychiatry',
+    ehr: 'Valant',
+    noteType: 'Inpatient Psych Initial Adolescent Evaluation',
+    customInstructions: 'Use adolescent intake structure. Keep parent and school collateral attributed and avoid definitive conduct or bipolar diagnosis.',
+    sourceSections: {
+      intakeCollateral: [
+        'Referral packet:',
+        '- School suspension for fight; teacher reported irritability and leaving class.',
+        '- Mother reports 3 nights barely sleeping and posting threatening comments.',
+        '- Pediatrician note lists ADHD history.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Live intake:',
+        '- Teen says fight was self-defense.',
+        '- Denies SI/HI.',
+        '- Denies decreased need for sleep but says stayed up gaming.',
+        '- Affect irritable, cooperative with short answers.',
+      ].join('\n'),
+      patientTranscript: [
+        'Ambient transcript:',
+        'Teen: "My mom is making it sound worse."',
+        'Mother: "He has not been sleeping and I am scared he will hurt someone."',
+      ].join('\n'),
+      objectiveData: [
+        'Provider Add-On:',
+        '- Separate teen report, parent collateral, and school report.',
+        '- Do not diagnose conduct disorder or bipolar disorder from this packet.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'school fight/suspension remains visible', pattern: /school|suspension|fight|teacher/i },
+      { label: 'parent collateral remains visible', pattern: /mother|parent|collateral|scared/i },
+      { label: 'teen denial/explanation remains visible', pattern: /self-defense|making it sound worse|teen says|denies/i },
+      { label: 'sleep conflict remains visible', pattern: /3 nights|barely sleeping|stayed up gaming|sleep/i },
+    ],
+    forbidden: [
+      { label: 'conduct disorder diagnosis invented', pattern: /diagnosed with conduct disorder|meets criteria for conduct disorder|conduct disorder is diagnosed/i },
+      { label: 'bipolar disorder diagnosis invented', pattern: /diagnosed with bipolar|meets criteria for bipolar|bipolar disorder is diagnosed/i },
+      { label: 'parent collateral treated as sole fact', pattern: /patient has not been sleeping and will hurt someone/i },
+    ],
+  },
+  {
+    id: 'psych-admission-medical-hp-pending-a1c-rash',
+    title: 'Psych medical H&P preserves medical comorbidity, pending lab, and rash uncertainty without clearance overclaim',
+    specialty: 'Hospital Medicine',
+    role: 'Medical physician',
+    ehr: 'Generic',
+    noteType: 'Psych Admission Medical H&P',
+    customInstructions: 'Use medical H&P structure for psych admission. Do not state medically cleared or stable unless supported.',
+    sourceSections: {
+      intakeCollateral: [
+        'Nursing intake / chart:',
+        '- DM2 on metformin per med list.',
+        '- BP 162/96 at arrival.',
+        '- A1c ordered, pending.',
+        '- Rash on forearms noted by RN; onset unclear.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Medical H&P note:',
+        '- Pt denies chest pain, SOB, fever.',
+        '- Says rash started "maybe last week."',
+        '- No glucose log available.',
+        '- Exam: excoriations bilateral forearms, no drainage seen.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nPatient: "I scratch when I get nervous. I do not know when it started."',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Do not say medically cleared.',
+        '- Preserve pending A1c and high BP.',
+        '- Do not diagnose cellulitis.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'diabetes/metformin visible', pattern: /DM2|diabetes|metformin/i },
+      { label: 'arrival BP visible', pattern: /162\/96|BP/i },
+      { label: 'pending A1c visible', pattern: /A1c.*pending|pending A1c/i },
+      { label: 'rash/excoriation uncertainty visible', pattern: /rash|excoriations|onset unclear|maybe last week/i },
+    ],
+    forbidden: [
+      { label: 'medical clearance overclaim', pattern: /medically cleared|cleared for psych|medically stable/i },
+      { label: 'cellulitis diagnosis invented', pattern: /diagnosed with cellulitis|cellulitis (?:diagnosed|confirmed|present|noted as diagnosis)|consistent with cellulitis|skin infection diagnosed/i },
+      { label: 'normal glucose data invented', pattern: /glucose (?:normal|controlled|stable)|A1c (?:normal|controlled|at goal)/i },
+    ],
+  },
+  {
+    id: 'medical-consult-constipation-kub-pending',
+    title: 'Medical consult preserves constipation timeline and pending KUB without inventing obstruction or resolution',
+    specialty: 'Internal Medicine',
+    role: 'Medical physician',
+    ehr: 'Generic',
+    noteType: 'Medical Consultation Note',
+    customInstructions: 'Use focused inpatient medical consult format. Do not invent imaging result, diagnosis, or resolved symptoms.',
+    sourceSections: {
+      intakeCollateral: [
+        'Consult request:',
+        '- Psych unit asks medical consult for abd pain and constipation.',
+        '- Last BM 4 days ago per nursing.',
+        '- KUB ordered but not resulted.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Consult note:',
+        '- Abdomen soft, mild diffuse tenderness.',
+        '- No vomiting reported.',
+        '- Eating some breakfast.',
+        '- Current meds include olanzapine and benztropine.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nPatient: "My stomach hurts because I have not gone in days."',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Mention olanzapine/benztropine as possible constipation contributors only as considerations.',
+        '- Do not say obstruction ruled out.',
+        '- Do not state KUB normal.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'constipation duration visible', pattern: /4 days|last BM|not gone in days|constipation/i },
+      { label: 'KUB pending visible', pattern: /KUB.*(?:ordered|pending|not resulted)|imaging.*pending/i },
+      { label: 'abdominal exam visible', pattern: /soft|mild diffuse tenderness|abdomen/i },
+      { label: 'medication contributors framed as possible', pattern: /olanzapine|benztropine|constipation contributors?|consider/i },
+    ],
+    forbidden: [
+      { label: 'obstruction ruled out invented', pattern: /obstruction (?:ruled out|excluded)|no obstruction/i },
+      { label: 'KUB result invented', pattern: /KUB (?:normal|negative|without obstruction)/i },
+      { label: 'symptoms resolved invented', pattern: /pain resolved|constipation resolved|normal bowel movement/i },
+    ],
+  },
+  {
+    id: 'social-work-discharge-planning-housing-barrier',
+    title: 'Social work discharge planning keeps housing and pickup barriers without inventing safe placement',
+    specialty: 'Social Work',
+    role: 'Social Worker',
+    ehr: 'WellSky',
+    noteType: 'Discharge Planning Note',
+    customInstructions: 'Use social work discharge planning format. Keep barriers and unconfirmed resources explicit.',
+    sourceSections: {
+      intakeCollateral: [
+        'Chart / collateral:',
+        '- Shelter bed waitlist started yesterday.',
+        '- Mother says patient cannot return home this week.',
+        '- Medicaid transport not yet scheduled.',
+      ].join('\n'),
+      clinicianNotes: [
+        'SW note:',
+        '- Patient wants to leave today.',
+        '- Completed ROI for shelter contact.',
+        '- Denies having another place to stay.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nPatient: "I can maybe call a friend but I do not know if they will answer."',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Do not say safe discharge plan exists.',
+        '- Preserve waitlist and transport not scheduled.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'shelter waitlist visible', pattern: /shelter.*waitlist|waitlist/i },
+      { label: 'mother housing barrier visible', pattern: /mother.*cannot return|cannot return home/i },
+      { label: 'transport not scheduled visible', pattern: /transport.*not.*scheduled|not yet scheduled/i },
+      { label: 'patient preference visible', pattern: /wants to leave|leave today|friend/i },
+    ],
+    forbidden: [
+      { label: 'safe placement invented', pattern: /(?:^|[.!?]\s+)(?:a |the )?safe discharge plan (?:exists|is in place|confirmed|has been established)|(?:^|[.!?]\s+)(?:a |the )?safe placement (?:exists|is in place|confirmed|has been established)|\bhousing secured\b|\bshelter bed confirmed\b|\bhas (?:a |the )?safe placement (?:confirmed|secured)\b/i },
+      { label: 'transport completion invented', pattern: /transport scheduled|Medicaid transport arranged/i },
+      { label: 'mother home acceptance invented', pattern: /return home with mother|mother agreed/i },
+    ],
+  },
+  {
+    id: 'mat-followup-fentanyl-denial-naloxone-no-dose-change',
+    title: 'MAT follow-up keeps UDS/patient denial conflict and naloxone discussion without inventing dose change',
+    specialty: 'Addiction Medicine',
+    role: 'Medical physician',
+    ehr: 'Tebra/Kareo',
+    noteType: 'Medication Assisted Treatment Follow-Up',
+    customInstructions: 'Use MAT follow-up format. Keep UDS conflict source-attributed and do not invent buprenorphine dose changes.',
+    sourceSections: {
+      intakeCollateral: [
+        'Pre-visit data:',
+        '- UDS point-of-care positive fentanyl, buprenorphine present.',
+        '- Confirmatory test pending.',
+        '- Last visit dose listed buprenorphine/naloxone 8/2 mg BID.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Live notes:',
+        '- Patient denies fentanyl use and says "maybe it was contaminated weed."',
+        '- Reports cravings 6/10.',
+        '- Denies overdose since last visit.',
+        '- Naloxone kit discussed; patient says old kit expired.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nPatient: "I did not use fentanyl. I need a new Narcan though because mine is old."',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Do not change buprenorphine dose unless documented.',
+        '- Preserve confirmatory test pending.',
+        '- Avoid labeling patient as lying.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'UDS fentanyl and buprenorphine visible', pattern: /UDS|fentanyl|buprenorphine/i },
+      { label: 'patient denial remains visible', pattern: /denies? fentanyl|did not use fentanyl|contaminated weed/i },
+      { label: 'confirmatory pending visible', pattern: /confirmatory.*pending|pending confirm/i },
+      { label: 'naloxone/Narcan need visible', pattern: /naloxone|Narcan|old kit|expired/i },
+    ],
+    forbidden: [
+      { label: 'dose change invented', pattern: /increase buprenorphine|decrease buprenorphine|adjust buprenorphine|change buprenorphine|buprenorphine[^.\n]{0,80}dose (?:increased|decreased|adjusted|changed)|dose adjusted|continue current buprenorphine|continue buprenorphine\/naloxone/i },
+      { label: 'confirmed fentanyl relapse overclaim', pattern: /confirmed fentanyl relapse|patient relapsed on fentanyl/i },
+      { label: 'stigmatizing dishonesty language', pattern: /lying|dishonest|drug-seeking/i },
+    ],
+  },
 ];
 
 function loadEvaluationEnv() {
@@ -463,7 +721,7 @@ function loadEvaluationEnv() {
   }
 }
 
-function evaluateCase(
+export function evaluateSourcePacketRegressionCase(
   item: SourcePacketRegressionCase,
   note: string,
   mode: SourcePacketRegressionCaseResult['mode'],
@@ -514,7 +772,7 @@ export async function runSourcePacketNoteGenerationRegression(options: {
   for (const item of selected) {
     const sourceInput = buildSourceInputFromSections(item.sourceSections);
     const generated = await generateNote({
-      specialty: 'Psychiatry',
+      specialty: item.specialty || 'Psychiatry',
       noteType: item.noteType,
       outputStyle: 'Standard',
       format: 'Labeled Sections',
@@ -531,7 +789,7 @@ export async function runSourcePacketNoteGenerationRegression(options: {
     });
 
     const mode = generated.generationMeta.pathUsed === 'live' ? 'live' : 'fallback';
-    const result = evaluateCase(item, generated.note, mode, generated.generationMeta.reason, generated.flags.length);
+    const result = evaluateSourcePacketRegressionCase(item, generated.note, mode, generated.generationMeta.reason, generated.flags.length);
 
     if (options.requireLive !== false && mode !== 'live') {
       result.passed = false;

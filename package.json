@@ -14,6 +14,7 @@
     "atlas:live-conversation:route": "npx vitest run --silent=true --maxWorkers=1 tests/live-assistant-conversation-route.test.ts",
     "live:assistant:qa": "npx tsx scripts/live-assistant-webpage-qa.mjs",
     "live:assistant:route-qa": "npx tsx scripts/run-live-assistant-route-qa.mjs",
+    "live:note:qa": "npx tsx scripts/live-note-workflow-qa.mjs",
     "eval:vera": "npx tsx lib/veranote/evals/eval-runner.ts",
     "generate": "node lib/note/generate-notes.js",
     "import:psych-meds": "node scripts/import-psych-med-seed.mjs",
