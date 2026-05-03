@@ -17,6 +17,7 @@
     "live:note:e2e": "npx tsx scripts/live-note-end-to-end-qa.mjs",
     "live:note:matrix": "npx tsx scripts/live-note-workflow-matrix-qa.mjs",
     "live:note:qa": "npx tsx scripts/live-note-workflow-qa.mjs",
+    "beta:gate": "node scripts/beta-readiness-gate.mjs",
     "eval:vera": "npx tsx lib/veranote/evals/eval-runner.ts",
     "generate": "node lib/note/generate-notes.js",
     "import:psych-meds": "node scripts/import-psych-med-seed.mjs",

@@ -20,18 +20,38 @@ const AUTH_COOKIE = process.env.LIVE_NOTE_MATRIX_AUTH_COOKIE || 'veranote-provid
 const QA_EMAIL = process.env.LIVE_NOTE_MATRIX_QA_EMAIL || 'daniel.hale@veranote-beta.local';
 const OUTPUT_DIR = process.env.LIVE_NOTE_MATRIX_OUTPUT_DIR || 'test-results';
 const SHOULD_START_SERVER = process.env.LIVE_NOTE_MATRIX_START_SERVER !== '0';
-const DEFAULT_CASE_IDS = [
-  'typo-heavy-outpatient-followup-preserves-med-adherence-side-effect-nuance',
-  'wellsky-inpatient-day-two-missing-mse-risk-details',
-  'tebra-outpatient-eval-referral-history-not-confirmed',
-  'therapy-progress-note-dictated-cbt-no-medical-plan',
-  'mat-followup-fentanyl-denial-naloxone-no-dose-change',
-  'discharge-summary-pending-labs-and-collateral-risk',
+const DEFAULT_CASE_TARGETS = [
+  { id: 'typo-heavy-outpatient-followup-preserves-med-adherence-side-effect-nuance', ehr: 'Tebra/Kareo' },
+  { id: 'typo-heavy-outpatient-followup-preserves-med-adherence-side-effect-nuance', ehr: 'SimplePractice' },
+  { id: 'wellsky-inpatient-day-two-missing-mse-risk-details', ehr: 'WellSky' },
+  { id: 'tebra-outpatient-eval-referral-history-not-confirmed', ehr: 'Tebra/Kareo' },
+  { id: 'tebra-outpatient-eval-referral-history-not-confirmed', ehr: 'Sessions Health' },
+  { id: 'therapy-progress-note-dictated-cbt-no-medical-plan', ehr: 'TherapyNotes' },
+  { id: 'therapy-progress-note-dictated-cbt-no-medical-plan', ehr: 'TheraNest' },
+  { id: 'mat-followup-fentanyl-denial-naloxone-no-dose-change', ehr: 'Valant' },
+  { id: 'discharge-summary-pending-labs-and-collateral-risk', ehr: 'ICANotes' },
 ];
-const CASE_IDS = (process.env.LIVE_NOTE_MATRIX_CASE_IDS || DEFAULT_CASE_IDS.join(','))
-  .split(',')
-  .map((item) => item.trim())
-  .filter(Boolean);
+
+function parseCaseTarget(value) {
+  const [id, ...ehrParts] = value.split('@');
+  const trimmedId = id.trim();
+  const ehr = ehrParts.join('@').trim();
+
+  if (!trimmedId) {
+    throw new Error(`Invalid live note matrix target: ${value}`);
+  }
+
+  return {
+    id: trimmedId,
+    ehr: ehr || null,
+  };
+}
+
+const CASE_TARGETS = process.env.LIVE_NOTE_MATRIX_TARGETS
+  ? process.env.LIVE_NOTE_MATRIX_TARGETS.split(',').map((item) => parseCaseTarget(item.trim())).filter((item) => item.id)
+  : process.env.LIVE_NOTE_MATRIX_CASE_IDS
+    ? process.env.LIVE_NOTE_MATRIX_CASE_IDS.split(',').map((item) => parseCaseTarget(item.trim())).filter((item) => item.id)
+    : DEFAULT_CASE_TARGETS;
 
 async function readLocalEnvValue(key) {
   if (process.env[key]) {
@@ -139,10 +159,6 @@ async function signInForQa(page, appUrl) {
 
 async function ensureComposeSetupVisible(page) {
   const clinicalFieldSelect = page.locator('select[aria-label="Select clinical field"]').first();
-  if (await clinicalFieldSelect.count().catch(() => 0)) {
-    return;
-  }
-
   if (await waitForVisible(clinicalFieldSelect, 1500)) {
     return;
   }
@@ -168,9 +184,9 @@ async function gotoWorkspace(page, appUrl) {
     await signInForQa(page, appUrl);
   }
 
-  await ensureComposeSetupVisible(page);
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(500);
+  await ensureComposeSetupVisible(page);
+  await page.waitForTimeout(750);
 }
 
 async function selectFirstVisible(page, selector, value) {
@@ -200,12 +216,13 @@ async function selectFirstVisible(page, selector, value) {
     }
   }
 
-  if (count > 0) {
-    await controls.first().selectOption(value);
-    return;
-  }
-
-  throw new Error(`No select found for ${selector}`);
+  const bodyExcerpt = await page.locator('body').innerText().then((text) => text.slice(0, 1200)).catch(() => '');
+  throw new Error([
+    `No visible select found for ${selector}`,
+    `Current URL: ${page.url()}`,
+    `Matched controls: ${count}`,
+    `Body excerpt: ${bodyExcerpt}`,
+  ].join('\n'));
 }
 
 async function fillSourceField(page, fieldId, value) {
@@ -345,12 +362,16 @@ async function main() {
       import('../lib/eval/note-generation/source-packet-regression.ts'),
     ]);
     const helpers = { buildSourceInputFromSections, evaluateSourcePacketRegressionCase };
-    const selected = CASE_IDS.map((id) => {
-      const item = sourcePacketRegressionCases.find((candidate) => candidate.id === id);
+    const selected = CASE_TARGETS.map((target) => {
+      const item = sourcePacketRegressionCases.find((candidate) => candidate.id === target.id);
       if (!item) {
-        throw new Error(`Unknown live note matrix case: ${id}`);
+        throw new Error(`Unknown live note matrix case: ${target.id}`);
       }
-      return item;
+
+      return {
+        ...item,
+        ehr: target.ehr || item.ehr,
+      };
     });
 
     browser = await chromium.launch({ headless: true });
