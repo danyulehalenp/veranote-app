@@ -75,6 +75,7 @@ export function reconcileSectionReviewState(
         status: existing?.status || 'unreviewed',
         updatedAt: existing?.updatedAt,
         confirmedEvidenceBlockIds: existing?.confirmedEvidenceBlockIds || [],
+        reviewerComment: existing?.reviewerComment || '',
       },
     ] as const;
   });

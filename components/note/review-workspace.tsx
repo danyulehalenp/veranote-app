@@ -1476,6 +1476,7 @@ export function ReviewWorkspace({
   const reviewAutoFocusSeedRef = useRef<string | null>(null);
   const [lanePreferenceSuggestion, setLanePreferenceSuggestion] = useState<ReturnType<typeof getLanePreferenceSuggestion>>(null);
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const latestSessionRef = useRef<DraftSession | null>(initialSession);
   const resolvedProviderIdentityId = authSession?.user?.providerIdentityId || getCurrentProviderId();
   const draftSessionStorageKey = getDraftSessionStorageKey(resolvedProviderIdentityId);
   const draftRecoveryStorageKey = getDraftRecoveryStorageKey(resolvedProviderIdentityId);
@@ -1545,11 +1546,37 @@ export function ReviewWorkspace({
     }));
   }
 
+  function cacheDraftSession(nextSession: DraftSession, workflowStage: 'compose' | 'review' = 'review') {
+    latestSessionRef.current = nextSession;
+    localStorage.setItem(draftSessionStorageKey, JSON.stringify(nextSession));
+    persistDraftRecovery(nextSession, workflowStage);
+  }
+
+  function commitDraftSession(nextSession: DraftSession, workflowStage: 'compose' | 'review' = 'review') {
+    latestSessionRef.current = nextSession;
+    setSession(nextSession);
+    cacheDraftSession(nextSession, workflowStage);
+  }
+
+  function buildLatestReviewSession() {
+    const baseSession = latestSessionRef.current || session;
+    if (!baseSession) {
+      return null;
+    }
+
+    return {
+      ...baseSession,
+      note: draftText,
+      sectionReviewState: reconcileSectionReviewState(draftSections, baseSession.sectionReviewState),
+    } satisfies DraftSession;
+  }
+
   useEffect(() => {
     if (!initialSession) {
       return;
     }
 
+    latestSessionRef.current = initialSession;
     setSession(initialSession);
     setDraftText(initialSession.note || '');
     setIsHydrating(false);
@@ -1569,6 +1596,7 @@ export function ReviewWorkspace({
           if (parsed.providerIdentityId && parsed.providerIdentityId !== resolvedProviderIdentityId) {
             throw new Error('Mismatched provider draft session.');
           }
+          latestSessionRef.current = parsed;
           setSession(parsed);
           setDraftText(parsed.note);
           setIsHydrating(false);
@@ -1585,6 +1613,7 @@ export function ReviewWorkspace({
         const parsed = data?.draft;
 
         if (parsed) {
+          latestSessionRef.current = parsed;
           setSession(parsed);
           setDraftText(parsed.note);
           localStorage.setItem(draftSessionStorageKey, JSON.stringify(parsed));
@@ -1750,6 +1779,7 @@ export function ReviewWorkspace({
       sectionReviewState: reconciledSectionReviewState,
     };
 
+    latestSessionRef.current = updatedSession;
     localStorage.setItem(draftSessionStorageKey, JSON.stringify(updatedSession));
     persistDraftRecovery(updatedSession);
   }, [draftRecoveryStorageKey, draftSessionStorageKey, draftText, reconciledSectionReviewState, session]);
@@ -1771,8 +1801,7 @@ export function ReviewWorkspace({
 
       const data = await response.json() as { draft?: PersistedDraftSession };
       if (data.draft) {
-        localStorage.setItem(draftSessionStorageKey, JSON.stringify(data.draft));
-        persistDraftRecovery(data.draft);
+        cacheDraftSession(data.draft);
         return data.draft;
       }
     } catch {
@@ -1955,9 +1984,7 @@ export function ReviewWorkspace({
 
       setDraftText(data.note);
       const persistedSession = await persistDraft(nextSession);
-      setSession(persistedSession);
-      localStorage.setItem(draftSessionStorageKey, JSON.stringify(persistedSession));
-      persistDraftRecovery(persistedSession);
+      commitDraftSession(persistedSession);
 
       if (data.mode === 'fallback') {
         setRewriteMessage(`Rewrite completed using fallback mode. ${data.warning || ''}`.trim());
@@ -1997,27 +2024,28 @@ export function ReviewWorkspace({
   }
 
   function handleSectionStatusChange(anchor: string, status: ReviewStatus) {
-    if (!session) {
+    const baseSession = buildLatestReviewSession();
+    if (!baseSession) {
       return;
     }
 
+    const currentReviewState = baseSession.sectionReviewState || {};
     const nextSession: DraftSession = {
-      ...session,
+      ...baseSession,
       note: draftText,
       sectionReviewState: {
-        ...reconciledSectionReviewState,
+        ...currentReviewState,
         [anchor]: {
-          heading: reconciledSectionReviewState[anchor]?.heading || 'Section',
+          heading: currentReviewState[anchor]?.heading || 'Section',
           status,
           updatedAt: new Date().toISOString(),
-          confirmedEvidenceBlockIds: reconciledSectionReviewState[anchor]?.confirmedEvidenceBlockIds || [],
-          reviewerComment: reconciledSectionReviewState[anchor]?.reviewerComment || '',
+          confirmedEvidenceBlockIds: currentReviewState[anchor]?.confirmedEvidenceBlockIds || [],
+          reviewerComment: currentReviewState[anchor]?.reviewerComment || '',
         },
       },
     };
 
-    setSession(nextSession);
-    localStorage.setItem(draftSessionStorageKey, JSON.stringify(nextSession));
+    commitDraftSession(nextSession);
     const sectionHeading = draftSections.find((section) => section.anchor === anchor)?.heading || 'Section';
     flashInteractionMessage(`${sectionHeading} marked ${status.replace('-', ' ')}.`);
   }
@@ -2076,32 +2104,33 @@ export function ReviewWorkspace({
   }
 
   function handleConfirmedEvidenceToggle(anchor: string, blockId: string) {
-    if (!session) {
+    const baseSession = buildLatestReviewSession();
+    if (!baseSession) {
       return;
     }
 
-    const currentIds = getConfirmedEvidenceBlockIds(session, anchor);
+    const currentReviewState = baseSession.sectionReviewState || {};
+    const currentIds = currentReviewState[anchor]?.confirmedEvidenceBlockIds || [];
     const confirmedEvidenceBlockIds = currentIds.includes(blockId)
       ? currentIds.filter((item) => item !== blockId)
       : unique([...currentIds, blockId]);
 
     const nextSession: DraftSession = {
-      ...session,
+      ...baseSession,
       note: draftText,
       sectionReviewState: {
-        ...reconciledSectionReviewState,
+        ...currentReviewState,
         [anchor]: {
-          heading: reconciledSectionReviewState[anchor]?.heading || 'Section',
-          status: reconciledSectionReviewState[anchor]?.status || 'unreviewed',
+          heading: currentReviewState[anchor]?.heading || 'Section',
+          status: currentReviewState[anchor]?.status || 'unreviewed',
           updatedAt: new Date().toISOString(),
           confirmedEvidenceBlockIds,
-          reviewerComment: reconciledSectionReviewState[anchor]?.reviewerComment || '',
+          reviewerComment: currentReviewState[anchor]?.reviewerComment || '',
         },
       },
     };
 
-    setSession(nextSession);
-    localStorage.setItem(draftSessionStorageKey, JSON.stringify(nextSession));
+    commitDraftSession(nextSession);
     const sectionHeading = draftSections.find((section) => section.anchor === anchor)?.heading || 'Section';
     const block = sourceBlocks.find((item) => item.id === blockId);
     const isAdding = confirmedEvidenceBlockIds.includes(blockId);
@@ -2114,44 +2143,38 @@ export function ReviewWorkspace({
   }
 
   function handleReviewerCommentChange(anchor: string, reviewerComment: string) {
-    if (!session) {
+    const baseSession = buildLatestReviewSession();
+    if (!baseSession) {
       return;
     }
 
+    const currentReviewState = baseSession.sectionReviewState || {};
     const nextSession: DraftSession = {
-      ...session,
+      ...baseSession,
       note: draftText,
       sectionReviewState: {
-        ...reconciledSectionReviewState,
+        ...currentReviewState,
         [anchor]: {
-          heading: reconciledSectionReviewState[anchor]?.heading || 'Section',
-          status: reconciledSectionReviewState[anchor]?.status || 'unreviewed',
+          heading: currentReviewState[anchor]?.heading || 'Section',
+          status: currentReviewState[anchor]?.status || 'unreviewed',
           updatedAt: new Date().toISOString(),
-          confirmedEvidenceBlockIds: reconciledSectionReviewState[anchor]?.confirmedEvidenceBlockIds || [],
+          confirmedEvidenceBlockIds: currentReviewState[anchor]?.confirmedEvidenceBlockIds || [],
           reviewerComment,
         },
       },
     };
 
-    setSession(nextSession);
-    localStorage.setItem(draftSessionStorageKey, JSON.stringify(nextSession));
+    commitDraftSession(nextSession);
   }
 
   async function handleSaveDraft() {
-    if (!session) {
+    const nextSession = buildLatestReviewSession();
+    if (!nextSession) {
       return;
     }
 
-    const nextSession: DraftSession = {
-      ...session,
-      note: draftText,
-      sectionReviewState: reconciledSectionReviewState,
-    };
-
     const persistedSession = await persistDraft(nextSession);
-    setSession(persistedSession);
-    localStorage.setItem(draftSessionStorageKey, JSON.stringify(persistedSession));
-    persistDraftRecovery(persistedSession);
+    commitDraftSession(persistedSession);
     setSaveMessage('Draft and section review state saved.');
     window.setTimeout(() => setSaveMessage(''), 2500);
   }

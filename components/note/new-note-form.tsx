@@ -1033,6 +1033,7 @@ export function NewNoteForm() {
   const dictationLastUploadedSizeBytesRef = useRef(0);
   const dictationChunkSequenceRef = useRef(0);
   const [hasClientHydrated, setHasClientHydrated] = useState(false);
+  const [draftHydrationComplete, setDraftHydrationComplete] = useState(false);
   const [jumpHighlightTarget, setJumpHighlightTarget] = useState<'setup' | 'output-preferences' | 'site-presets' | null>(null);
   const [sessionSnapshotPanel, setSessionSnapshotPanel] = useState<'setup' | 'site-presets' | 'destination-fit' | null>(null);
   const [workflowStage, setWorkflowStage] = useState<'compose' | 'review'>('compose');
@@ -2501,9 +2502,13 @@ export function NewNoteForm() {
   }, [ambientSessionResumeStorageKey, hasClientHydrated]);
 
   useEffect(() => {
+    let isActive = true;
+    setDraftHydrationComplete(false);
+
     async function hydrateDraft() {
-      if (requestedDraftId) {
-        try {
+      try {
+        if (requestedDraftId) {
+          try {
           const response = await fetch(`/api/drafts/${encodeURIComponent(requestedDraftId)}?providerId=${encodeURIComponent(resolvedProviderIdentityId)}&includeArchived=true`, {
             cache: 'no-store',
           });
@@ -2579,14 +2584,14 @@ export function NewNoteForm() {
             });
             return;
           }
-        } catch {
-          // Fall through to normal draft hydration if explicit resume fails.
+          } catch {
+            // Fall through to normal draft hydration if explicit resume fails.
+          }
         }
-      }
 
-      const pendingEvalCase = localStorage.getItem(EVAL_CASE_KEY);
-      if (pendingEvalCase) {
-        try {
+        const pendingEvalCase = localStorage.getItem(EVAL_CASE_KEY);
+        if (pendingEvalCase) {
+          try {
           const parsed = JSON.parse(pendingEvalCase) as EvalCaseSelection;
           hydratedFromSavedStateRef.current = true;
           setSpecialty(parsed.specialty || 'Psychiatry');
@@ -2615,18 +2620,18 @@ export function NewNoteForm() {
           setActiveComposeLane('setup');
           setEvalBanner(`Loaded evaluation case: ${parsed.id} — ${parsed.title}`);
           localStorage.removeItem(EVAL_CASE_KEY);
-          return;
-        } catch {
-          localStorage.removeItem(EVAL_CASE_KEY);
+            return;
+          } catch {
+            localStorage.removeItem(EVAL_CASE_KEY);
+          }
         }
-      }
 
-      const raw = localStorage.getItem(draftSessionStorageKey);
-      const savedStage = localStorage.getItem(draftStageStorageKey);
-      const recoveryRaw = localStorage.getItem(draftRecoveryStorageKey);
+        const raw = localStorage.getItem(draftSessionStorageKey);
+        const savedStage = localStorage.getItem(draftStageStorageKey);
+        const recoveryRaw = localStorage.getItem(draftRecoveryStorageKey);
 
-      if (raw) {
-        try {
+        if (raw) {
+          try {
           const parsed = JSON.parse(raw) as DraftSession;
           const recoveryPayload = recoveryRaw ? JSON.parse(recoveryRaw) as {
             draftId?: string | null;
@@ -2660,55 +2665,63 @@ export function NewNoteForm() {
           setGeneratedSession(parsed.note ? parsed : null);
           setWorkflowStage(recoveryState?.workflowStage || (parsed.note && savedStage === 'review' ? 'review' : 'compose'));
           setActiveComposeLane(recoveryState?.composeLane || (parsed.note ? 'finish' : 'setup'));
-          return;
+            return;
+          } catch {
+            localStorage.removeItem(draftSessionStorageKey);
+            localStorage.removeItem(draftRecoveryStorageKey);
+          }
+        }
+
+        try {
+          const response = await fetch(`/api/drafts/latest?providerId=${encodeURIComponent(resolvedProviderIdentityId)}`, { cache: 'no-store' });
+          const data = (await response.json()) as { draft?: PersistedDraftSession | null };
+          const parsed = data?.draft;
+
+          if (!parsed) {
+            return;
+          }
+
+          hydratedFromSavedStateRef.current = true;
+          setSpecialty(parsed.specialty || 'Psychiatry');
+          setRole(parsed.role || 'Psychiatric NP');
+          setNoteType(parsed.noteType || 'Inpatient Psych Progress Note');
+          setTemplate(parsed.template || 'Default Inpatient Psych Progress Note');
+          setSourceSections(hydrateSectionsFromDraft(parsed));
+          setEncounterSupport(normalizeEncounterSupport(parsed.encounterSupport, parsed.noteType || 'Inpatient Psych Progress Note'));
+          setMedicationProfile(normalizeMedicationProfile(parsed.medicationProfile));
+          setDiagnosisProfile(normalizeDiagnosisProfile(parsed.diagnosisProfile));
+          setOutputStyle(parsed.outputStyle || 'Standard');
+          setFormat(parsed.format || 'Labeled Sections');
+          setFlagMissingInfo(parsed.flagMissingInfo ?? true);
+          setKeepCloserToSource(parsed.keepCloserToSource ?? true);
+          setOutputScope(parsed.outputScope || 'full-note');
+          setRequestedSections(Array.isArray(parsed.requestedSections) ? parsed.requestedSections as NoteSectionKey[] : []);
+          setDictationInsertions(parsed.dictationInsertions || {});
+          setAmbientTranscriptHandoff(parsed.ambientTranscriptHandoff);
+          setPresetName('');
+          setDraftCheckpoint(parsed);
+          setGeneratedSession(parsed.note ? parsed : null);
+          setWorkflowStage(parsed.recoveryState?.workflowStage || (parsed.note && savedStage === 'review' ? 'review' : 'compose'));
+          setActiveComposeLane(parsed.recoveryState?.composeLane || (parsed.note ? 'finish' : 'setup'));
+          localStorage.setItem(draftSessionStorageKey, JSON.stringify(parsed));
+          localStorage.setItem(draftRecoveryStorageKey, JSON.stringify({
+            draftId: parsed.id,
+            recoveryState: parsed.recoveryState,
+          }));
         } catch {
-          localStorage.removeItem(draftSessionStorageKey);
-          localStorage.removeItem(draftRecoveryStorageKey);
+          // Keep the prototype usable even if backend draft restore is unavailable.
         }
-      }
-
-      try {
-        const response = await fetch(`/api/drafts/latest?providerId=${encodeURIComponent(resolvedProviderIdentityId)}`, { cache: 'no-store' });
-        const data = (await response.json()) as { draft?: PersistedDraftSession | null };
-        const parsed = data?.draft;
-
-        if (!parsed) {
-          return;
+      } finally {
+        if (isActive) {
+          setDraftHydrationComplete(true);
         }
-
-        hydratedFromSavedStateRef.current = true;
-        setSpecialty(parsed.specialty || 'Psychiatry');
-        setRole(parsed.role || 'Psychiatric NP');
-        setNoteType(parsed.noteType || 'Inpatient Psych Progress Note');
-        setTemplate(parsed.template || 'Default Inpatient Psych Progress Note');
-        setSourceSections(hydrateSectionsFromDraft(parsed));
-        setEncounterSupport(normalizeEncounterSupport(parsed.encounterSupport, parsed.noteType || 'Inpatient Psych Progress Note'));
-        setMedicationProfile(normalizeMedicationProfile(parsed.medicationProfile));
-        setDiagnosisProfile(normalizeDiagnosisProfile(parsed.diagnosisProfile));
-        setOutputStyle(parsed.outputStyle || 'Standard');
-        setFormat(parsed.format || 'Labeled Sections');
-        setFlagMissingInfo(parsed.flagMissingInfo ?? true);
-        setKeepCloserToSource(parsed.keepCloserToSource ?? true);
-        setOutputScope(parsed.outputScope || 'full-note');
-        setRequestedSections(Array.isArray(parsed.requestedSections) ? parsed.requestedSections as NoteSectionKey[] : []);
-        setDictationInsertions(parsed.dictationInsertions || {});
-        setAmbientTranscriptHandoff(parsed.ambientTranscriptHandoff);
-        setPresetName('');
-        setDraftCheckpoint(parsed);
-        setGeneratedSession(parsed.note ? parsed : null);
-        setWorkflowStage(parsed.recoveryState?.workflowStage || (parsed.note && savedStage === 'review' ? 'review' : 'compose'));
-        setActiveComposeLane(parsed.recoveryState?.composeLane || (parsed.note ? 'finish' : 'setup'));
-        localStorage.setItem(draftSessionStorageKey, JSON.stringify(parsed));
-        localStorage.setItem(draftRecoveryStorageKey, JSON.stringify({
-          draftId: parsed.id,
-          recoveryState: parsed.recoveryState,
-        }));
-      } catch {
-        // Keep the prototype usable even if backend draft restore is unavailable.
       }
     }
 
     void hydrateDraft();
+    return () => {
+      isActive = false;
+    };
   }, [draftRecoveryStorageKey, draftSessionStorageKey, draftStageStorageKey, requestedDictationSessionId, requestedDraftId, resolvedProviderIdentityId]);
 
   useEffect(() => {
@@ -3592,6 +3605,7 @@ export function NewNoteForm() {
   }
 
   function scrollToDraftControls() {
+    setWorkflowStage('compose');
     setActiveComposeLane('finish');
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -3600,7 +3614,31 @@ export function NewNoteForm() {
     });
   }
 
+  function scrollToElementWhenReady(
+    targetId: string,
+    options: ScrollIntoViewOptions = { behavior: 'smooth', block: 'start' },
+    onReady?: (target: HTMLElement) => void,
+    attemptsRemaining = 10,
+  ) {
+    const target = document.getElementById(targetId);
+
+    if (target) {
+      onReady?.(target);
+      target.scrollIntoView(options);
+      return;
+    }
+
+    if (attemptsRemaining <= 0) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      scrollToElementWhenReady(targetId, options, onReady, attemptsRemaining - 1);
+    }, 80);
+  }
+
   function scrollToOutputPreferences() {
+    setWorkflowStage('compose');
     setActiveComposeLane('finish');
     flashJumpHighlight('output-preferences');
     if (outputPreferencesDetailsRef.current) {
@@ -3616,21 +3654,24 @@ export function NewNoteForm() {
   }
 
   function scrollToMyNotePrompt() {
+    setWorkflowStage('compose');
     setActiveComposeLane('finish');
     flashJumpHighlight('output-preferences');
     setEvalBanner(`My Note Prompt is where reusable instructions for ${noteType} live. These instructions guide generation along with the patient source packet.`);
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        if (outputPreferencesDetailsRef.current) {
-          outputPreferencesDetailsRef.current.open = true;
-        }
-
-        window.setTimeout(() => {
-          const target = document.getElementById('my-note-prompt-panel');
-          target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          target?.querySelector<HTMLElement>('input, textarea')?.focus({ preventScroll: true });
-        }, 80);
+        scrollToElementWhenReady(
+          'my-note-prompt-panel',
+          { behavior: 'smooth', block: 'start' },
+          (target) => {
+            if (outputPreferencesDetailsRef.current) {
+              outputPreferencesDetailsRef.current.open = true;
+            }
+            target.querySelector<HTMLElement>('input, textarea')?.focus({ preventScroll: true });
+          },
+          14,
+        );
       });
     });
   }
@@ -3730,6 +3771,7 @@ export function NewNoteForm() {
       finish: 'generate-note-panel',
     };
 
+    setWorkflowStage('compose');
     setActiveComposeLane(lane);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -4433,6 +4475,25 @@ export function NewNoteForm() {
     },
   ];
 
+  if (!draftHydrationComplete) {
+    return (
+      <div className="grid gap-4">
+        <div className="workspace-shell overflow-visible rounded-[34px] p-[1px]">
+          <div className="rounded-[33px] bg-[linear-gradient(180deg,rgba(10,23,39,0.94),rgba(9,18,31,0.9))] p-6 shadow-[0_28px_70px_rgba(2,8,18,0.34)]">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100/66">Veranote workspace</div>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-white">Preparing your note workspace</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-cyan-50/72">
+              Checking for a saved draft or compose checkpoint so the page opens in the right place without jumping.
+            </p>
+            <div className="mt-5 h-2 overflow-hidden rounded-full border border-cyan-200/12 bg-[rgba(255,255,255,0.06)]">
+              <div className="h-full w-1/2 rounded-full bg-[linear-gradient(90deg,rgba(103,232,249,0.2),rgba(103,232,249,0.92),rgba(45,212,191,0.72))]" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!showUnifiedWorkspace && workflowStage === 'review' && generatedSession) {
     return (
       <div className="grid gap-4">
@@ -4440,7 +4501,7 @@ export function NewNoteForm() {
           Review opened inside the same patient-note workspace. Source stays beside the draft on wide screens so you can compare, revise, and finish without jumping around.
         </div>
 
-        <div className="workspace-shell workspace-grid overflow-hidden rounded-[38px] p-[1px]">
+        <div className="workspace-shell workspace-grid overflow-visible rounded-[38px] p-[1px]">
           <div className="min-w-0 bg-[linear-gradient(180deg,rgba(10,23,39,0.92),rgba(9,18,31,0.88))] p-3 sm:p-4 md:p-5">
             <div className="mb-4 flex flex-col gap-4 rounded-[26px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] p-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
@@ -5196,7 +5257,7 @@ export function NewNoteForm() {
 	        </div>
 	      </div>
 
-	      <div className="workspace-shell workspace-grid overflow-hidden rounded-[38px] p-[1px]">
+	      <div className="workspace-shell workspace-grid overflow-visible rounded-[38px] p-[1px]">
         <div className="min-w-0 bg-[linear-gradient(180deg,rgba(10,23,39,0.92),rgba(9,18,31,0.88))]">
 	          <div className="grid gap-4 p-3 sm:p-4 md:p-5 xl:min-h-[620px]">
             {showUnifiedWorkspace || activeComposeLane === 'setup' ? (
@@ -5996,7 +6057,10 @@ export function NewNoteForm() {
               </div>
             </div>
 
-            <details className={`${activeComposeLane === 'support' || activeComposeLane === 'finish' ? '' : 'hidden'} rounded-[22px] border border-cyan-200/12 bg-[rgba(7,18,32,0.42)] px-4 py-3 text-cyan-50/82`}>
+            <details
+              open={showUnifiedWorkspace || activeComposeLane === 'support'}
+              className={`${activeComposeLane === 'support' || activeComposeLane === 'finish' ? '' : 'hidden'} rounded-[22px] border border-cyan-200/12 bg-[rgba(7,18,32,0.42)] px-4 py-3 text-cyan-50/82`}
+            >
               <summary className="cursor-pointer list-none">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
@@ -6697,6 +6761,8 @@ export function NewNoteForm() {
       </CollapsibleFormSection>
       </div>
       ) : null}
+              </div>
+            </details>
 
       {showUnifiedWorkspace || activeComposeLane === 'finish' ? (
         <div className="grid gap-4">
@@ -6923,7 +6989,7 @@ export function NewNoteForm() {
                       </div>
                     </div>
 
-                    <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)]">
+                    <div className="mt-4 grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)]">
                       <div className="grid gap-4">
                         <label className="grid gap-2 text-sm font-medium text-slate-900">
                           <span>Assistant name</span>
@@ -6953,7 +7019,7 @@ export function NewNoteForm() {
 
                         <div>
                           <div className="text-sm font-medium text-slate-900">Avatar</div>
-                          <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
                             {assistantAvatarOptions.map((option) => {
                               const isSelected = assistantPersona.avatar === option.id;
 
@@ -7478,7 +7544,10 @@ export function NewNoteForm() {
 
       {(showUnifiedWorkspace || activeComposeLane === 'finish') && error ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
-      <details className={`${activeComposeLane === 'support' ? '' : 'hidden'} rounded-[26px] border border-cyan-200/12 bg-[rgba(7,18,32,0.5)] p-4 text-cyan-50/82 md:p-5`}>
+      <details
+        open={activeComposeLane === 'support'}
+        className={`${activeComposeLane === 'support' ? '' : 'hidden'} rounded-[26px] border border-cyan-200/12 bg-[rgba(7,18,32,0.5)] p-4 text-cyan-50/82 md:p-5`}
+      >
         <summary className="cursor-pointer list-none">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
@@ -7573,8 +7642,6 @@ export function NewNoteForm() {
           ) : null}
         </div>
       </details>
-              </div>
-            </details>
           </div>
         </div>
       </div>

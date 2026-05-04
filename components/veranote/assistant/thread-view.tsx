@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { AssistantPersonaAvatar } from '@/components/veranote/assistant/assistant-persona-avatar';
 import type { AssistantAvatarId } from '@/lib/veranote/assistant-persona';
 import type { AssistantMessage, AssistantStage } from '@/types/assistant';
@@ -19,8 +19,6 @@ type ThreadViewProps = {
     label: string;
     detail: string;
   }>;
-  compactReviewMode?: boolean;
-  onToggleCompactReviewMode?: () => void;
   focusedSectionHeading?: string;
   renderAssistantFeedback?: (message: AssistantMessage, isLatestAssistant: boolean) => ReactNode;
   assistantName?: string;
@@ -37,8 +35,6 @@ export function ThreadView({
   starterPrompts,
   onSelectStarter,
   activityTimeline,
-  compactReviewMode = false,
-  onToggleCompactReviewMode,
   focusedSectionHeading,
   renderAssistantFeedback,
   assistantName = 'Assistant',
@@ -46,38 +42,12 @@ export function ThreadView({
   assistantAvatar = 'clinical-orbit',
 }: ThreadViewProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
-  const [showOlderMessages, setShowOlderMessages] = useState(false);
 
   const latestAssistantMessageId = useMemo(
     () => [...messages].reverse().find((message) => message.role === 'assistant')?.id || null,
     [messages],
   );
-  const latestProviderMessageId = useMemo(
-    () => [...messages].reverse().find((message) => message.role === 'provider')?.id || null,
-    [messages],
-  );
-  const visibleMessages = useMemo(() => {
-    if (!compactReviewMode) {
-      return showOlderMessages ? messages : messages.slice(-6);
-    }
-
-    const visibleIds = new Set<string>();
-
-    if (latestAssistantMessageId) {
-      visibleIds.add(latestAssistantMessageId);
-    }
-
-    if (isLoading && latestProviderMessageId) {
-      visibleIds.add(latestProviderMessageId);
-    }
-
-    if (!visibleIds.size) {
-      return showOlderMessages ? messages : messages.slice(-2);
-    }
-
-    return showOlderMessages ? messages : messages.filter((message) => visibleIds.has(message.id));
-  }, [compactReviewMode, isLoading, latestAssistantMessageId, latestProviderMessageId, messages, showOlderMessages]);
-  const hiddenCount = Math.max(messages.length - visibleMessages.length, 0);
+  const visibleMessages = messages;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -85,30 +55,8 @@ export function ThreadView({
 
   return (
     <div
-      className="flex min-h-0 flex-col gap-4 rounded-[16px] bg-[rgba(6,15,27,0.34)] px-0.5 py-1.5 sm:rounded-[18px] sm:px-1"
+      className="flex min-h-full flex-col gap-3 px-1 py-1.5 sm:px-2"
     >
-      {stage === 'review' && onToggleCompactReviewMode ? (
-        <div className="sticky top-0 z-10 flex justify-end px-1">
-          <button
-            type="button"
-            onClick={onToggleCompactReviewMode}
-            className="rounded-full border border-cyan-200/10 bg-[rgba(9,20,35,0.82)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100/70 transition hover:border-cyan-200/18 hover:text-cyan-50"
-          >
-            {compactReviewMode ? 'Compact thread' : 'Full thread'}
-          </button>
-        </div>
-      ) : null}
-      {hiddenCount > 0 ? (
-        <div className="sticky top-0 z-10 flex justify-center">
-          <button
-            type="button"
-            onClick={() => setShowOlderMessages((current) => !current)}
-            className="rounded-full border border-cyan-200/10 bg-[rgba(9,20,35,0.82)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100/70 transition hover:border-cyan-200/18 hover:text-cyan-50"
-          >
-            {showOlderMessages ? 'Hide earlier messages' : `Show earlier messages (${hiddenCount})`}
-          </button>
-        </div>
-      ) : null}
       {!messages.length && !isLoading ? (
         <div className="rounded-[20px] border border-cyan-200/10 bg-[linear-gradient(180deg,rgba(12,27,45,0.84),rgba(8,19,33,0.88))] px-3.5 py-3.5 text-cyan-50 shadow-[0_16px_36px_rgba(4,12,24,0.18)]">
           <div className="flex items-center gap-3">

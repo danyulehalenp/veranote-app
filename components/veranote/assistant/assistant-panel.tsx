@@ -352,7 +352,6 @@ export const AssistantPanel = memo(function AssistantPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showSecondaryControls, setShowSecondaryControls] = useState(false);
-  const [compactReviewMode, setCompactReviewMode] = useState(stage === 'review');
   const [showTools, setShowTools] = useState(false);
   const [showContextDetails, setShowContextDetails] = useState(false);
   const [showReferencePolicyPanel, setShowReferencePolicyPanel] = useState(false);
@@ -425,7 +424,6 @@ export const AssistantPanel = memo(function AssistantPanel({
     setActionMessage('');
     setShowSuggestions(false);
     setShowSecondaryControls(false);
-    setCompactReviewMode(stage === 'review');
     setShowTools(false);
     setShowContextDetails(false);
     setShowReferencePolicyPanel(false);
@@ -1310,8 +1308,12 @@ export const AssistantPanel = memo(function AssistantPanel({
         ) : null}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden py-2">
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden py-2">
+        <div
+          data-testid="assistant-conversation-box"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] border border-cyan-200/12 bg-[linear-gradient(180deg,rgba(6,15,27,0.9),rgba(4,12,24,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 pr-1">
           <div className="flex min-h-full flex-col gap-3">
             <div className="min-h-[320px] flex-1">
               <ThreadView
@@ -1323,8 +1325,6 @@ export const AssistantPanel = memo(function AssistantPanel({
                 starterPrompts={quickPrompts.slice(0, 4)}
                 onSelectStarter={(prompt) => void sendMessage(prompt)}
                 activityTimeline={assistantActivityTimeline}
-                compactReviewMode={compactReviewMode}
-                onToggleCompactReviewMode={stage === 'review' ? () => setCompactReviewMode((current) => !current) : undefined}
                 focusedSectionHeading={context.focusedSectionHeading}
                 assistantName={assistantName}
                 assistantRole={assistantRole}
@@ -1918,12 +1918,10 @@ export const AssistantPanel = memo(function AssistantPanel({
           </div>
         </div>
 
-        <div className="shrink-0 border-t border-cyan-200/10 pt-2">
-          <div className="rounded-[14px] border border-cyan-200/10 bg-[rgba(8,20,34,0.72)] px-2.5 py-2.5">
-            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/68">Follow-up</div>
-            <Composer disabled={isLoading} placeholder={composerPlaceholder} onSend={handleComposerSend} compact />
-          </div>
+        <div className="shrink-0 border-t border-cyan-200/10 bg-[rgba(5,14,25,0.86)] px-2.5 py-2.5">
+          <Composer disabled={isLoading} placeholder={composerPlaceholder} onSend={handleComposerSend} compact />
         </div>
+      </div>
       </div>
     </div>
   );

@@ -1334,7 +1334,7 @@ export function ProviderSettingsPanel() {
 
             <div>
               <div className="text-sm font-medium text-ink">Avatar</div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {assistantAvatarOptions.map((option) => {
                   const isSelected = assistantPersona.avatar === option.id;
 

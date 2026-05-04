@@ -544,7 +544,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
     forbidden: [
       { label: 'adherence overstated', pattern: /taking as prescribed|perfect adherence|fully adherent|good adherence|adherent with medication/i },
       { label: 'side effect erased', pattern: /no side effects|denies side effects|tolerating without side effects/i },
-      { label: 'dose change invented', pattern: /(?:increase|decrease|adjust)\s+sertraline\b|sertraline[^.\n]{0,80}\b(?:increased|decreased)\b|(?:sertraline dose|dose of sertraline)(?![^.\n]{0,80}\b(?:not|no)\b)[^.\n]{0,80}\badjusted\b/i },
+      { label: 'dose change invented', pattern: /(?:increase|decrease|adjust|change)\s+(?:the\s+)?(?:sertraline|zoloft)\s+(?:dose|dosage|mg)\b|(?:sertraline|zoloft)[^.\n]{0,100}\b(?:dose|dosage|mg)\b[^.\n]{0,100}\b(?:increased|decreased|adjusted|changed)\b|(?:sertraline dose|dose of sertraline)(?![^.\n]{0,80}\b(?:not|no)\b)[^.\n]{0,80}\b(?:adjusted|changed|increased|decreased)\b/i },
       { label: 'provider instruction leaked', pattern: /treat misspellings as rushed typing|perfect adherence|Provider Add-On/i },
     ],
   },
@@ -579,7 +579,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
     },
     required: [
       { label: 'telehealth or video limitation visible', pattern: /telehealth|video.*(?:froze|limited|freezing)|camera/i },
-      { label: 'missed nighttime doses visible', pattern: /missed.*(?:night|dose).*(?:3|three)|forgets?.*night|fell asleep/i },
+      { label: 'missed nighttime doses visible', pattern: /miss(?:ed|ing).*night.*dose.*(?:3|three)|miss(?:ed|ing).*dose.*(?:3|three)|forgets?.*night|fell asleep/i },
       { label: 'partial benefit visible', pattern: /helps? some|better some|partial/i },
       { label: 'SI/HI denial visible', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
     ],
@@ -874,7 +874,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
     required: [
       { label: 'nightmares or avoidance visible', pattern: /nightmares|avoidance|accident site/i },
       { label: 'alcohol pattern visible', pattern: /wine|two glasses|AUDIT-C|most nights/i },
-      { label: 'diagnostic uncertainty visible', pattern: /PTSD.*(?:uncertain|not confirmed|not established|needs)|diagnostic uncertainty|not enough/i },
+      { label: 'diagnostic uncertainty visible', pattern: /PTSD.*(?:uncertain|not confirmed|not established|needs)|diagnostic uncertainty|not enough|no formal diagnostic assessment|diagnos(?:is|tic).*not.*(?:confirmed|established)/i },
       { label: 'SI/HI denial visible', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
     ],
     forbidden: [

@@ -185,8 +185,8 @@ const progressNoteRequiredHeadings = [
 
 function hasProgressHeading(note: string, heading: string) {
  const aliases: Record<string, RegExp[]> = {
- 'Interval Events / Patient Report (Subjective)': [/^\s*Interval (?:Events|History).*Subjective\s*:/im, /^\s*Subjective\s*:/im],
- 'Staff / Nursing / Collateral Observations (Objective)': [/^\s*Staff \/ Nursing \/ Collateral Observations.*Objective\s*:/im, /^\s*Objective\s*:/im],
+ 'Interval Events / Patient Report (Subjective)': [/^\s*Interval (?:Events|History).*Subjective\)?\s*:/im, /^\s*Subjective\s*:/im],
+ 'Staff / Nursing / Collateral Observations (Objective)': [/^\s*Staff \/ Nursing \/ Collateral Observations.*Objective\)?\s*:/im, /^\s*Objective\s*:/im],
  'Mental Status Exam / Observations': [/^\s*Mental Status(?: Exam)? \/ Observations\s*:/im, /^\s*MSE\s*:/im],
  'Safety / Risk': [/^\s*Safety \/ Risk\s*:/im, /^\s*Risk Assessment\s*:/im],
  'Assessment / Clinical Formulation': [/^\s*Assessment(?: \/ Clinical Formulation)?\s*:/im],
@@ -284,6 +284,21 @@ function preserveDiagnosticUncertainty(note: string, sourceInput: string) {
  return `${note.trim()}\n\nDiagnostic Uncertainty / Source Limitation:\nDiagnostic uncertainty remains from the provided source; mixed cues such as past psychosis concern, insomnia, stimulant request, medical factors, or substance factors should not be converted into a confirmed diagnosis.`;
 }
 
+function preservePsychosisObservationConflict(note: string, sourceInput: string) {
+ const sourceHasPsychosisObservationConflict = /((denies ah\/vh|no, i['’]m not hearing voices|denies hallucinations?|denies auditory|denies visual)[\s\S]*(internally preoccupied|laughing to self|staring intermittently|look(?:ed|ing)? toward the corner|responding to internal stimuli))/i.test(sourceInput)
+  || /((internally preoccupied|laughing to self|staring intermittently|look(?:ed|ing)? toward the corner|responding to internal stimuli)[\s\S]*(denies ah\/vh|no, i['’]m not hearing voices|denies hallucinations?|denies auditory|denies visual))/i.test(sourceInput);
+
+ if (!sourceHasPsychosisObservationConflict) return note;
+
+ return note
+  .replace(/\bconfirmed hallucinations?\b/gi, 'perceptual disturbance not confirmed')
+  .replace(/\bpatient (?:is|was) hallucinating\b/gi, 'observed behavior raised concern for possible internal preoccupation')
+  .replace(/\bprimary psychotic disorder\b/gi, 'primary psychotic etiology')
+  .replace(/\bprimary psychosis\b/gi, 'primary psychotic etiology')
+  .replace(/\bhallucinations? (?:are|were) confirmed\b/gi, 'hallucinations were not confirmed from the provided source')
+  .replace(/\bpsychosis (?:is|was) confirmed\b/gi, 'psychosis is not confirmed from the provided source');
+}
+
 function removeUnsupportedMedicationActionPlan(note: string, sourceInput: string) {
  let cleaned = note;
 
@@ -354,7 +369,8 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withMedicalClearancePreserved = preserveMedicalClearanceUncertainty(withoutUnsupportedMedicalStability, input.sourceInput);
  const withSourceBoundRisk = hardenSourceBoundRiskWording(withMedicalClearancePreserved, input.sourceInput);
  const withDiagnosticUncertainty = preserveDiagnosticUncertainty(withSourceBoundRisk, input.sourceInput);
- const withoutUnsupportedMedicationAction = removeUnsupportedMedicationActionPlan(withDiagnosticUncertainty, input.sourceInput);
+ const withPsychosisConflictPreserved = preservePsychosisObservationConflict(withDiagnosticUncertainty, input.sourceInput);
+ const withoutUnsupportedMedicationAction = removeUnsupportedMedicationActionPlan(withPsychosisConflictPreserved, input.sourceInput);
 
  return removeProviderAddOnInstructionEcho(withoutUnsupportedMedicationAction, input.sourceInput);
 }

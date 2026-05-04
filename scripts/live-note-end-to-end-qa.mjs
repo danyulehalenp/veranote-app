@@ -441,6 +441,40 @@ async function getVisibleCopyFinalNoteButton(page, timeout = 5000) {
   ], timeout);
 }
 
+function summarizeReviewStatuses(sectionReviewState) {
+  return Object.values(sectionReviewState || {}).reduce((counts, entry) => {
+    const status = entry?.status || 'missing';
+    counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+async function readVisibleDraftSessionReviewSummary(page) {
+  return page.evaluate(() => {
+    return Object.keys(window.localStorage)
+      .filter((key) => key.startsWith('clinical-documentation-transformer:draft-session:'))
+      .map((key) => {
+        try {
+          const parsed = JSON.parse(window.localStorage.getItem(key) || '{}');
+          const statuses = Object.values(parsed.sectionReviewState || {}).reduce((counts, entry) => {
+            const status = entry?.status || 'missing';
+            counts[status] = (counts[status] || 0) + 1;
+            return counts;
+          }, {});
+
+          return {
+            key,
+            draftId: parsed.id || parsed.draftId || null,
+            noteType: parsed.noteType || null,
+            statuses,
+          };
+        } catch {
+          return { key, error: 'unreadable' };
+        }
+      });
+  }).catch(() => []);
+}
+
 async function openDedicatedReviewForReopenedDraft(page, appUrl, runId) {
   const dedicatedReviewLink = page.getByRole('link', { name: 'Open Dedicated Review' }).first();
 
@@ -481,6 +515,21 @@ async function openSavedDraftForReview(page, appUrl, runId, draftId) {
   await page.getByPlaceholder('Search note type, source text, or draft text').waitFor({ state: 'visible', timeout: 30000 });
   await page.getByPlaceholder('Search note type, source text, or draft text').fill(runId);
   await page.waitForTimeout(500);
+
+  if (draftId) {
+    const targetDraftCard = page.locator(`[data-testid="saved-draft-card"][data-draft-id="${draftId}"]`);
+    if (await waitForVisible(targetDraftCard, 10000)) {
+      const targetReviewButton = await waitForAnyVisible([
+        targetDraftCard.getByRole('button', { name: 'Review in workspace' }),
+      ], 5000);
+
+      if (targetReviewButton) {
+        await targetReviewButton.click();
+        await page.waitForURL((url) => url.pathname === '/dashboard/new-note', { timeout: 30000 });
+        return 'saved-drafts-list';
+      }
+    }
+  }
 
   const reviewButton = await waitForAnyVisible([
     page.getByRole('button', { name: 'Review in workspace' }),
@@ -645,7 +694,14 @@ async function main() {
 
     const reopenedCopyEnabled = Boolean(copyButton && await copyButton.isEnabled());
     if (!reopenedCopyEnabled) {
-      throw new Error('Reopened saved draft did not preserve approved review state.');
+      const reopenedReviewSummary = await readVisibleDraftSessionReviewSummary(page);
+      throw new Error([
+        'Reopened saved draft did not preserve approved review state.',
+        `Saved draft ID: ${savedDraftId || 'unknown'}.`,
+        `Saved response review statuses: ${JSON.stringify(summarizeReviewStatuses(saveDraftPayload?.draft?.sectionReviewState))}.`,
+        `Visible local draft review statuses: ${JSON.stringify(reopenedReviewSummary)}.`,
+        `URL: ${page.url()}.`,
+      ].join('\n'));
     }
 
     await copyFinalNoteFromCurrentReview(page);

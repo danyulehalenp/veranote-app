@@ -45,19 +45,24 @@ export function Composer({ disabled, placeholder, onSend, compact = false }: Com
 
   return (
     <form onSubmit={handleSubmit} className="grid gap-3">
-      <textarea
-        ref={textareaRef}
-        data-testid="assistant-composer-input"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        onKeyDown={handleKeyDown}
-        disabled={disabled}
-        placeholder={placeholder || 'Ask your own question about this warning, this section, your note preferences, privacy, or your workflow...'}
-        className={`w-full rounded-[16px] border border-border bg-white px-3 py-2.5 text-sm leading-6 text-slate-900 disabled:cursor-not-allowed disabled:opacity-60 ${
-          compact ? 'min-h-[68px] sm:min-h-[60px]' : 'min-h-[82px] sm:min-h-[72px]'
-        }`}
-      />
-      <div className="flex justify-stretch sm:justify-end">
+      <div className="rounded-[18px] border border-cyan-200/12 bg-[rgba(7,17,30,0.72)] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+        <textarea
+          ref={textareaRef}
+          data-testid="assistant-composer-input"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={disabled}
+          placeholder={placeholder || 'Ask a follow-up or switch topics...'}
+          className={`w-full resize-none rounded-[14px] border border-cyan-200/10 bg-[rgba(4,12,24,0.74)] px-3 py-2.5 text-sm leading-6 text-cyan-50 outline-none transition placeholder:text-cyan-100/42 focus:border-cyan-200/30 focus:bg-[rgba(5,18,32,0.9)] disabled:cursor-not-allowed disabled:opacity-60 ${
+            compact ? 'min-h-[58px]' : 'min-h-[72px]'
+          }`}
+        />
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-[11px] leading-5 text-cyan-100/52">
+          Press Enter to send. Shift+Enter adds a new line.
+        </div>
         <button
           type="submit"
           data-testid="assistant-send-button"

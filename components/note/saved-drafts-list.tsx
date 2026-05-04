@@ -280,6 +280,10 @@ export function SavedDraftsList() {
       .filter((draft) => !draft.archivedAt)
       .sort((left, right) => getRecommendationScore(right) - getRecommendationScore(left))[0] || null;
   }, [drafts]);
+  const hasActiveSearchOrFilter = Boolean(query.trim())
+    || selectedSpecialty !== 'All specialties'
+    || selectedStage !== 'All stages'
+    || visibilityFilter !== 'active';
 
   async function rememberDraftOpen(draft: SavedDraft, session: DraftSession) {
     localStorage.setItem(draftSessionStorageKey, JSON.stringify(session));
@@ -459,7 +463,7 @@ export function SavedDraftsList() {
 
       {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
-      {resumeCandidate ? (
+      {resumeCandidate && !hasActiveSearchOrFilter ? (
         <div className="aurora-panel grid gap-4 rounded-[28px] border border-cyan-200/70 p-6 lg:grid-cols-[minmax(0,1.2fr)_auto] lg:items-center">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-900/75">Resume last working draft</div>
@@ -525,7 +529,12 @@ export function SavedDraftsList() {
             const { approved, needsReview, unreviewed, confirmedEvidence } = getReviewStatusCounts(draft.sectionReviewState);
 
             return (
-              <div key={draft.id} className={`aurora-panel rounded-[26px] p-5 text-left transition hover:shadow-md ${draft.archivedAt ? 'opacity-80' : ''}`}>
+              <div
+                key={draft.id}
+                data-testid="saved-draft-card"
+                data-draft-id={draft.id}
+                className={`aurora-panel rounded-[26px] p-5 text-left transition hover:shadow-md ${draft.archivedAt ? 'opacity-80' : ''}`}
+              >
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
                     <div className="text-lg font-semibold text-ink">{draft.noteType}</div>
