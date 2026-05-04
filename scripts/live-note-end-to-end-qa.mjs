@@ -654,6 +654,14 @@ async function main() {
       throw new Error('Generate note response did not include note text.');
     }
 
+    const postNoteCptPanelVisible = await waitForVisible(page.getByTestId('post-note-cpt-support-panel'), 10000);
+    const postNoteCptPanelText = postNoteCptPanelVisible
+      ? await page.getByTestId('post-note-cpt-support-panel').innerText()
+      : '';
+    if (!postNoteCptPanelVisible || !/CPT support candidates|Coding support only/i.test(postNoteCptPanelText)) {
+      throw new Error('Post-note CPT support panel did not render in the review workflow after draft generation.');
+    }
+
     await openAssistantPanel(page);
     const assistantResult = await askVisibleAssistantTurn(page, 'What should I check before copying this note?');
     if (!assistantResult.answerCharacters || !assistantResult.visibleInViewport) {
@@ -730,6 +738,8 @@ async function main() {
         generatedNoteCharacters,
         draftCreateStatus: draftCreateResponse.status(),
         draftCreateId: draftCreatePayload?.draft?.id || null,
+        postNoteCptPanelVisible,
+        postNoteCptPanelCharacters: postNoteCptPanelText.length,
         assistantAnswerCharacters: assistantResult.answerCharacters,
         assistantAnswerVisible: assistantResult.visibleInViewport,
         copyBlockedBeforeApproval: !copyEnabledBeforeApproval,

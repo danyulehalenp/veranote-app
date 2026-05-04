@@ -4232,7 +4232,7 @@ export function NewNoteForm() {
           sectionReviewState: undefined,
         }, {
           workflowStage: 'review',
-          composeLane: activeComposeLane,
+          composeLane: 'finish',
         }),
         mode: data.mode,
         warning: typeof data.warning === 'string' ? data.warning : undefined,
@@ -4293,10 +4293,11 @@ export function NewNoteForm() {
       setLanePreferenceSuggestion(getLanePreferenceSuggestion(noteType, resolvedProviderIdentityId));
 
       setWorkflowStage('review');
+      setActiveComposeLane('finish');
       persistDraftRecovery({
         draftId: sessionToPersist.draftId,
         workflowStage: 'review',
-        composeLane: activeComposeLane,
+        composeLane: 'finish',
         note: sessionToPersist.note,
         sectionReviewState: sessionToPersist.sectionReviewState,
       });

@@ -66,6 +66,18 @@ describe('source lane and EHR output contract', () => {
   });
 
   it('keeps named EHR destinations section-addressable for future connectors', () => {
+    expect(OUTPUT_DESTINATIONS).toEqual(expect.arrayContaining([
+      'Epic',
+      'Oracle Health/Cerner',
+      'athenaOne',
+      'eClinicalWorks',
+      'AdvancedMD',
+      'DrChrono',
+      'Netsmart myAvatar',
+      'Qualifacts/CareLogic',
+      'Credible',
+    ]));
+
     for (const destination of OUTPUT_DESTINATIONS.filter((item) => item !== 'Generic')) {
       const readiness = buildEhrOutputReadiness(destination, 'outpatient-follow-up');
 

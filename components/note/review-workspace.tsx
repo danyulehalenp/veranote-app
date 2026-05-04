@@ -31,6 +31,7 @@ import {
   getOutputNoteFocusLabel,
   inferOutputNoteFocus,
 } from '@/lib/veranote/output-destinations';
+import { evaluatePostNoteCptRecommendations } from '@/lib/veranote/defensibility/cpt-support';
 import { buildLanePreferencePrompt } from '@/lib/veranote/preference-draft';
 import { ATLAS_REVIEW_DOCK_ENABLED, buildAtlasNudges, buildAtlasReviewItems, type AtlasReviewItem } from '@/lib/veranote/atlas-review';
 import {
@@ -2719,6 +2720,14 @@ export function ReviewWorkspace({
     }),
     [draftText, session?.noteType],
   );
+  const postNoteCptRecommendations = useMemo(
+    () => evaluatePostNoteCptRecommendations({
+      completedNoteText: draftText,
+      noteType: session?.noteType || '',
+      encounterSupport,
+    }),
+    [draftText, encounterSupport, session?.noteType],
+  );
   const phaseTwoTrustCues = useMemo(
     () => buildPhaseTwoTrustCues({
       draftSections,
@@ -4080,6 +4089,43 @@ export function ReviewWorkspace({
               />
             </div>
           ) : null}
+
+          <div
+            data-testid="post-note-cpt-support-panel"
+            className="mt-4 rounded-[20px] border border-amber-300/20 bg-[rgba(146,98,18,0.16)] p-4 text-sm text-amber-50"
+          >
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-100/86">Post-note CPT support candidates</div>
+                <p className="mt-1 leading-6 text-amber-50/88">{postNoteCptRecommendations.summary}</p>
+              </div>
+              <div className="rounded-full border border-amber-200/24 bg-amber-300/12 px-3 py-1 text-xs font-medium text-amber-50">
+                Coding support only
+              </div>
+            </div>
+            {postNoteCptRecommendations.candidates.length ? (
+              <details className="mt-3 rounded-[16px] border border-amber-200/20 bg-[rgba(255,255,255,0.08)] p-3">
+                <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.14em] text-amber-100">
+                  Review {postNoteCptRecommendations.candidates.length} candidate family{postNoteCptRecommendations.candidates.length === 1 ? '' : 'ies'}
+                </summary>
+                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                  {postNoteCptRecommendations.candidates.map((candidate) => (
+                    <div key={candidate.family} className="rounded-[14px] border border-amber-200/16 bg-[rgba(7,18,32,0.42)] p-3">
+                      <div className="font-semibold text-white">{candidate.family}</div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {candidate.candidateCodes.map((code) => (
+                          <span key={code} className="rounded-full border border-amber-200/20 bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-50">
+                            {code}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-amber-50/78">{candidate.why[0]}</p>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ) : null}
+          </div>
 
           <textarea ref={draftTextareaRef} value={draftText} onChange={(event) => setDraftText(event.target.value)} className="workspace-control mt-4 min-h-[780px] w-full rounded-[24px] p-4 text-sm leading-7" />
 
@@ -5608,6 +5654,90 @@ export function ReviewWorkspace({
             </div>
           </div>
         ) : null}
+        <div
+          data-testid="post-note-cpt-support-panel"
+          className="mt-4 rounded-lg border border-amber-200 bg-white p-3"
+        >
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Post-note CPT support candidates</div>
+              <p className="mt-1 text-sm text-amber-900">
+                {postNoteCptRecommendations.summary}
+              </p>
+            </div>
+            <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900">
+              Coding support only
+            </div>
+          </div>
+          {postNoteCptRecommendations.candidates.length ? (
+            <div className="mt-4 grid gap-3 xl:grid-cols-2">
+              {postNoteCptRecommendations.candidates.map((candidate) => (
+                <div key={candidate.family} className="rounded-lg border border-amber-100 bg-amber-50/40 p-3 text-sm text-amber-900">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <div className="font-semibold text-amber-950">{candidate.family}</div>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {candidate.candidateCodes.map((code) => (
+                          <span key={code} className="rounded-full border border-amber-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-amber-900">
+                            {code}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <span className="rounded-full border border-amber-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold capitalize text-amber-900">
+                      {candidate.strength.replace(/-/g, ' ')}
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <ReviewItemDisclosure
+                      className="border-amber-100 bg-white text-amber-950"
+                      title="Why this surfaced"
+                      summary={candidate.why[0] || 'This family matched visible note or encounter-support signals.'}
+                    >
+                      <ul className="list-disc space-y-1 pl-5 text-amber-900">
+                        {candidate.why.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </ReviewItemDisclosure>
+                    <ReviewItemDisclosure
+                      className="border-amber-100 bg-white text-amber-950"
+                      title="What to verify"
+                      summary={candidate.missingElements[0] || 'Verify payer, facility, and current CPT requirements.'}
+                    >
+                      <ul className="list-disc space-y-1 pl-5 text-amber-900">
+                        {candidate.missingElements.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </ReviewItemDisclosure>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+              {postNoteCptRecommendations.missingGlobalElements[0] || 'The completed note does not yet show enough documentation structure for CPT-support candidates.'}
+            </div>
+          )}
+          {postNoteCptRecommendations.timeSignals.length ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {postNoteCptRecommendations.timeSignals.slice(0, 3).map((item) => (
+                <span key={item} className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-900">
+                  {item}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div className="mt-4 rounded-lg border border-amber-100 bg-amber-50/40 p-3 text-xs text-amber-900">
+            <div className="font-semibold uppercase tracking-wide">Guardrails</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {postNoteCptRecommendations.guardrails.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
       </CollapsibleReviewSection>
 
       <CollapsibleReviewSection

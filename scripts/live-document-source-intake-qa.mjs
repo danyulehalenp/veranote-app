@@ -166,7 +166,19 @@ async function ensureComposeSourceVisible(page) {
     await backToCompose.click();
   }
 
-  await page.getByTestId('document-source-review-text').waitFor({ state: 'visible', timeout: 30000 });
+  const reviewText = page.getByTestId('document-source-review-text');
+  if (!await waitForVisible(reviewText, 3000)) {
+    const sourceTab = page.getByRole('button', { name: /^Source$/i }).first();
+    const pasteSource = page.getByRole('button', { name: /^Paste Source$/i }).first();
+
+    if (await waitForVisible(sourceTab, 2000)) {
+      await sourceTab.click();
+    } else if (await waitForVisible(pasteSource, 2000)) {
+      await pasteSource.click();
+    }
+  }
+
+  await reviewText.waitFor({ state: 'visible', timeout: 30000 });
   await page.locator('#source-field-intakeCollateral textarea').first().waitFor({ state: 'visible', timeout: 30000 });
   await page.getByTestId('document-source-commit-button').waitFor({ state: 'visible', timeout: 30000 });
   await page.waitForFunction(() => (
