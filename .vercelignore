@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+test-results/
+desktop-overlay/
+.prototype-data/
+.tmp-diagnosis-import/
+*.log
