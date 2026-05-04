@@ -294,11 +294,6 @@ function AssistantMessageBody({
           ))}
         </div>
       </div>
-      {message.suggestions?.length ? (
-        <div className="mt-2 text-[11px] text-cyan-100/58">
-          Quick options stay below so the conversation can stay readable.
-        </div>
-      ) : null}
       {hasStageContext ? (
         <div className="mt-2 text-[11px] text-cyan-100/50">
           Still working in {focusedSectionHeading}.

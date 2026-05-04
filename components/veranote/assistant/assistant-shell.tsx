@@ -79,7 +79,6 @@ export function AssistantShell() {
   const layoutRef = useRef(panelLayout);
   const routeStage = useMemo(() => resolveAssistantStageForPathname(pathname), [pathname]);
   const stage = context.stage || routeStage;
-  const suppressFloatingLauncher = pathname?.startsWith('/dashboard/new-note') ?? false;
   const resolvedProviderIdentityId = data?.user?.providerIdentityId || context.providerIdentityId || getCurrentProviderId();
   const sessionScopedContext = useMemo(() => ({
     ...context,
@@ -451,15 +450,15 @@ export function AssistantShell() {
 
   return (
     <>
-      {!isOpen && !suppressFloatingLauncher ? (
+      {!isOpen ? (
         <button
           type="button"
           data-testid="assistant-open-button"
           onClick={openPanel}
-          className="fixed bottom-4 right-4 z-40 hidden items-center gap-3 rounded-full border border-cyan-200/20 bg-[rgba(4,12,24,0.92)] p-2.5 text-sm font-semibold text-cyan-50 shadow-[0_20px_50px_rgba(4,12,24,0.42)] backdrop-blur-xl transition hover:border-cyan-200/30 hover:bg-[rgba(18,181,208,0.18)] sm:bottom-10 sm:right-6 sm:flex sm:px-5 sm:py-3"
+          className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-full border border-cyan-200/22 bg-[rgba(4,12,24,0.94)] p-2.5 text-sm font-semibold text-cyan-50 shadow-[0_20px_50px_rgba(4,12,24,0.42)] backdrop-blur-xl transition hover:border-cyan-200/34 hover:bg-[rgba(18,181,208,0.18)] sm:bottom-10 sm:right-6 sm:px-5 sm:py-3"
         >
           <AssistantPersonaAvatar avatar={assistantPersona.avatar} label={assistantPersona.name} size="sm" />
-          <span className="hidden sm:inline">Review with {assistantPersona.name}</span>
+          <span className="hidden sm:inline">Ask {assistantPersona.name}</span>
         </button>
       ) : null}
 
@@ -472,9 +471,9 @@ export function AssistantShell() {
         />
       ) : null}
 
-      {isOpen && isMinimized && !suppressFloatingLauncher ? (
+      {isOpen && isMinimized ? (
         <div
-          className={`fixed bottom-4 right-4 z-40 hidden sm:bottom-10 sm:right-6 sm:block ${isInteracting ? 'opacity-92' : ''}`}
+          className={`fixed bottom-4 right-4 z-50 sm:bottom-10 sm:right-6 ${isInteracting ? 'opacity-92' : ''}`}
         >
           <div
             data-assistant-drag-handle="true"

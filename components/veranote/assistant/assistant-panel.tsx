@@ -268,7 +268,7 @@ function buildWorkflowStageItems(stage: AssistantStage, context: AssistantApiCon
     {
       id: 'finish',
       label: 'Finish',
-      detail: hasActions ? 'Quick options are ready below.' : 'Copy and export happen after review confidence is higher.',
+      detail: hasActions ? 'Assistant actions are available near the composer.' : 'Copy and export happen after review confidence is higher.',
       status: inReview && hasConversation ? 'active' : 'upcoming',
     },
   ] as const;
@@ -351,6 +351,7 @@ export const AssistantPanel = memo(function AssistantPanel({
   const [actionMessage, setActionMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showFollowupIdeas, setShowFollowupIdeas] = useState(false);
   const [showSecondaryControls, setShowSecondaryControls] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const [showContextDetails, setShowContextDetails] = useState(false);
@@ -428,6 +429,7 @@ export const AssistantPanel = memo(function AssistantPanel({
     setShowContextDetails(false);
     setShowReferencePolicyPanel(false);
     setShowMemoryCenter(false);
+    setShowFollowupIdeas(false);
     setShowQuickPrompts(false);
     setShowScenarioQuestions(false);
     setShowCurrentCues(false);
@@ -612,6 +614,7 @@ export const AssistantPanel = memo(function AssistantPanel({
     setActionMessage('');
     setActions([]);
     setShowSuggestions(false);
+    setShowFollowupIdeas(false);
     setIsLoading(true);
 
     try {
@@ -641,7 +644,7 @@ export const AssistantPanel = memo(function AssistantPanel({
         ),
       ]);
       setActions(data.actions || []);
-      setShowSuggestions(Boolean(data.actions?.length));
+      setShowSuggestions(false);
     } catch (error) {
       setMessages((current) => [
         ...current,
@@ -940,10 +943,25 @@ export const AssistantPanel = memo(function AssistantPanel({
   const activeReferenceQuery = useMemo(() => mode === 'reference-lookup'
     ? [...messages].reverse().find((item) => item.role === 'provider')?.content
     : undefined, [messages, mode]);
+  const latestAssistantMessage = useMemo(
+    () => [...messages].reverse().find((item) => item.role === 'assistant') || null,
+    [messages],
+  );
+  const latestAssistantSuggestions = useMemo(
+    () => (latestAssistantMessage?.suggestions || [])
+      .map((suggestion) => suggestion.trim())
+      .filter(Boolean)
+      .slice(0, 4),
+    [latestAssistantMessage],
+  );
   const referencePolicyPreview = useMemo(
     () => mode === 'reference-lookup' ? describeAssistantReferencePolicy(activeReferenceQuery) : null,
     [activeReferenceQuery, mode],
   );
+  useEffect(() => {
+    setShowFollowupIdeas(latestAssistantSuggestions.length > 0);
+  }, [latestAssistantMessage?.id, latestAssistantSuggestions.length]);
+
   const isReviewMode = stage === 'review';
   const compactContextLine = [
     context.noteType ? `Note: ${context.noteType}` : null,
@@ -1132,6 +1150,7 @@ export const AssistantPanel = memo(function AssistantPanel({
     setActions([]);
     setActionMessage('');
     setShowSuggestions(false);
+    setShowFollowupIdeas(false);
   }
 
   function openReplyViewForMessage() {
@@ -1149,6 +1168,55 @@ export const AssistantPanel = memo(function AssistantPanel({
     openReplyViewForMessage();
     setMode(nextMode);
     void sendMessage(prompt);
+  }
+
+  function renderAvailableActions() {
+    return actions.map((action) => (
+      <div key={`${action.type}-${action.label}`} className="rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-3">
+        {(() => {
+          const tool = getAssistantToolDefinition(action);
+          const presentation = buildActionPresentation(action, stage, context, assistantName);
+          return (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-cyan-200/14 bg-[rgba(18,181,208,0.12)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50">
+                  {presentation.lane}
+                </span>
+                <div className="text-sm font-semibold text-cyan-50">{action.label}</div>
+                <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/80">
+                  {getAssistantToolRiskLabel(tool.riskLevel)}
+                </span>
+                {action.type === 'apply-conservative-rewrite' ? (
+                  <span className="rounded-full border border-sky-200/20 bg-[rgba(56,189,248,0.14)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-100">
+                    {conservativeOptionLabel(action.optionTone)}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-1 text-[11px] text-cyan-50/58">{tool.summary}</div>
+              <div className="mt-2 rounded-[12px] border border-cyan-200/10 bg-[rgba(7,17,30,0.28)] px-2.5 py-2 text-[11px] leading-5 text-cyan-50/72">
+                Why this matters: {presentation.rationale}
+              </div>
+            </>
+          );
+        })()}
+        <div className="mt-2 whitespace-pre-wrap text-xs leading-6 text-cyan-50/72">{action.instructions}</div>
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => void handleAction(action)}
+            className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
+          >
+            {action.type === 'send-beta-feedback'
+              ? 'Send to Beta Feedback'
+              : action.type === 'apply-note-revision'
+              ? 'Apply revision'
+              : stage === 'review'
+              ? 'Send to compose'
+              : 'Apply'}
+          </button>
+        </div>
+      </div>
+    ));
   }
 
   if (isMinimized) {
@@ -1520,74 +1588,6 @@ export const AssistantPanel = memo(function AssistantPanel({
               </div>
             ) : null}
 
-            {showSuggestions && actions.length ? (
-              <div className="aurora-soft-panel rounded-[18px] p-3 sm:p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Quick options</div>
-                    <div className="mt-1 text-[11px] text-cyan-50/68">
-                      These stay below the conversation so {assistantName}'s reply can stay clean and easy to read.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowSuggestions(false)}
-                    className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-                  >
-                    Hide
-                  </button>
-                </div>
-                <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto pr-1">
-                  {actions.map((action) => (
-                    <div key={`${action.type}-${action.label}`} className="rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-3">
-                      {(() => {
-                        const tool = getAssistantToolDefinition(action);
-                        const presentation = buildActionPresentation(action, stage, context, assistantName);
-                        return (
-                          <>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="rounded-full border border-cyan-200/14 bg-[rgba(18,181,208,0.12)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50">
-                                {presentation.lane}
-                              </span>
-                              <div className="text-sm font-semibold text-cyan-50">{action.label}</div>
-                              <span className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-50/80">
-                                {getAssistantToolRiskLabel(tool.riskLevel)}
-                              </span>
-                              {action.type === 'apply-conservative-rewrite' ? (
-                                <span className="rounded-full border border-sky-200/20 bg-[rgba(56,189,248,0.14)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-100">
-                                  {conservativeOptionLabel(action.optionTone)}
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="mt-1 text-[11px] text-cyan-50/58">{tool.summary}</div>
-                            <div className="mt-2 rounded-[12px] border border-cyan-200/10 bg-[rgba(7,17,30,0.28)] px-2.5 py-2 text-[11px] leading-5 text-cyan-50/72">
-                              Why this matters: {presentation.rationale}
-                            </div>
-                          </>
-                        );
-                      })()}
-                      <div className="mt-2 whitespace-pre-wrap text-xs leading-6 text-cyan-50/72">{action.instructions}</div>
-                      <div className="mt-3">
-                        <button
-                          type="button"
-                          onClick={() => void handleAction(action)}
-                          className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-medium"
-                        >
-                          {action.type === 'send-beta-feedback'
-                            ? 'Send to Beta Feedback'
-                            : action.type === 'apply-note-revision'
-                            ? 'Apply revision'
-                            : stage === 'review'
-                            ? 'Send to compose'
-                            : 'Apply'}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
             {showSecondaryControls ? (
               <>
                 <div className="aurora-soft-panel rounded-[18px] p-3 sm:p-4">
@@ -1919,6 +1919,58 @@ export const AssistantPanel = memo(function AssistantPanel({
         </div>
 
         <div className="shrink-0 border-t border-cyan-200/10 bg-[rgba(5,14,25,0.86)] px-2.5 py-2.5">
+          {latestAssistantSuggestions.length || actions.length ? (
+            <div className="mb-2 rounded-[16px] border border-cyan-200/10 bg-[rgba(8,20,34,0.62)] px-3 py-2.5 shadow-[0_-10px_26px_rgba(4,12,24,0.16)]">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/70">Assistant options</div>
+                  <div className="mt-0.5 text-[11px] leading-5 text-cyan-50/58">
+                    Suggestions and action cards stay outside the chat so the conversation reads normally.
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {latestAssistantSuggestions.length ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowFollowupIdeas((current) => !current)}
+                      className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                    >
+                      {showFollowupIdeas ? 'Hide follow-ups' : `Follow-ups (${latestAssistantSuggestions.length})`}
+                    </button>
+                  ) : null}
+                  {actions.length ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowSuggestions((current) => !current)}
+                      className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                    >
+                      {showSuggestions ? 'Hide actions' : `Actions (${actions.length})`}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              {showFollowupIdeas && latestAssistantSuggestions.length ? (
+                <div className="mt-2 flex max-h-[92px] flex-wrap gap-2 overflow-y-auto pr-1">
+                  {latestAssistantSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      disabled={isLoading}
+                      onClick={() => void sendMessage(suggestion)}
+                      className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.11)] px-3 py-1.5 text-left text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.17)] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {showSuggestions && actions.length ? (
+                <div className="mt-3 max-h-[210px] space-y-2 overflow-y-auto pr-1">
+                  {renderAvailableActions()}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <Composer disabled={isLoading} placeholder={composerPlaceholder} onSend={handleComposerSend} compact />
         </div>
       </div>

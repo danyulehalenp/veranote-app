@@ -14,7 +14,7 @@ describe('assistant mode definitions', () => {
       mode: 'workflow-help',
       label: 'Workflow help',
       shortLabel: 'Workflow',
-      detail: 'Note-grounded help for setup, drafting, and section work.',
+      detail: 'Direct, psych-first help for setup, drafting, and section work.',
     });
   });
 });
