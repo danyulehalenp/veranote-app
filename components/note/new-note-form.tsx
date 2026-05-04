@@ -7290,7 +7290,11 @@ export function NewNoteForm() {
                 </div>
 
                 <div className="grid gap-4">
-                  <div id="my-note-prompt-panel" className="rounded-[22px] border border-cyan-200/16 bg-[linear-gradient(145deg,rgba(4,12,24,0.96),rgba(8,32,58,0.92))] p-4 scroll-mt-24">
+                  <div
+                    id="my-note-prompt-panel"
+                    data-testid="my-note-prompt-panel"
+                    className="rounded-[22px] border border-cyan-200/16 bg-[linear-gradient(145deg,rgba(4,12,24,0.96),rgba(8,32,58,0.92))] p-4 scroll-mt-24"
+                  >
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div>
                         <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/70">My Note Prompt</div>
@@ -7510,11 +7514,18 @@ export function NewNoteForm() {
 
                     <div className="rounded-[20px] border border-slate-200 bg-white p-4">
                       <Field label="Prompt name">
-                        <input value={presetName} onChange={(event) => setPresetName(event.target.value)} className="w-full rounded-lg border border-border bg-white p-3" placeholder={`${noteType} - My Standard Prompt`} />
+                        <input
+                          data-testid="provider-prompt-name-input"
+                          value={presetName}
+                          onChange={(event) => setPresetName(event.target.value)}
+                          className="w-full rounded-lg border border-border bg-white p-3"
+                          placeholder={`${noteType} - My Standard Prompt`}
+                        />
                       </Field>
                       <label className="mt-3 grid gap-2 text-sm font-medium text-ink">
                         <span>Provider prompt / note style instructions</span>
                         <textarea
+                          data-testid="provider-prompt-instructions-textarea"
                           value={customInstructions}
                           onChange={(event) => setCustomInstructions(event.target.value)}
                           className="min-h-[150px] w-full rounded-lg border border-border p-3"
@@ -7525,8 +7536,23 @@ export function NewNoteForm() {
                         </span>
                       </label>
                       <div className="mt-3 flex flex-wrap gap-3">
-                        <button onClick={handleSavePreset} className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium">Save named prompt for this note type</button>
-                        <button onClick={handleDeletePreset} disabled={!selectedPresetId || Boolean(activePreset?.locked)} className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">Delete selected preset</button>
+                        <button
+                          type="button"
+                          data-testid="save-named-prompt-button"
+                          onClick={handleSavePreset}
+                          className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium"
+                        >
+                          Save named prompt for this note type
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="delete-selected-prompt-button"
+                          onClick={handleDeletePreset}
+                          disabled={!selectedPresetId || Boolean(activePreset?.locked)}
+                          className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Delete selected preset
+                        </button>
                       </div>
                       {selectedPresetId ? (
                         <div className="mt-2 text-xs text-slate-600">

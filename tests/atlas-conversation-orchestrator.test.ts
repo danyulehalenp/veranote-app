@@ -107,4 +107,41 @@ describe('Atlas conversation orchestrator', () => {
     expect(result.routeHint).toBe('diagnostic_reference');
     expect(result.effectiveMessage).toBe('what is schizoaffective disorder criteria?');
   });
+
+  it('switches from a medication thread to a new risk-documentation topic', () => {
+    const recentMessages: AssistantThreadTurn[] = [
+      { role: 'provider', content: 'Can Wellbutrin be taken with Paxil?' },
+      {
+        role: 'assistant',
+        content: 'Bupropion plus paroxetine needs interaction review.',
+        answerMode: 'medication_reference_answer',
+      },
+    ];
+
+    const newTopic = orchestrateAtlasConversation({
+      message: 'New question: patient denies SI but mother reports suicidal texts. How chart?',
+      recentMessages,
+    });
+
+    expect(newTopic.didRewrite).toBe(false);
+    expect(newTopic.routeHint).toBe('documentation_safety');
+
+    const followUp = orchestrateAtlasConversation({
+      message: 'what if I just write denies SI and no concerns?',
+      recentMessages: [
+        ...recentMessages,
+        { role: 'provider', content: newTopic.originalMessage },
+        {
+          role: 'assistant',
+          content: 'Keep denial and collateral report visible side by side.',
+          answerMode: 'warning_language',
+          builderFamily: 'risk',
+        },
+      ],
+    });
+
+    expect(followUp.didRewrite).toBe(true);
+    expect(followUp.routeHint).toBe('documentation_safety');
+    expect(followUp.effectiveMessage).toContain('patient denies SI but mother reports suicidal texts');
+  });
 });

@@ -334,6 +334,8 @@ function providerAddOnDirectiveLines(sourceInput: string) {
 
 function removeProviderAddOnInstructionEcho(note: string, sourceInput = '') {
  let cleaned = note
+  .replace(/(^|[.!?]\s+|\n)[^.!?\n]*\b(?:specif(?:y|ies|ied)|instructs?|instructed|requested|asks?|asked)\s+to\s+(?:preserve|keep|avoid|not|use|include)[^.!?\n]*(?:[.!?]\s*)?/gi, '$1')
+  .replace(/(^|[.!?]\s+|\n)[^.!?\n]*\bwithout\s+stating\s+no\s+safety\s+concerns\b[^.!?\n]*(?:[.!?]\s*)?/gi, '$1')
   .replace(/\s*,?\s*(?:and\s+)?provider add[-\s]?on(?:\s+instructions?)?/gi, '')
   .replace(/\bprovider add[-\s]?on(?:\s+instructions?)?\b/gi, 'provider guidance')
   .replace(/(?:^|\n)\s*provider instructions?\s+(?:specif(?:y|ies)|instructs|says|notes?|states)[^\n.]*(?:\.\s*)?/gim, '\n')

@@ -1122,6 +1122,8 @@ export function buildAtlasBlueprintResponse(input: AtlasArbitrationInput): {
       /\brewrite risk\b/,
       /\bhow should i document\b/,
       /\bhow do i document\b/,
+      /\bhow chart\b/,
+      /\bchart this\b/,
       /\bsuicide[-\s]?risk wording\b/,
       /\bviolence[-\s]?risk wording\b/,
       /\blow[-\s]?suicide[-\s]?risk\b/,
@@ -1136,6 +1138,8 @@ export function buildAtlasBlueprintResponse(input: AtlasArbitrationInput): {
       /\bcan i say low risk\b/,
       /\bcan i call it no risk\b/,
       /\bchart[-\s]?ready\b/,
+      /\bhow chart\b/,
+      /\bchart this\b/,
       /\bshorter\b/,
       /\bkeep what matters\b/,
     ])
@@ -1143,7 +1147,7 @@ export function buildAtlasBlueprintResponse(input: AtlasArbitrationInput): {
   ) {
     const violence = hasAny(combined, [/\bviolence|violent|hi\b|homicid|threats?|weapon|agitation|agitated|collateral reports threats?\b/]);
     const suicide = hasAny(combined, [/\bsuicide|suicidal|si\b|goodbye texts?|does not trust (?:herself|himself|themselves)\b/]);
-    const chartReadyRiskRequest = hasAny(message, [/\bchart[-\s]?ready\b/, /\bone paragraph\b/, /\bgive me\b.*\bwording\b/, /\bwording instead\b/, /\bshorter\b/, /\bkeep what matters\b/])
+    const chartReadyRiskRequest = hasAny(message, [/\bchart[-\s]?ready\b/, /\bhow chart\b/, /\bchart this\b/, /\bone paragraph\b/, /\bgive me\b.*\bwording\b/, /\bwording instead\b/, /\bshorter\b/, /\bkeep what matters\b/])
       && !hasAny(message, [/\bcan i (?:say|call).*\b(?:low risk|no risk)\b/, /\b(?:low[-\s]?risk|no risk)\?\s*$/]);
     const missingRiskSupportRequest = hasAny(message, [
       /\bwhat is missing\b/,
@@ -1155,6 +1159,9 @@ export function buildAtlasBlueprintResponse(input: AtlasArbitrationInput): {
       [/\bdenies si\b/, 'denies SI'],
       [/\bdenies hi\b/, 'denies HI'],
       [/\bcollateral\b/, 'collateral report'],
+      [/\bmother reports\b/, 'mother collateral report'],
+      [/\bfather reports\b/, 'father collateral report'],
+      [/\bfamily reports\b/, 'family collateral report'],
       [/\bsuicidal texts?\b/, 'suicidal texts'],
       [/\bgoodbye texts?\b/, 'goodbye texts'],
       [/\brecent attempt\b/, 'recent attempt'],
@@ -1208,8 +1215,8 @@ export function buildAtlasBlueprintResponse(input: AtlasArbitrationInput): {
         payload: contractedPayload('risk_suicide_documentation', {
           message: violence && !suicide
             ? 'Chart-ready wording: patient currently denies homicidal ideation; however, collateral threat history and any unknown target or access details remain documented. Higher-acuity risk facts remain documented, so low violence-risk wording is not supported from this source alone.'
-            : hasAny(combined, [/\bcollateral\b/])
-              ? 'Chart-ready wording: patient currently denies suicidal ideation; however, collateral-reported suicidal texts remain documented. Higher-acuity risk facts remain documented, so low suicide-risk wording is not supported from this source alone.'
+            : hasAny(combined, [/\bcollateral\b/, /\b(?:mother|father|family|parent|sister|brother|spouse|partner|girlfriend|boyfriend) reports\b/])
+              ? 'Chart-ready wording: patient currently denies suicidal ideation; however, mother/collateral-reported suicidal texts remain documented. Higher-acuity risk facts remain documented, so low suicide-risk wording is not supported from this source alone.'
               : 'Chart-ready wording: patient currently denies suicidal ideation; however, goodbye texts remain documented, and suicidal texts remain documented when present. Higher-acuity risk facts remain documented, so low suicide-risk wording is not supported from this source alone.',
           suggestions: [
             'Keep current denial and higher-acuity source facts side by side.',

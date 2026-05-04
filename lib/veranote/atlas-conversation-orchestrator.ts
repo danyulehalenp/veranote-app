@@ -91,6 +91,8 @@ const COMMON_CLINICAL_SPELLING_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bintreaction\b/g, 'interaction'],
   [/\binteracton\b/g, 'interaction'],
   [/\bsuicdal\b/g, 'suicidal'],
+  [/\bsuicial\b/g, 'suicidal'],
+  [/\btxts\b/g, 'texts'],
   [/\bcollaterol\b/g, 'collateral'],
   [/\bhalucinations\b/g, 'hallucinations'],
   [/\bhallucinatons\b/g, 'hallucinations'],
@@ -256,7 +258,7 @@ function classifyRouteHintFromText(message: string, answerMode?: AssistantAnswer
   }
 
   if (
-    /\b(how should i word|how should i chart|document|chart ready|chart-ready|rewrite|source says|draft says|patient denies|collateral|staff saw|nursing reports|risk wording|capacity|consent|force medication|over objection|no risk|low risk)\b/.test(normalized)
+    /\b(how should i word|how should i chart|how chart|chart this|document|chart ready|chart-ready|rewrite|source says|draft says|patient denies|denies si|denies hi|collateral|mother reports|father reports|family reports|staff saw|nursing reports|risk wording|suicidal texts?|goodbye texts?|no concerns?|capacity|consent|force medication|over objection|no risk|low risk)\b/.test(normalized)
   ) {
     return 'documentation_safety';
   }
@@ -463,7 +465,7 @@ export function orchestrateAtlasConversation(input: AtlasConversationInput): Atl
   const activeTopic = findActiveTopic(input.recentMessages);
   const currentRouteHint = classifyRouteHintFromText(originalMessage);
   const didRewrite = shouldRewriteFollowup(followupIntent, activeTopic, originalMessage, currentRouteHint);
-  const routeHint = activeTopic && followupIntent !== 'none' && didRewrite
+  const routeHint = activeTopic && followupIntent !== 'none' && (didRewrite || currentRouteHint === 'unknown')
     ? activeTopic.routeHint
     : currentRouteHint;
   const effectiveMessage = didRewrite && activeTopic

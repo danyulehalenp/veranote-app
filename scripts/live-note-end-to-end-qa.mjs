@@ -263,6 +263,42 @@ async function fillSourceField(page, fieldId, value) {
   await textarea.fill(value || '');
 }
 
+async function openMyNotePromptPanel(page) {
+  const promptPanel = page.getByTestId('my-note-prompt-panel');
+  if (await waitForVisible(promptPanel, 1000)) {
+    return promptPanel;
+  }
+
+  const promptButton = await waitForAnyVisible([
+    page.getByRole('button', { name: /My Note Prompt/i }),
+  ], 5000);
+  if (!promptButton) {
+    throw new Error('My Note Prompt navigation control was not visible.');
+  }
+
+  await promptButton.click();
+  await promptPanel.waitFor({ state: 'visible', timeout: 15000 });
+  return promptPanel;
+}
+
+async function openSourcePacketLane(page) {
+  const sourceField = page.locator('#source-field-intakeCollateral textarea');
+  if (await waitForVisible(sourceField, 1000)) {
+    return;
+  }
+
+  const sourcePacketButton = await waitForAnyVisible([
+    page.getByRole('button', { name: /Source Packet/i }),
+    page.getByRole('button', { name: /Paste Source/i }),
+  ], 5000);
+  if (!sourcePacketButton) {
+    throw new Error('Source Packet navigation control was not visible after prompt setup.');
+  }
+
+  await sourcePacketButton.click();
+  await sourceField.waitFor({ state: 'visible', timeout: 15000 });
+}
+
 async function clickFirstEnabledGenerate(page) {
   const buttons = page.getByRole('button', { name: /Generate Draft/i });
   const count = await buttons.count();
@@ -585,6 +621,8 @@ async function main() {
     }
 
     const runId = `E2E-${Date.now()}`;
+    const promptName = `QA reusable prompt ${runId}`;
+    const promptInstruction = `QA live prompt instruction ${runId}: keep the note concise and never quote this QA prompt text in the clinical note.`;
     const sourceSections = {
       ...item.sourceSections,
       objectiveData: `${item.sourceSections.objectiveData || ''}\n\nNonclinical QA marker: ${runId}. Do not include this marker in the final clinical note.`,
@@ -629,6 +667,20 @@ async function main() {
     await selectFirstVisible(page, 'select[aria-label="Select EHR destination"]', item.ehr || 'WellSky');
     await selectFirstVisible(page, 'select[aria-label="Select note type"]', item.noteType);
 
+    const promptPanel = await openMyNotePromptPanel(page);
+    const promptPanelPresent = await promptPanel.count().then((count) => count > 0).catch(() => false);
+    if (!promptPanelPresent) {
+      throw new Error('My Note Prompt panel was not present in the note workspace.');
+    }
+
+    const promptNameInput = page.getByTestId('provider-prompt-name-input');
+    const promptInstructionsTextarea = page.getByTestId('provider-prompt-instructions-textarea');
+    await promptNameInput.scrollIntoViewIfNeeded();
+    await promptNameInput.fill(promptName);
+    await promptInstructionsTextarea.fill(promptInstruction);
+
+    await openSourcePacketLane(page);
+
     await fillSourceField(page, 'source-field-intakeCollateral', sourceSections.intakeCollateral);
     await fillSourceField(page, 'source-field-clinicianNotes', sourceSections.clinicianNotes);
     await fillSourceField(page, 'source-field-patientTranscript', sourceSections.patientTranscript);
@@ -660,6 +712,13 @@ async function main() {
       : '';
     if (!postNoteCptPanelVisible || !/CPT support candidates|Coding support only/i.test(postNoteCptPanelText)) {
       throw new Error('Post-note CPT support panel did not render in the review workflow after draft generation.');
+    }
+    const postNoteCptGuardrailVisible = await waitForVisible(page.getByTestId('post-note-cpt-guardrail'), 5000);
+    const postNoteCptGuardrailText = postNoteCptGuardrailVisible
+      ? await page.getByTestId('post-note-cpt-guardrail').first().innerText()
+      : '';
+    if (!postNoteCptGuardrailVisible || !/not final billing advice|do not add facts/i.test(postNoteCptGuardrailText)) {
+      throw new Error('Post-note CPT support guardrail did not render with conservative billing language.');
     }
 
     await openAssistantPanel(page);
@@ -718,6 +777,9 @@ async function main() {
     if (!clipboardText || clipboardText.length < 120) {
       throw new Error('Copy Final Note did not place final note text on the clipboard.');
     }
+    if (clipboardText.includes(runId) || clipboardText.includes(promptName) || clipboardText.includes('QA live prompt instruction')) {
+      throw new Error('Final copied note leaked nonclinical QA marker or provider prompt text.');
+    }
 
     if (!page.url().includes('/dashboard/review')) {
       await openDedicatedReviewForReopenedDraft(page, appUrl, runId);
@@ -736,10 +798,13 @@ async function main() {
         sourceEntered: sourceInput.length > 0,
         generateStatus: generateResponse.status(),
         generatedNoteCharacters,
+        promptPanelPresent,
+        providerPromptInstructionEntered: true,
         draftCreateStatus: draftCreateResponse.status(),
         draftCreateId: draftCreatePayload?.draft?.id || null,
         postNoteCptPanelVisible,
         postNoteCptPanelCharacters: postNoteCptPanelText.length,
+        postNoteCptGuardrailVisible,
         assistantAnswerCharacters: assistantResult.answerCharacters,
         assistantAnswerVisible: assistantResult.visibleInViewport,
         copyBlockedBeforeApproval: !copyEnabledBeforeApproval,

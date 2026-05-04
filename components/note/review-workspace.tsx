@@ -4103,6 +4103,9 @@ export function ReviewWorkspace({
                 Coding support only
               </div>
             </div>
+            <p data-testid="post-note-cpt-guardrail" className="mt-3 rounded-[14px] border border-amber-200/18 bg-[rgba(255,255,255,0.08)] px-3 py-2 text-xs leading-5 text-amber-50/82">
+              Not final billing advice. Do not add facts just to support a code; verify current CPT, payer, facility, telehealth, and state-specific requirements before billing.
+            </p>
             {postNoteCptRecommendations.candidates.length ? (
               <details className="mt-3 rounded-[16px] border border-amber-200/20 bg-[rgba(255,255,255,0.08)] p-3">
                 <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.14em] text-amber-100">
@@ -5669,6 +5672,9 @@ export function ReviewWorkspace({
               Coding support only
             </div>
           </div>
+          <p data-testid="post-note-cpt-guardrail" className="mt-3 rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-xs leading-5 text-amber-900">
+            Not final billing advice. Do not add facts just to support a code; verify current CPT, payer, facility, telehealth, and state-specific requirements before billing.
+          </p>
           {postNoteCptRecommendations.candidates.length ? (
             <div className="mt-4 grid gap-3 xl:grid-cols-2">
               {postNoteCptRecommendations.candidates.map((candidate) => (

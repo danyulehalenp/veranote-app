@@ -160,6 +160,18 @@ async function waitForVisible(locator, timeout = 2500) {
   }
 }
 
+async function clickFirstVisible(locator, timeout = 2000) {
+  const count = await locator.count().catch(() => 0);
+  for (let index = 0; index < count; index += 1) {
+    const item = locator.nth(index);
+    if (await waitForVisible(item, timeout)) {
+      await item.click();
+      return true;
+    }
+  }
+  return false;
+}
+
 async function ensureComposeSourceVisible(page) {
   const backToCompose = page.getByText('Back to Compose', { exact: true }).first();
   if (await waitForVisible(backToCompose, 3000)) {
@@ -168,14 +180,9 @@ async function ensureComposeSourceVisible(page) {
 
   const reviewText = page.getByTestId('document-source-review-text');
   if (!await waitForVisible(reviewText, 3000)) {
-    const sourceTab = page.getByRole('button', { name: /^Source$/i }).first();
-    const pasteSource = page.getByRole('button', { name: /^Paste Source$/i }).first();
-
-    if (await waitForVisible(sourceTab, 2000)) {
-      await sourceTab.click();
-    } else if (await waitForVisible(pasteSource, 2000)) {
-      await pasteSource.click();
-    }
+    await clickFirstVisible(page.getByRole('button', { name: /Source Packet/i }));
+    await clickFirstVisible(page.getByRole('button', { name: /Source Documents/i }));
+    await clickFirstVisible(page.getByRole('button', { name: /Paste Source/i }));
   }
 
   await reviewText.waitFor({ state: 'visible', timeout: 30000 });
