@@ -1106,14 +1106,20 @@ export async function restoreDraft(draftId: string, providerId = DEFAULT_PROVIDE
 export async function deleteDraft(draftId: string, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
   const supabase = getDurableSupabaseClient();
   if (supabase) {
-    const { data, error, count } = await supabase
+    const existingDraft = await getDurableDraftRecord(draftId, providerId, { includeArchived: true });
+    if (!existingDraft) {
+      return false;
+    }
+
+    const { error } = await supabase
       .from('veranote_drafts')
-      .delete({ count: 'exact' })
+      .delete()
       .eq('id', draftId)
-      .eq('provider_id', providerId)
-      .select('id');
+      .eq('provider_id', providerId);
     assertDurableResult(error, 'delete draft');
-    return Boolean(count) || (Array.isArray(data) && data.length > 0);
+
+    const remainingDraft = await getDurableDraftRecord(draftId, providerId, { includeArchived: true });
+    return !remainingDraft;
   }
 
   const db = await readDb();
