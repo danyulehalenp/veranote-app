@@ -1,13 +1,103 @@
-import type { CptSupportAssessment } from '@/lib/veranote/defensibility/defensibility-types';
+import type {
+  CptRecommendationCandidate,
+  CptSupportAssessment,
+  PostNoteCptRecommendationAssessment,
+} from '@/lib/veranote/defensibility/defensibility-types';
+import type { EncounterSupport } from '@/types/session';
+
+type PostNoteCptRecommendationInput = {
+  completedNoteText: string;
+  noteType?: string;
+  encounterSupport?: EncounterSupport;
+};
 
 function hasMatch(text: string, patterns: RegExp[]) {
   return patterns.some((pattern) => pattern.test(text));
 }
 
+function compact(value: string | undefined) {
+  return value?.trim() || '';
+}
+
+function normalize(value: string | undefined) {
+  return compact(value).toLowerCase();
+}
+
+function hasPsychotherapyContent(text: string) {
+  return hasMatch(text, [
+    /\b(psychotherapy|psycotherapy|psychotherpy|psychotherpay|therapy|therpay|supportive therapy|cbt|dbt|motivational interviewing|processed|reframed|coping skills)\b/,
+    /\b(cognitive restructuring|behavioral activation|exposure work|skills training|therapeutic intervention)\b/,
+  ]);
+}
+
+function hasMedicationManagement(text: string) {
+  return hasMatch(text, [
+    /\b(medication|medications|meds|med mgmt|med management|refill|increase|decrease|continue|side effect|adherence|prescrib|dose adjustment)\b/,
+    /\b(started|stopped|titrated|continued)\s+\w+/,
+  ]);
+}
+
+function hasCrisisWork(text: string) {
+  return hasMatch(text, [
+    /\b(crisis|suicid|homicid|imminent risk|de-?escalation|safety plan|unable to maintain safety|danger to self|danger to others)\b/,
+  ]);
+}
+
+function hasCommunicationComplexity(text: string) {
+  return hasMatch(text, [
+    /\b(interpreter|translator|guardian conflict|caregiver conflict|third party|reportable|sentinel event|communication barrier|maladaptive communication|disruptive communication)\b/,
+  ]);
+}
+
+function hasEvaluationWork(text: string, noteType: string) {
+  return /evaluation|intake|initial/i.test(noteType)
+    || hasMatch(text, [
+      /\b(chief complaint|history of present illness|hpi|past psychiatric history|family psychiatric history|diagnostic impression|initial evaluation)\b/,
+    ]);
+}
+
+function extractMinuteSignals(text: string, encounterSupport?: EncounterSupport) {
+  const signals = new Set<string>();
+  const minuteMatches = text.matchAll(/\b(?:total|encounter|session|visit|psychotherapy|therapy|crisis)?\s*(?:time|minutes|min)?[:\s-]*(\d{1,3})\s*(?:min|mins|minute|minutes)\b/gi);
+
+  for (const match of minuteMatches) {
+    signals.add(`${match[1]} minutes documented in note text.`);
+  }
+
+  const totalMinutes = compact(encounterSupport?.totalMinutes);
+  const psychotherapyMinutes = compact(encounterSupport?.psychotherapyMinutes);
+  const crisisStart = compact(encounterSupport?.crisisStartTime);
+  const crisisEnd = compact(encounterSupport?.crisisEndTime);
+
+  if (totalMinutes) {
+    signals.add(`Total encounter minutes documented in structured support: ${totalMinutes}.`);
+  }
+
+  if (psychotherapyMinutes) {
+    signals.add(`Psychotherapy minutes documented in structured support: ${psychotherapyMinutes}.`);
+  }
+
+  if (crisisStart || crisisEnd) {
+    signals.add(`Crisis timing documented in structured support: ${crisisStart || '?'} to ${crisisEnd || '?'}.`);
+  }
+
+  return Array.from(signals);
+}
+
+function addCandidate(candidates: CptRecommendationCandidate[], candidate: CptRecommendationCandidate) {
+  candidates.push({
+    ...candidate,
+    cautions: [
+      ...candidate.cautions,
+      'Treat this as a coding-review candidate, not a final CPT assignment.',
+    ],
+  });
+}
+
 export function evaluateCptSupport(sourceText: string): CptSupportAssessment {
   const normalized = sourceText.toLowerCase();
-  const psychotherapyContent = hasMatch(normalized, [/\b(psychotherapy|supportive therapy|cbt|dbt|motivational interviewing|processed|reframed|coping skills)\b/]);
-  const medicationManagement = hasMatch(normalized, [/\b(medication|medications|refill|increase|decrease|continue|side effect|adherence|prescrib)\b/]);
+  const psychotherapyContent = hasPsychotherapyContent(normalized);
+  const medicationManagement = hasMedicationManagement(normalized);
   const timeDocumented = hasMatch(normalized, [/\b\d+\s*(min|mins|minute|minutes)\b/]);
   const complexityRisk = hasMatch(normalized, [/\b(suicid|homicid|psychosis|grave disability|crisis|unable to contract for safety)\b/]);
 
@@ -55,5 +145,216 @@ export function evaluateCptSupport(sourceText: string): CptSupportAssessment {
     timeHints,
     riskComplexityIndicators,
     cautions,
+  };
+}
+
+export function evaluatePostNoteCptRecommendations(
+  input: PostNoteCptRecommendationInput,
+): PostNoteCptRecommendationAssessment {
+  const completedNoteText = compact(input.completedNoteText);
+  const noteType = compact(input.noteType);
+  const normalizedNote = normalize(completedNoteText);
+  const normalizedNoteType = normalize(noteType);
+  const encounterSupport = input.encounterSupport;
+  const candidates: CptRecommendationCandidate[] = [];
+  const timeSignals = extractMinuteSignals(completedNoteText, encounterSupport);
+
+  const psychotherapyContent = hasPsychotherapyContent(normalizedNote);
+  const medicationManagement = hasMedicationManagement(normalizedNote);
+  const crisisWork = hasCrisisWork(normalizedNote) || /crisis/i.test(noteType);
+  const evaluationWork = hasEvaluationWork(normalizedNote, noteType);
+  const communicationComplexity = hasCommunicationComplexity(normalizedNote)
+    || Boolean(encounterSupport?.interactiveComplexity);
+  const telehealthContext = /telehealth|video|audio-only|audio only|virtual/i.test(`${noteType} ${completedNoteText}`)
+    || Boolean(encounterSupport?.telehealthModality && encounterSupport.telehealthModality !== 'not-applicable');
+  const psychotherapyTimeDocumented = Boolean(compact(encounterSupport?.psychotherapyMinutes))
+    || /\b(psychotherapy|therapy)\s*(?:time|minutes|min)?[:\s-]*\d{1,3}\s*(?:min|mins|minute|minutes)\b/i.test(completedNoteText);
+  const totalTimeDocumented = Boolean(compact(encounterSupport?.totalMinutes)) || timeSignals.length > 0;
+
+  if (!completedNoteText) {
+    return {
+      summary: 'No completed note text is available for CPT support review.',
+      candidates: [],
+      timeSignals: [],
+      missingGlobalElements: ['Completed note text is required before Veranote can produce coding-support candidates.'],
+      guardrails: [
+        'Do not recommend a CPT family without completed note text.',
+        'Final code selection must be verified against current CPT, payer, facility, and clinician documentation requirements.',
+      ],
+    };
+  }
+
+  if (evaluationWork) {
+    addCandidate(candidates, {
+      family: 'Psychiatric diagnostic evaluation family',
+      candidateCodes: ['90791', '90792'],
+      strength: medicationManagement ? 'possible-review' : 'stronger-documentation-support',
+      why: [
+        'The note reads like an intake or diagnostic-evaluation encounter.',
+        medicationManagement
+          ? 'Medical services or prescribing language appears present, so 90791 versus 90792 needs coding review.'
+          : 'The note does not clearly show medical services in the evaluation text reviewed here.',
+      ],
+      missingElements: [
+        ...(medicationManagement ? [] : ['If medical services occurred, they must be documented rather than inferred.']),
+        'Confirm payer/facility rules and whether this was a diagnostic evaluation versus another encounter family.',
+      ],
+      cautions: [
+        'Do not convert a follow-up note into an intake/evaluation family unless the encounter truly supports that family.',
+      ],
+    });
+  }
+
+  if (medicationManagement) {
+    addCandidate(candidates, {
+      family: 'Office / outpatient E/M family',
+      candidateCodes: ['99202-99205', '99212-99215'],
+      strength: totalTimeDocumented || /risk|side effect|lab|monitor|dose|change|worsen|unstable/i.test(completedNoteText)
+        ? 'stronger-documentation-support'
+        : 'possible-review',
+      why: [
+        'Medication-management or prescribing work appears documented.',
+        totalTimeDocumented
+          ? 'Time or encounter-duration support is visible for coding review.'
+          : 'No clear time signal is visible, so medical decision-making support would need review.',
+      ],
+      missingElements: [
+        'Current E/M level still depends on current time or MDM rules and payer-specific requirements.',
+        ...(!totalTimeDocumented ? ['If using time, total time must be documented clearly.'] : []),
+      ],
+      cautions: [
+        'Do not select a specific E/M level from this helper alone.',
+      ],
+    });
+  }
+
+  if (medicationManagement && psychotherapyContent) {
+    addCandidate(candidates, {
+      family: 'Psychotherapy add-on with E/M family',
+      candidateCodes: ['90833', '90836', '90838'],
+      strength: psychotherapyTimeDocumented ? 'stronger-documentation-support' : 'possible-review',
+      why: [
+        'The note includes both medical-management language and psychotherapy content.',
+        psychotherapyTimeDocumented
+          ? 'Separate psychotherapy time appears documented.'
+          : 'Psychotherapy time is not clearly documented yet.',
+      ],
+      missingElements: [
+        ...(!psychotherapyTimeDocumented ? ['Separate psychotherapy minutes are needed before implying add-on support.'] : []),
+        'Psychotherapy content should be distinct from medication counseling or routine education.',
+      ],
+      cautions: [
+        'Supportive counseling phrases alone should not create a psychotherapy add-on candidate.',
+      ],
+    });
+  }
+
+  if (!medicationManagement && (psychotherapyContent || /therapy/i.test(normalizedNoteType))) {
+    addCandidate(candidates, {
+      family: 'Psychotherapy-only family',
+      candidateCodes: ['90832', '90834', '90837'],
+      strength: psychotherapyTimeDocumented ? 'stronger-documentation-support' : 'possible-review',
+      why: [
+        'The note reads like psychotherapy without obvious medical-management work.',
+        psychotherapyTimeDocumented
+          ? 'Psychotherapy time appears documented.'
+          : 'Psychotherapy time is not clearly documented yet.',
+      ],
+      missingElements: [
+        ...(!psychotherapyContent ? ['Specific psychotherapy interventions or therapy content are not clear.'] : []),
+        ...(!psychotherapyTimeDocumented ? ['Psychotherapy minutes should be documented if using psychotherapy family review.'] : []),
+      ],
+      cautions: [
+        'Do not treat attendance, check-in, or generic support language as psychotherapy content by itself.',
+      ],
+    });
+  }
+
+  if (crisisWork) {
+    const crisisTiming = Boolean(compact(encounterSupport?.crisisStartTime) || compact(encounterSupport?.crisisEndTime))
+      || /\bcrisis\b.{0,60}\b\d{1,3}\s*(?:min|mins|minute|minutes)\b/i.test(completedNoteText);
+
+    addCandidate(candidates, {
+      family: 'Psychotherapy for crisis family',
+      candidateCodes: ['90839', '90840'],
+      strength: crisisTiming ? 'possible-review' : 'insufficient-support',
+      why: [
+        'The note contains crisis, safety, suicidal/homicidal, or acute-risk language.',
+        crisisTiming
+          ? 'Crisis timing appears visible for coding review.'
+          : 'Crisis timing is not clearly visible.',
+      ],
+      missingElements: [
+        ...(!crisisTiming ? ['Crisis psychotherapy timing must be documented before implying crisis-family support.'] : []),
+        'Crisis intervention content should be concrete and source-supported.',
+      ],
+      cautions: [
+        'Urgency or risk language alone should not be treated as crisis psychotherapy support.',
+      ],
+    });
+  }
+
+  if (communicationComplexity) {
+    addCandidate(candidates, {
+      family: 'Interactive complexity add-on review',
+      candidateCodes: ['90785'],
+      strength: compact(encounterSupport?.interactiveComplexityReason) || hasCommunicationComplexity(normalizedNote)
+        ? 'possible-review'
+        : 'insufficient-support',
+      why: [
+        'Interactive complexity or communication-barrier context was detected.',
+      ],
+      missingElements: [
+        'The note should name the actual communication factor or third-party dynamic that changed the work.',
+      ],
+      cautions: [
+        'A difficult visit, acuity, family presence, or collateral contact alone is not enough.',
+      ],
+    });
+  }
+
+  if (telehealthContext) {
+    addCandidate(candidates, {
+      family: 'Telehealth billing/modifier review',
+      candidateCodes: ['payer-specific modifier/POS review'],
+      strength: encounterSupport?.telehealthConsent || /consent/i.test(completedNoteText)
+        ? 'possible-review'
+        : 'insufficient-support',
+      why: [
+        'Telehealth or remote-visit context appears present.',
+      ],
+      missingElements: [
+        ...(!encounterSupport?.telehealthConsent && !/consent/i.test(completedNoteText) ? ['Telehealth consent is not clearly documented.'] : []),
+        ...(!compact(encounterSupport?.patientLocation) && !/patient location/i.test(completedNoteText) ? ['Patient location is not clearly documented.'] : []),
+        'Payer-specific modifier, place-of-service, and platform requirements must be verified.',
+      ],
+      cautions: [
+        'Telehealth rules vary by payer and date; do not infer modifier/POS from this helper alone.',
+      ],
+    });
+  }
+
+  const missingGlobalElements = [
+    ...(!timeSignals.length ? ['No clear time signal was found; avoid time-dependent code confidence.'] : []),
+    ...(!medicationManagement && !psychotherapyContent && !evaluationWork && !crisisWork
+      ? ['Encounter family is not clear from the completed note text.'] : []),
+    'Final selection requires current CPT/payer/facility review and the provider/coder of record.',
+  ];
+
+  const summary = candidates.length
+    ? `Veranote found ${candidates.length} possible CPT-support candidate family${candidates.length === 1 ? '' : 'ies'} to review after note completion.`
+    : 'The completed note is too thin for meaningful CPT-support candidates.';
+
+  return {
+    summary,
+    candidates,
+    timeSignals,
+    missingGlobalElements,
+    guardrails: [
+      'These are possible CPT-support candidates, not definitive billing recommendations.',
+      'Never add or rewrite clinical facts just to support a code.',
+      'Verify against current CPT, payer, facility, telehealth, and state-specific requirements before billing.',
+      'If documentation is thin or contradictory, show the gap rather than forcing a code family.',
+    ],
   };
 }

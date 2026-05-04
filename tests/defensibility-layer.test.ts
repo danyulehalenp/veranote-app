@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { detectAuditRisk } from '@/lib/veranote/defensibility/audit-risk-detector';
-import { evaluateCptSupport } from '@/lib/veranote/defensibility/cpt-support';
+import { evaluateCptSupport, evaluatePostNoteCptRecommendations } from '@/lib/veranote/defensibility/cpt-support';
 import { evaluateLevelOfCare } from '@/lib/veranote/defensibility/level-of-care-evaluator';
 import { evaluateLOS } from '@/lib/veranote/defensibility/los-evaluator';
 import { evaluateMedicalNecessity } from '@/lib/veranote/defensibility/medical-necessity-engine';
@@ -32,6 +32,64 @@ describe('defensibility layer', () => {
 
     expect(result.summary).toContain('combined medical-management plus psychotherapy');
     expect(result.cautions.join(' ')).toContain('Do not present CPT');
+  });
+
+  it('recommends post-note CPT candidate families without final billing assignment', () => {
+    const result = evaluatePostNoteCptRecommendations({
+      noteType: 'Outpatient Psych Follow-up',
+      completedNoteText: [
+        'Interval update: anxiety worsened. Medication adherence, side effects, and dose adjustment reviewed.',
+        '20 minutes of psychotherapy documented using CBT reframing and coping skills.',
+        'Plan reviewed and follow-up scheduled.',
+      ].join(' '),
+      encounterSupport: {
+        totalMinutes: '35',
+        psychotherapyMinutes: '20',
+      },
+    });
+
+    expect(result.summary).toContain('possible CPT-support candidate');
+    expect(result.candidates.some((candidate) => candidate.family === 'Office / outpatient E/M family')).toBe(true);
+    expect(result.candidates.some((candidate) => candidate.family === 'Psychotherapy add-on with E/M family')).toBe(true);
+    expect(result.guardrails.join(' ')).toContain('not definitive billing recommendations');
+    expect(JSON.stringify(result)).not.toMatch(/bill this code|guaranteed|meets criteria for/i);
+  });
+
+  it('keeps thin medication follow-up from becoming psychotherapy add-on support', () => {
+    const result = evaluatePostNoteCptRecommendations({
+      noteType: 'Outpatient Psych Follow-up',
+      completedNoteText: 'Mood stable. Medications reviewed. Continue sertraline 100 mg. Follow up in 4 weeks.',
+    });
+
+    expect(result.candidates.some((candidate) => candidate.family === 'Office / outpatient E/M family')).toBe(true);
+    expect(result.candidates.some((candidate) => candidate.family === 'Psychotherapy add-on with E/M family')).toBe(false);
+    expect(result.missingGlobalElements.join(' ')).toContain('No clear time signal');
+  });
+
+  it('handles misspelled psychotherapy wording while still requiring time support', () => {
+    const result = evaluatePostNoteCptRecommendations({
+      noteType: 'Therapy Follow-up',
+      completedNoteText: 'Psycotherpay visit focused on coping skills and reframing grief triggers. No minutes listed.',
+    });
+
+    const therapyCandidate = result.candidates.find((candidate) => candidate.family === 'Psychotherapy-only family');
+
+    expect(therapyCandidate?.strength).toBe('possible-review');
+    expect(therapyCandidate?.missingElements.join(' ')).toContain('Psychotherapy minutes');
+    expect(JSON.stringify(result)).toContain('not definitive');
+  });
+
+  it('does not imply crisis psychotherapy from risk language without crisis timing', () => {
+    const result = evaluatePostNoteCptRecommendations({
+      noteType: 'Psychiatric Crisis Note',
+      completedNoteText: 'Patient endorsed suicidal ideation. Safety plan discussed and follow-up arranged.',
+    });
+
+    const crisisCandidate = result.candidates.find((candidate) => candidate.family === 'Psychotherapy for crisis family');
+
+    expect(crisisCandidate?.strength).toBe('insufficient-support');
+    expect(crisisCandidate?.missingElements.join(' ')).toContain('Crisis psychotherapy timing');
+    expect(crisisCandidate?.cautions.join(' ')).toContain('Urgency or risk language alone');
   });
 
   it('returns LOS reasons, barriers, and missing discharge criteria', () => {

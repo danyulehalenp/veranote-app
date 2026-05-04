@@ -33,6 +33,28 @@ export type CptSupportAssessment = {
   cautions: string[];
 };
 
+export type CptRecommendationStrength =
+  | 'stronger-documentation-support'
+  | 'possible-review'
+  | 'insufficient-support';
+
+export type CptRecommendationCandidate = {
+  family: string;
+  candidateCodes: string[];
+  strength: CptRecommendationStrength;
+  why: string[];
+  missingElements: string[];
+  cautions: string[];
+};
+
+export type PostNoteCptRecommendationAssessment = {
+  summary: string;
+  candidates: CptRecommendationCandidate[];
+  timeSignals: string[];
+  missingGlobalElements: string[];
+  guardrails: string[];
+};
+
 export type LosAssessment = {
   reasonsForContinuedStay: string[];
   barriersToDischarge: string[];
