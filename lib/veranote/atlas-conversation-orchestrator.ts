@@ -582,6 +582,22 @@ export function buildAtlasConversationFallbackPayload(
   if (
     conversation.routeHint === 'diagnostic_reference'
     && /\bbipolar|mania|hypomania\b/.test(combined)
+    && /\bcompare\b.*\bmania\b|\bcompare that to mania\b|\bto mania\b/.test(original)
+  ) {
+    return {
+      message: 'Hypomania and mania share elevated, expansive, or irritable mood with increased energy/activity, but mania is more severe: marked impairment, hospitalization-level severity, or psychosis moves the episode into mania. Hypomania is shorter/lower-severity by comparison and does not include the marked impairment or hospitalization-level severity typical of mania.',
+      suggestions: [
+        'Preserve duration, impairment, hospitalization, and psychosis context separately.',
+        'Do not use either label without source-supported episode details.',
+      ],
+      answerMode: 'direct_reference_answer',
+      builderFamily: 'overlap',
+    };
+  }
+
+  if (
+    conversation.routeHint === 'diagnostic_reference'
+    && /\bbipolar|mania|hypomania\b/.test(combined)
     && /\bcharting|distinction\b/.test(original)
   ) {
     return {
