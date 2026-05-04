@@ -79,3 +79,16 @@ Every beta gate should include:
 - At least one EHR destination other than WellSky and Tebra/Kareo.
 
 The current live note matrix covers these categories and should remain part of `npm run beta:gate`.
+
+## EHR Output Boundary
+
+Dictation and ambient text should prepare source material for Veranote first, then the reviewed final note can be copied into the selected EHR destination. Direct EHR writeback is a future connector phase, not current product behavior.
+
+Guardrails:
+
+- Keep final notes section-addressable for future EHR field mapping.
+- Do not silently insert dictated or ambient text into an external EHR.
+- Do not claim a destination is integrated unless a real connector has been built and validated.
+- Do not change clinical meaning, source attribution, risk wording, or uncertainty to make a destination template look cleaner.
+
+The detailed future-writeback boundary lives in `docs/VERANOTE_EHR_OUTPUT_AND_WRITEBACK_CONTRACT.md`.

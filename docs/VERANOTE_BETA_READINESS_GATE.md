@@ -35,6 +35,8 @@ The live note matrix now covers the destinations most relevant to psych, therapy
 
 The matrix intentionally includes typo-heavy source packets and multi-field source packets so Veranote is tested against the kind of rushed clinical input providers actually enter.
 
+These are destination formatting and copy/paste profiles. They are not direct EHR writeback integrations. Future connector work should follow `docs/VERANOTE_EHR_OUTPUT_AND_WRITEBACK_CONTRACT.md` and must be validated separately against each destination workflow.
+
 ## Pass Standard
 
 The gate should pass before any beta demo, production push confidence check, or workflow handoff. A pass means:

@@ -17,6 +17,22 @@ describe('note presets', () => {
     expect(preset?.requestedSections).toEqual(['intervalUpdate']);
   });
 
+  it('includes EHR starter presets as copy-paste workflows, not direct writeback claims', () => {
+    const catalog = getDefaultPresetCatalog();
+    const ehrStarters = catalog.filter((item) => item.id.startsWith('preset-ehr-'));
+
+    expect(ehrStarters.length).toBeGreaterThanOrEqual(5);
+    expect(new Set(ehrStarters.map((item) => item.ehrDestination))).toEqual(new Set([
+      'WellSky',
+      'Tebra/Kareo',
+      'TherapyNotes',
+      'SimplePractice',
+      'Valant',
+    ]));
+    expect(ehrStarters.every((item) => item.ehrWritebackStatus === 'copy-paste-only')).toBe(true);
+    expect(ehrStarters.every((item) => item.ehrCopyMode)).toBe(true);
+  });
+
   it('prefers saved presets over defaults when ids match', () => {
     const merged = mergePresetCatalog([
       {

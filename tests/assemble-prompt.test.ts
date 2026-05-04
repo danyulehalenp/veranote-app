@@ -47,6 +47,9 @@ describe('assemblePrompt', () => {
     expect(prompt).toContain('Provider Add-On may contain provider instructions');
     expect(prompt).toContain('do not treat it as patient-reported history');
     expect(prompt).toContain('Do not quote, label, or summarize Provider Add-On instructions inside the clinical note');
+    expect(prompt).toContain('Provider Add-On is control-plane guidance, not chart text');
+    expect(prompt).toContain('Never write phrases such as');
+    expect(prompt).toContain('Provider instructions specify');
     expect(prompt).toContain('obvious misspellings, rushed shorthand, or OCR/scanned-document noise');
     expect(prompt).toContain('Do not turn unclear OCR text, abbreviations, or typo-heavy phrases into new clinical facts');
   });

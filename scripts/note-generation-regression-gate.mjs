@@ -9,6 +9,8 @@ const steps = [
       'run',
       '--silent=true',
       '--maxWorkers=1',
+      'tests/source-lane-contract.test.ts',
+      'tests/note-generation-ehr-coverage.test.ts',
       'tests/assemble-prompt.test.ts',
       'tests/note-generation-source-packet-regression.test.ts',
     ],

@@ -55,6 +55,9 @@ export function assemblePrompt(input: AssemblePromptInput) {
       ? 'Do not quote, label, or summarize Provider Add-On instructions inside the clinical note. If a Provider Add-On says "do not..." or names a formatting/billing preference, obey that instruction silently or surface it as a separate review flag only when needed.'
       : null,
     sourceHasVeranoteInputLanes
+      ? 'Provider Add-On is control-plane guidance, not chart text. Never write phrases such as "Provider instructions specify," "Provider Add-On says," "per provider instruction," "the provider requested," or any equivalent explanation of the instruction itself inside the drafted note.'
+      : null,
+    sourceHasVeranoteInputLanes
       ? 'If source text includes obvious misspellings, rushed shorthand, or OCR/scanned-document noise, normalize clear clinical terms in the output while preserving uncertainty for unclear fragments. Do not turn unclear OCR text, abbreviations, or typo-heavy phrases into new clinical facts.'
       : null,
     constraints.sourceIsVerySparse

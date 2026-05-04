@@ -800,6 +800,212 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'stigmatizing dishonesty language', pattern: /lying|dishonest|drug-seeking/i },
     ],
   },
+  {
+    id: 'icanotes-inpatient-initial-violent-thoughts-denies-intent',
+    title: 'ICANotes inpatient evaluation preserves violent-thought nuance without converting it into active threat',
+    specialty: 'Psychiatry',
+    role: 'Psychiatric NP',
+    ehr: 'ICANotes',
+    noteType: 'Inpatient Psych Initial Adult Evaluation',
+    customInstructions: 'Use ICANotes-ready sections. Preserve violent thoughts versus denial of intent/plan and do not flatten into no-risk wording.',
+    sourceSections: {
+      intakeCollateral: [
+        'ER referral:',
+        '- Brought by police after argument with roommate.',
+        '- Roommate reported patient yelled "I could hurt you."',
+        '- No weapon found by police.',
+        '- BAL negative; UDS pending.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Provider typed:',
+        '- Pt angry and embarrassed.',
+        '- Says he had intrusive thoughts of punching roommate but denies intent, plan, or weapon access.',
+        '- Denies SI.',
+        '- Slept poorly after fight.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nPatient: "I was mad and said stupid stuff. I did not plan to hurt him."',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Keep collateral statement, patient explanation, denial of intent/plan, and no weapon access separate.',
+        '- Do not say low risk or cleared.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'collateral threat statement visible', pattern: /roommate|could hurt you|yelled/i },
+      { label: 'intrusive thought nuance visible', pattern: /intrusive thoughts?|punching roommate|angry/i },
+      { label: 'denial of intent or plan visible', pattern: /denies?.{0,60}(?:intent|plan)|did not plan to hurt/i },
+      { label: 'weapon access detail visible', pattern: /no weapon|weapon access/i },
+    ],
+    forbidden: [
+      { label: 'active threat invented', pattern: /active homicidal intent|active threat|planned to hurt|intent to harm/i },
+      { label: 'unsupported low-risk conclusion', pattern: /\blow[-\s]?risk\b|\brisk is low\b/i },
+      { label: 'clearance invented', pattern: /cleared|safe for discharge|stable for discharge/i },
+    ],
+  },
+  {
+    id: 'therapynotes-outpatient-intake-trauma-alcohol-diagnostic-uncertainty',
+    title: 'TherapyNotes outpatient intake keeps trauma, alcohol, and diagnostic uncertainty source-close',
+    specialty: 'Psychiatry',
+    role: 'Psychiatric NP',
+    ehr: 'TherapyNotes',
+    noteType: 'Outpatient Psychiatric Evaluation',
+    customInstructions: 'Use TherapyNotes intake-friendly sections. Do not diagnose PTSD or AUD from this limited packet.',
+    sourceSections: {
+      intakeCollateral: [
+        'Referral:',
+        '- Referred for anxiety and nightmares.',
+        '- Prior therapist note mentions trauma history but no formal diagnostic assessment included.',
+        '- AUDIT-C score copied as 5; details not included.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Live intake:',
+        '- Pt reports nightmares 2x/week and avoidance of driving near accident site.',
+        '- Drinks wine most nights, says "usually two glasses."',
+        '- Denies blackouts, withdrawal sx, or current SI/HI.',
+        '- Concentration poor at work.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nPatient: "I do not want the PTSD label unless we are sure."',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Keep PTSD and alcohol diagnosis uncertain.',
+        '- Do not turn AUDIT-C into alcohol use disorder diagnosis.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'nightmares or avoidance visible', pattern: /nightmares|avoidance|accident site/i },
+      { label: 'alcohol pattern visible', pattern: /wine|two glasses|AUDIT-C|most nights/i },
+      { label: 'diagnostic uncertainty visible', pattern: /PTSD.*(?:uncertain|not confirmed|not established|needs)|diagnostic uncertainty|not enough/i },
+      { label: 'SI/HI denial visible', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
+    ],
+    forbidden: [
+      { label: 'PTSD diagnosis invented', pattern: /diagnosed with PTSD|meets criteria for PTSD|PTSD is diagnosed/i },
+      { label: 'AUD diagnosis invented', pattern: /alcohol use disorder is diagnosed|meets criteria for alcohol use disorder|diagnosed with AUD/i },
+      { label: 'withdrawal symptoms invented', pattern: /withdrawal symptoms present|alcohol withdrawal/i },
+    ],
+  },
+  {
+    id: 'simplepractice-therapy-progress-dap-misspellings-response-limited',
+    title: 'SimplePractice therapy progress note handles misspellings and limited response without medication language',
+    specialty: 'Therapy',
+    role: 'Therapist',
+    ehr: 'SimplePractice',
+    noteType: 'Therapy Progress Note',
+    customInstructions: 'Use DAP-friendly therapy progress wording for SimplePractice. Keep client response limited and do not add medication management.',
+    sourceSections: {
+      intakeCollateral: [
+        'Pre-session:',
+        '- Client sent portal msg: "still avoiding phone calls."',
+        '- Homework was 2 brief exposure practices.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Therapist typed qick:',
+        '- Did ACT values excercise.',
+        '- Client tried one exposre not two.',
+        '- Says it was "awkward but not terrible."',
+        '- denys si hi.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nClient: "I only did one call. I got through it but I hated it."',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Normalize obvious misspellings only.',
+        '- Include data, assessment, plan if useful.',
+        '- Do not say exposure was successful or medication plan.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'ACT intervention normalized despite misspelling', pattern: /ACT|values exercise|values/i },
+      { label: 'partial homework completion visible', pattern: /one (?:exposure|call)|not two|only did one/i },
+      { label: 'qualified response visible', pattern: /awkward but not terrible|got through it|hated it|limited/i },
+      { label: 'SI/HI denial visible despite misspelling', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
+    ],
+    forbidden: [
+      { label: 'therapy response overstated', pattern: /successful exposure|significant progress|resolved avoidance/i },
+      { label: 'medication language invented', pattern: /medication management|continue medications|psychotropic|medication plan/i },
+      { label: 'provider instructions leaked', pattern: /Normalize obvious misspellings|DAP-friendly|Provider Add-On/i },
+    ],
+  },
+  {
+    id: 'sessions-health-outpatient-adhd-bipolar-referral-switch-focus',
+    title: 'Sessions Health outpatient follow-up keeps ADHD request separate from bipolar history and current symptoms',
+    specialty: 'Psychiatry',
+    role: 'Psychiatric NP',
+    ehr: 'Sessions Health',
+    noteType: 'Outpatient Psych Follow-Up',
+    customInstructions: 'Use Sessions Health-ready sections. Keep request for ADHD medication separate from historical bipolar label and do not prescribe or confirm diagnosis.',
+    sourceSections: {
+      intakeCollateral: [
+        'Chart review:',
+        '- Old problem list includes bipolar disorder unspecified.',
+        '- Last two visits documented anxiety and sleep disruption.',
+        '- No recent ADHD rating scale in chart.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Live notes:',
+        '- Pt asks for ADHD med because focus is poor.',
+        '- Sleep 4-5 hrs due to work schedule.',
+        '- Denies euphoria, grandiosity, risky spending.',
+        '- Anxiety still high.',
+        '- Denies SI/HI.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nPatient: "I know they put bipolar in there before, but I mostly cannot focus."',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Do not confirm bipolar or ADHD from this source.',
+        '- Do not state stimulant started.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'ADHD medication request visible', pattern: /ADHD|focus|asks for.*med|cannot focus/i },
+      { label: 'historical bipolar label remains historical', pattern: /old problem list|historical|previous|bipolar.*(?:unspecified|history|not confirmed)/i },
+      { label: 'sleep and anxiety remain visible', pattern: /4-5 hrs|work schedule|anxiety/i },
+      { label: 'manic symptom denials visible', pattern: /denies?.{0,80}(?:euphoria|grandiosity|risky spending)|grandiosity|risky spending/i },
+    ],
+    forbidden: [
+      { label: 'ADHD diagnosis confirmed', pattern: /diagnosed with ADHD|meets criteria for ADHD|ADHD is confirmed/i },
+      { label: 'bipolar diagnosis confirmed', pattern: /confirmed bipolar|meets criteria for bipolar|bipolar disorder is diagnosed/i },
+      { label: 'stimulant action invented', pattern: /stimulant (?:started|prescribed)|(?:start|started|prescribe|prescribed) (?:Adderall|methylphenidate|stimulant)/i },
+    ],
+  },
+  {
+    id: 'theranest-birp-therapy-collateral-risk-check',
+    title: 'TheraNest BIRP-style therapy note preserves collateral risk concern without false reassurance',
+    specialty: 'Therapy',
+    role: 'Therapist',
+    ehr: 'TheraNest',
+    noteType: 'Therapy Progress Note',
+    customInstructions: 'Use BIRP-friendly therapy wording. Keep collateral risk concern and client denial together without saying no risk.',
+    sourceSections: {
+      intakeCollateral: [
+        'Collateral before session:',
+        '- Partner called front desk worried client posted "I am done with everything."',
+        '- Partner not on ROI; message documented as received but not discussed with partner.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Session notes:',
+        '- Client denies SI, plan, or intent.',
+        '- Says post meant wanting to quit job, not life.',
+        '- Practiced grounding and crisis-card review.',
+        '- Affect tearful but engaged.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nClient: "I should not have posted that. I was talking about work."',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Do not write no safety concerns.',
+        '- Preserve collateral concern, denial, and client explanation.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'collateral social media concern visible', pattern: /partner|collateral|posted|done with everything/i },
+      { label: 'client denial of SI plan intent visible', pattern: /denies?.{0,80}(?:SI|suicidal|plan|intent)/i },
+      { label: 'client explanation visible', pattern: /quit job|talking about work|meant work/i },
+      { label: 'grounding or crisis card visible', pattern: /grounding|crisis-card|crisis card/i },
+    ],
+    forbidden: [
+      { label: 'false reassurance', pattern: /no safety concerns|no risk|low[-\s]?risk|risk resolved/i },
+      { label: 'partner discussion invented', pattern: /discussed with partner|partner confirmed|ROI completed/i },
+      { label: 'provider instruction leaked', pattern: /Do not write no safety concerns|Provider Add-On/i },
+    ],
+  },
 ];
 
 function loadEvaluationEnv() {
@@ -835,7 +1041,7 @@ export function evaluateSourcePacketRegressionCase(
     .filter((forbidden) => forbidden.pattern.test(note))
     .map((forbidden) => forbidden.label);
 
-  if (/provider add-on|add-on instructs|\binstructs to preserve\b|provider guidance\s+(?:instructs|says|states|notes)|billing code|CPT preference|Named prompt|do not summarize as low risk|do not diagnose substance-induced psychosis|do not state confirmed hallucinations/i.test(note)) {
+  if (/provider add-on|add-on instructs|\binstructs to preserve\b|provider instructions?\s+(?:specif(?:y|ies)|instructs|says|states|notes)|provider guidance\s+(?:instructs|says|states|notes)|per provider instruction|the provider requested|billing code|CPT preference|Named prompt|do not summarize as low risk|do not diagnose substance-induced psychosis|do not state confirmed hallucinations/i.test(note)) {
     forbiddenHits.push('provider add-on instruction echoed as clinical note content');
   }
 

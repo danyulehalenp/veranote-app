@@ -1,4 +1,5 @@
 import type { SourceSections } from '@/types/session';
+import { SOURCE_LANE_ORDER, getSourceLaneContract, normalizeSourceLaneText } from '@/lib/note/source-lane-contract';
 
 export const EMPTY_SOURCE_SECTIONS: SourceSections = {
   clinicianNotes: '',
@@ -17,21 +18,19 @@ export function normalizeSourceSections(input?: Partial<SourceSections> | null):
 }
 
 export function buildSourceInputFromSections(sections: SourceSections) {
-  const parts = [
-    sections.intakeCollateral.trim() ? `Pre-Visit Data:\n${sections.intakeCollateral.trim()}` : '',
-    sections.clinicianNotes.trim() ? `Live Visit Notes:\n${sections.clinicianNotes.trim()}` : '',
-    sections.patientTranscript.trim() ? `Ambient Transcript:\n${sections.patientTranscript.trim()}` : '',
-    sections.objectiveData.trim() ? `Provider Add-On:\n${sections.objectiveData.trim()}` : '',
-  ].filter(Boolean);
+  const parts = SOURCE_LANE_ORDER.map((id) => {
+    const value = normalizeSourceLaneText(sections, id);
+    const contract = getSourceLaneContract(id);
+    return value && contract ? `${contract.label}:\n${value}` : '';
+  }).filter(Boolean);
 
   return parts.join('\n\n');
 }
 
 export function describePopulatedSourceSections(sections: SourceSections) {
-  return [
-    sections.intakeCollateral.trim() ? 'Pre-visit data' : '',
-    sections.clinicianNotes.trim() ? 'Live visit notes' : '',
-    sections.patientTranscript.trim() ? 'Ambient transcript' : '',
-    sections.objectiveData.trim() ? 'Provider add-on' : '',
-  ].filter(Boolean);
+  return SOURCE_LANE_ORDER.map((id) => {
+    const value = normalizeSourceLaneText(sections, id);
+    const contract = getSourceLaneContract(id);
+    return value && contract ? contract.populatedLabel : '';
+  }).filter(Boolean);
 }

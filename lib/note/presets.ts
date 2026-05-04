@@ -1,4 +1,5 @@
 import { planSections, type NoteSectionKey, type OutputScope } from '@/lib/note/section-profiles';
+import type { OutputDestination, OutputNoteFocus } from '@/lib/veranote/output-destinations';
 
 export type NotePreset = {
   id: string;
@@ -11,6 +12,11 @@ export type NotePreset = {
   keepCloserToSource: boolean;
   flagMissingInfo: boolean;
   customInstructions?: string;
+  ehrDestination?: OutputDestination;
+  ehrNoteFocus?: OutputNoteFocus;
+  ehrCopyMode?: 'whole-note' | 'field-level' | 'hybrid';
+  ehrWritebackStatus?: 'copy-paste-only' | 'future-connector-ready';
+  siteLabel?: string;
   isDefault?: boolean;
   locked?: boolean;
 };
@@ -136,6 +142,81 @@ export function getDefaultPresetCatalog(): NotePreset[] {
       outputStyle: 'Standard',
       format: 'Labeled Sections',
       customInstructions: 'Use this for outpatient psych follow-up when the note needs medication response, functioning, adherence, side effects, and safety nuance without forcing inpatient chronology.',
+      isDefault: false,
+      locked: true,
+    },
+    {
+      ...buildDefaultPresetForNoteType('Inpatient Psych Progress Note'),
+      id: 'preset-ehr-wellsky-inpatient-progress',
+      name: 'EHR Starter - WellSky Inpatient Progress',
+      outputStyle: 'Concise',
+      format: 'Paragraph Style',
+      customInstructions: 'Format for WellSky-safe copy/paste: flatter paragraphs, simple headings only when needed, source-close risk wording, and no invented MSE, discharge readiness, or medical stability.',
+      ehrDestination: 'WellSky',
+      ehrNoteFocus: 'inpatient-psych-follow-up',
+      ehrCopyMode: 'hybrid',
+      ehrWritebackStatus: 'copy-paste-only',
+      siteLabel: 'Hospital / facility using WellSky',
+      isDefault: false,
+      locked: true,
+    },
+    {
+      ...buildDefaultPresetForNoteType('Outpatient Psych Follow-Up'),
+      id: 'preset-ehr-tebra-outpatient-followup',
+      name: 'EHR Starter - Tebra/Kareo Outpatient Follow-Up',
+      outputStyle: 'Standard',
+      format: 'Labeled Sections',
+      customInstructions: 'Format for Tebra/Kareo copy/paste: preserve Subjective/HPI, MSE/observations, Assessment, and Plan as separable sections. Keep med adherence, side effects, and safety nuance literal.',
+      ehrDestination: 'Tebra/Kareo',
+      ehrNoteFocus: 'outpatient-follow-up',
+      ehrCopyMode: 'field-level',
+      ehrWritebackStatus: 'copy-paste-only',
+      siteLabel: 'Outpatient psychiatry clinic',
+      isDefault: false,
+      locked: true,
+    },
+    {
+      ...buildDefaultPresetForNoteType('Outpatient Psychiatric Evaluation'),
+      id: 'preset-ehr-therapynotes-outpatient-evaluation',
+      name: 'EHR Starter - TherapyNotes Psych Intake',
+      outputStyle: 'Standard',
+      format: 'Labeled Sections',
+      customInstructions: 'Format for TherapyNotes intake-style copy/paste: keep presenting problem, current mental status, risk assessment, biopsychosocial history, diagnosis framing, and plan separable without copying DSM criteria verbatim.',
+      ehrDestination: 'TherapyNotes',
+      ehrNoteFocus: 'outpatient-evaluation',
+      ehrCopyMode: 'field-level',
+      ehrWritebackStatus: 'copy-paste-only',
+      siteLabel: 'Outpatient psychiatry / therapy site',
+      isDefault: false,
+      locked: true,
+    },
+    {
+      ...buildDefaultPresetForNoteType('Therapy Progress Note'),
+      id: 'preset-ehr-simplepractice-therapy-progress',
+      name: 'EHR Starter - SimplePractice Therapy Progress',
+      outputStyle: 'Concise',
+      format: 'Paragraph Style',
+      customInstructions: 'Format for SimplePractice therapy progress copy/paste: keep intervention, client response, risk update, homework/next step, and source limits clear. Do not add medication management language.',
+      ehrDestination: 'SimplePractice',
+      ehrNoteFocus: 'outpatient-follow-up',
+      ehrCopyMode: 'hybrid',
+      ehrWritebackStatus: 'copy-paste-only',
+      siteLabel: 'Therapy practice',
+      isDefault: false,
+      locked: true,
+    },
+    {
+      ...buildDefaultPresetForNoteType('Medication Assisted Treatment Follow-Up'),
+      id: 'preset-ehr-valant-mat-followup',
+      name: 'EHR Starter - Valant MAT Follow-Up',
+      outputStyle: 'Standard',
+      format: 'Labeled Sections',
+      customInstructions: 'Format for Valant behavioral-health copy/paste: keep UDS, medication adherence, cravings, overdose/naloxone, risk, assessment, and plan separable. Do not invent dose changes or confirmed relapse from preliminary screens.',
+      ehrDestination: 'Valant',
+      ehrNoteFocus: 'outpatient-follow-up',
+      ehrCopyMode: 'field-level',
+      ehrWritebackStatus: 'copy-paste-only',
+      siteLabel: 'Addiction / behavioral-health site',
       isDefault: false,
       locked: true,
     },

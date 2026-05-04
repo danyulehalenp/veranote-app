@@ -321,8 +321,10 @@ function removeProviderAddOnInstructionEcho(note: string, sourceInput = '') {
  let cleaned = note
   .replace(/\s*,?\s*(?:and\s+)?provider add[-\s]?on(?:\s+instructions?)?/gi, '')
   .replace(/\bprovider add[-\s]?on(?:\s+instructions?)?\b/gi, 'provider guidance')
+  .replace(/(?:^|\n)\s*provider instructions?\s+(?:specif(?:y|ies)|instructs|says|notes?|states)[^\n.]*(?:\.\s*)?/gim, '\n')
   .replace(/(?:^|\n)\s*provider guidance\s*:\s*[\s\S]*?(?=\n\n[A-Z][^\n]{1,90}:|$)/gim, '')
   .replace(/(?:^|\n)\s*provider guidance\s+(?:instructs|says|notes?|states)[^\n.]*(?:\.\s*)?/gim, '\n')
+  .replace(/(^|[.!?]\s+)[^.!?\n]*\bprovider instructions?\s+(?:specif(?:y|ies)|instructs|says|notes?|states)[^.!?\n]*(?:[.!?]\s*)?/gi, '$1')
   .replace(/(^|[.!?]\s+)[^.!?\n]*\bper provider (?:instructions?|guidance|add[-\s]?on)[^.!?\n]*(?:[.!?]\s*)?/gi, '$1')
   .replace(/\s+per provider (?:instructions?|guidance|add[-\s]?on)\b/gi, '')
   .replace(/(?:^|[\s.])instructs?\s+to\s+(?:preserve|keep|avoid|not|use)[^\n.]*(?:\.\s*)?/gi, ' ')

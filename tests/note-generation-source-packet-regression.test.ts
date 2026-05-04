@@ -25,5 +25,5 @@ describe('note generation source-packet regression', () => {
     expect(report.total).toBe(sourcePacketRegressionCases.length);
     expect(report.failed, JSON.stringify(report.cases.filter((item) => !item.passed), null, 2)).toBe(0);
     expect(report.cases.every((item) => item.mode === 'live')).toBe(true);
-  }, 600_000);
+  }, 900_000);
 });
