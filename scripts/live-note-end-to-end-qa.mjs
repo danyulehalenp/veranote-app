@@ -435,6 +435,79 @@ async function getFirstVisibleButtonEnabled(page, name) {
   throw new Error(`No visible button found for ${name}`);
 }
 
+async function getVisibleCopyFinalNoteButton(page, timeout = 5000) {
+  return waitForAnyVisible([
+    page.getByRole('button', { name: /^Copy Final Note/i }),
+  ], timeout);
+}
+
+async function openDedicatedReviewForReopenedDraft(page, appUrl, runId) {
+  const dedicatedReviewLink = page.getByRole('link', { name: 'Open Dedicated Review' }).first();
+
+  if (await waitForVisible(dedicatedReviewLink, 3000)) {
+    await dedicatedReviewLink.click();
+  } else {
+    await page.goto(`${appUrl.origin}/dashboard/review?fresh=${encodeURIComponent(runId)}`, { waitUntil: 'domcontentloaded' });
+  }
+
+  await page.waitForURL((url) => url.pathname === '/dashboard/review', { timeout: 30000 });
+}
+
+async function copyFinalNoteFromCurrentReview(page) {
+  const copyButton = await getVisibleCopyFinalNoteButton(page, 30000);
+  if (!copyButton) {
+    const bodyExcerpt = await page.locator('body').innerText().then((text) => text.slice(0, 1600)).catch(() => '');
+    throw new Error([
+      `Copy Final Note was not visible after reopening the saved draft on ${page.url()}.`,
+      `Body excerpt: ${bodyExcerpt}`,
+    ].join('\n'));
+  }
+
+  const copyEnabled = await copyButton.isEnabled();
+  if (!copyEnabled) {
+    throw new Error('Reopened saved draft did not preserve approved review state.');
+  }
+
+  await copyButton.click();
+  return true;
+}
+
+async function openSavedDraftForReview(page, appUrl, runId, draftId) {
+  await page.goto(`${appUrl.origin}/dashboard/drafts?fresh=${encodeURIComponent(runId)}`, { waitUntil: 'domcontentloaded' });
+  if (page.url().includes('/sign-in')) {
+    await signInForQa(page, `${appUrl.origin}/dashboard/drafts?fresh=${encodeURIComponent(runId)}`);
+  }
+
+  await page.getByPlaceholder('Search note type, source text, or draft text').waitFor({ state: 'visible', timeout: 30000 });
+  await page.getByPlaceholder('Search note type, source text, or draft text').fill(runId);
+  await page.waitForTimeout(500);
+
+  const reviewButton = await waitForAnyVisible([
+    page.getByRole('button', { name: 'Review in workspace' }),
+  ], 10000);
+
+  if (reviewButton) {
+    await reviewButton.click();
+    await page.waitForURL((url) => url.pathname === '/dashboard/new-note', { timeout: 30000 });
+    return 'saved-drafts-list';
+  }
+
+  if (!draftId) {
+    const bodyExcerpt = await page.locator('body').innerText().then((text) => text.slice(0, 1600)).catch(() => '');
+    throw new Error([
+      `Saved draft with marker ${runId} was not visible in the drafts list and no draft ID fallback was available.`,
+      `Body excerpt: ${bodyExcerpt}`,
+    ].join('\n'));
+  }
+
+  await page.goto(`${appUrl.origin}/dashboard/new-note?draftId=${encodeURIComponent(draftId)}#workspace`, { waitUntil: 'domcontentloaded' });
+  if (page.url().includes('/sign-in')) {
+    await signInForQa(page, `${appUrl.origin}/dashboard/new-note?draftId=${encodeURIComponent(draftId)}#workspace`);
+  }
+  await page.waitForURL((url) => url.pathname === '/dashboard/new-note', { timeout: 30000 });
+  return 'direct-draft-url';
+}
+
 async function main() {
   let devServer = null;
   let browser = null;
@@ -556,42 +629,35 @@ async function main() {
     await clickFirstVisibleButton(page, 'Save Draft');
     const saveDraftResponse = await saveDraftResponsePromise;
     const saveDraftPayload = await saveDraftResponse.json().catch(() => ({}));
+    const savedDraftId = saveDraftPayload?.draft?.id || draftCreatePayload?.draft?.id || null;
     await page.getByText('Draft and section review state saved.').waitFor({ state: 'visible', timeout: 10000 });
 
-    await page.goto(`${appUrl.origin}/dashboard/drafts?fresh=${encodeURIComponent(runId)}`, { waitUntil: 'domcontentloaded' });
-    if (page.url().includes('/sign-in')) {
-      await signInForQa(page, `${appUrl.origin}/dashboard/drafts?fresh=${encodeURIComponent(runId)}`);
-    }
-    await page.getByPlaceholder('Search note type, source text, or draft text').waitFor({ state: 'visible', timeout: 30000 });
-    await page.getByPlaceholder('Search note type, source text, or draft text').fill(runId);
-    await page.waitForTimeout(500);
-    const matchingDraftCard = page.locator('.aurora-panel')
-      .filter({ hasText: 'Source excerpt' })
-      .filter({ has: page.getByRole('button', { name: 'Review in workspace' }) })
-      .first();
-    await matchingDraftCard.waitFor({ state: 'visible', timeout: 30000 });
-    await matchingDraftCard.getByRole('button', { name: 'Review in workspace' }).click();
-    await page.waitForURL((url) => url.pathname === '/dashboard/new-note', { timeout: 30000 });
-    await page.getByRole('button', { name: 'Copy Final Note' }).first().waitFor({ state: 'visible', timeout: 30000 });
+    const reopenMethod = await openSavedDraftForReview(page, appUrl, runId, savedDraftId);
 
-    const reopenedCopyEnabled = await getFirstVisibleButtonEnabled(page, 'Copy Final Note');
+    const workspaceReopened = page.url().includes('/dashboard/new-note');
+    let copySurface = 'workspace';
+    let copyButton = await getVisibleCopyFinalNoteButton(page, 5000);
+    if (!copyButton) {
+      copySurface = 'dedicated-review';
+      await openDedicatedReviewForReopenedDraft(page, appUrl, runId);
+      copyButton = await getVisibleCopyFinalNoteButton(page, 30000);
+    }
+
+    const reopenedCopyEnabled = Boolean(copyButton && await copyButton.isEnabled());
     if (!reopenedCopyEnabled) {
       throw new Error('Reopened saved draft did not preserve approved review state.');
     }
 
-    await clickFirstVisibleButton(page, 'Copy Final Note');
+    await copyFinalNoteFromCurrentReview(page);
     await page.waitForTimeout(300);
     const clipboardText = await page.evaluate(() => navigator.clipboard.readText()).catch(() => '');
     if (!clipboardText || clipboardText.length < 120) {
       throw new Error('Copy Final Note did not place final note text on the clipboard.');
     }
 
-    if (await waitForVisible(page.getByRole('link', { name: 'Open Dedicated Review' }).first(), 3000)) {
-      await page.getByRole('link', { name: 'Open Dedicated Review' }).first().click();
-    } else {
-      await page.goto(`${appUrl.origin}/dashboard/review?fresh=${encodeURIComponent(runId)}`, { waitUntil: 'domcontentloaded' });
+    if (!page.url().includes('/dashboard/review')) {
+      await openDedicatedReviewForReopenedDraft(page, appUrl, runId);
     }
-    await page.waitForURL((url) => url.pathname === '/dashboard/review', { timeout: 30000 });
     const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
     await page.getByRole('button', { name: 'Export .txt' }).click();
     const download = await downloadPromise;
@@ -615,7 +681,9 @@ async function main() {
         copyEnabledAfterApproval,
         saveDraftStatus: saveDraftResponse.status(),
         saveDraftId: saveDraftPayload?.draft?.id || null,
-        savedDraftReopened: page.url().includes('/dashboard/review'),
+        reopenMethod,
+        savedDraftReopened: workspaceReopened,
+        reopenCopySurface: copySurface,
         reopenedCopyEnabled,
         clipboardCharacters: clipboardText.length,
         exportSuggestedFilename: download.suggestedFilename(),

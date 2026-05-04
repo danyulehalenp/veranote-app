@@ -115,7 +115,7 @@ const COMMON_CLINICAL_SPELLING_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\blithuim\b/g, 'lithium'],
 ];
 
-function normalizeCommonClinicalSpellings(value: string) {
+export function normalizeCommonClinicalSpellings(value: string) {
   return COMMON_CLINICAL_SPELLING_NORMALIZATIONS.reduce(
     (normalized, [pattern, replacement]) => normalized.replace(pattern, replacement),
     value,

@@ -67,6 +67,7 @@ import {
   buildAtlasConversationEvalMeta,
   buildAtlasConversationFallbackPayload,
   buildAtlasConversationSafetyPayload,
+  normalizeCommonClinicalSpellings,
   orchestrateAtlasConversation,
 } from '@/lib/veranote/atlas-conversation-orchestrator';
 
@@ -113,6 +114,37 @@ function getAssistantDisplayName(context?: AssistantApiContext) {
 function maybeQuestion(text: string) {
   const trimmed = text.trim();
   return /[?.!]$/.test(trimmed) ? trimmed : `${trimmed}?`;
+}
+
+function normalizeMessageForClinicalRouting(message: string) {
+  return normalizeCommonClinicalSpellings(message.toLowerCase())
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeVisibleClinicalTyposForRouting(message: string) {
+  return message
+    .replace(/\bwelbutrin\b/gi, 'Wellbutrin')
+    .replace(/\bwellbutrinn\b/gi, 'Wellbutrin')
+    .replace(/\bbuproprion\b/gi, 'bupropion')
+    .replace(/\bbupropian\b/gi, 'bupropion')
+    .replace(/\bpaxel\b/gi, 'Paxil')
+    .replace(/\bpaxal\b/gi, 'Paxil')
+    .replace(/\bpaxill\b/gi, 'Paxil')
+    .replace(/\bparoxitine\b/gi, 'paroxetine')
+    .replace(/\bparoxatine\b/gi, 'paroxetine')
+    .replace(/\blamictle\b/gi, 'Lamictal')
+    .replace(/\blamictel\b/gi, 'Lamictal')
+    .replace(/\blamictol\b/gi, 'Lamictal')
+    .replace(/\blamotrigene\b/gi, 'lamotrigine')
+    .replace(/\blamotrogine\b/gi, 'lamotrigine')
+    .replace(/\bschizo\s+affective\b/gi, 'schizoaffective')
+    .replace(/\bschizoafective\b/gi, 'schizoaffective')
+    .replace(/\bschizoaffectve\b/gi, 'schizoaffective')
+    .replace(/\bschizoaffectivee\b/gi, 'schizoaffective')
+    .replace(/\bschizoeffective\b/gi, 'schizoaffective')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function looksLikeQuestion(message: string) {
@@ -167,8 +199,8 @@ function looksLikeDirectInteractionReferenceQuestion(message: string) {
 function looksLikeDirectLabMonitoringReferenceQuestion(message: string) {
   return (
     looksLikeQuestion(message)
-    && /\b(labs?|monitor|monitoring|protocol|frequency|baseline|checked|required|needed|ekg|ecg|a1c|lipids|cbc|anc|lft|lfts|liver function|kidney function|renal function|tsh|pregnancy test|urine drug screens?|drug screens?|uds|chest x[- ]?ray|x[- ]?ray|xray|side effect|risk|symptoms|signs|syndrome|warning|prolactin|hypercalcemia|hair loss|alopecia|gingival|growth suppression|extrapyramidal|eps|stevens-johnson|stevens johnson|sjs|neuroleptic malignant|nms)\b/i.test(message)
-    && /\b(second-generation|second generation|sga|antipsychotics?|carbamazepine|tegretol|serotonin syndrome|valproate|depakote|divalproex|neuroleptic malignant|nms|phenytoin|stimulants?|extrapyramidal|eps|risperidone|lithium|clozapine|benzodiazepines?|tca|tricyclic|olanzapine|lfts?|tsh|psychotropic|psych drug|aripiprazole|ziprasidone|duloxetine|maoi)\b/i.test(message)
+    && /\b(labs?|monitor|monitoring|protocol|frequency|baseline|checked|required|needed|ekg|ecg|a1c|lipids|cbc|anc|lft|lfts|liver function|kidney function|renal function|tsh|pregnancy test|urine drug screens?|drug screens?|uds|chest x[- ]?ray|x[- ]?ray|xray|side effect|risk|rash|symptoms|signs|syndrome|warning|prolactin|hypercalcemia|hair loss|alopecia|gingival|growth suppression|extrapyramidal|eps|stevens-johnson|stevens johnson|sjs|neuroleptic malignant|nms)\b/i.test(message)
+    && /\b(second-generation|second generation|sga|antipsychotics?|carbamazepine|tegretol|serotonin syndrome|valproate|depakote|divalproex|neuroleptic malignant|nms|phenytoin|stimulants?|extrapyramidal|eps|risperidone|lithium|clozapine|benzodiazepines?|tca|tricyclic|olanzapine|lfts?|tsh|psychotropic|psych drug|aripiprazole|ziprasidone|duloxetine|maoi|lamictal|lamotrigine)\b/i.test(message)
     && !/\b(source says|draft says|note says|patient reports|patient denies|document|wording|chart-ready|chart ready|write this|rewrite)\b/i.test(message)
   );
 }
@@ -2452,11 +2484,18 @@ function referencesCurrentNote(message: string) {
 }
 
 function shouldIgnoreStaleClinicalContext(message: string) {
-  const normalized = message.trim().toLowerCase();
+  const normalized = normalizeMessageForClinicalRouting(message);
   const medicationDocumentationWithoutExplicitCurrentNote = isStandaloneMedicationDocumentationPrompt(message);
+  const directReferenceWithoutCurrentNote = !referencesCurrentNote(message) && (
+    isDirectReferenceStyleQuestion(normalized)
+    || looksLikeDirectInteractionReferenceQuestion(normalized)
+    || looksLikeDirectLabMonitoringReferenceQuestion(normalized)
+    || looksLikeDirectApprovalReferenceQuestion(normalized)
+    || looksLikeDirectGeriatricReferenceQuestion(normalized)
+    || looksLikeMedicationUseSafetyQuestion(normalized)
+  );
 
-  return (isDirectReferenceStyleQuestion(message) && !referencesCurrentNote(message))
-    || medicationDocumentationWithoutExplicitCurrentNote;
+  return directReferenceWithoutCurrentNote || medicationDocumentationWithoutExplicitCurrentNote;
 }
 
 function isStandaloneMedicationDocumentationPrompt(message: string) {
@@ -2873,13 +2912,20 @@ export async function POST(request: Request) {
     }
 
     const standaloneMedicationDocumentationPrompt = isStandaloneMedicationDocumentationPrompt(rawMessage);
-    const ignoreStaleClinicalContext = shouldIgnoreStaleClinicalContext(rawMessage);
     const atlasConversation = orchestrateAtlasConversation({
       message: rawMessage,
       recentMessages: body.recentMessages,
       context: body.context,
     });
-    const sourceText = buildSourceTextForReasoning(rawMessage, body.context, body.recentMessages);
+    const normalizedRawMessageForRouting = normalizeMessageForClinicalRouting(rawMessage);
+    const normalizedEffectiveMessageForRouting = normalizeMessageForClinicalRouting(atlasConversation.effectiveMessage);
+    const ignoreStaleClinicalContext = shouldIgnoreStaleClinicalContext(normalizedRawMessageForRouting)
+      || (atlasConversation.didRewrite && shouldIgnoreStaleClinicalContext(normalizedEffectiveMessageForRouting))
+      || (atlasConversation.didRewrite && (
+        atlasConversation.routeHint === 'diagnostic_reference'
+        || atlasConversation.routeHint === 'medication_reference'
+      ));
+    const sourceText = ignoreStaleClinicalContext ? '' : buildSourceTextForReasoning(rawMessage, body.context, body.recentMessages);
     const { sanitizedTexts, entities: phiEntities } = sanitizePHITexts([
       rawMessage,
       atlasConversation.effectiveMessage,
@@ -2887,7 +2933,7 @@ export async function POST(request: Request) {
       ignoreStaleClinicalContext ? '' : body.context?.currentDraftText || '',
     ]);
     const [sanitizedMessage, sanitizedEffectiveMessage, sanitizedSourceText, sanitizedDraftText] = sanitizedTexts;
-    const assistantMessageForRouting = atlasConversation.didRewrite ? sanitizedEffectiveMessage : sanitizedMessage;
+    const assistantMessageForRouting = normalizeVisibleClinicalTyposForRouting(atlasConversation.didRewrite ? sanitizedEffectiveMessage : sanitizedMessage);
     const providerId = resolveAssistantProviderId(body.context, authenticatedProviderId);
     const frustratedClinicalCorrectionPayload = buildFrustratedClinicalCorrectionHelp(
       sanitizedMessage,

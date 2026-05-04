@@ -290,8 +290,11 @@ function removeUnsupportedMedicationActionPlan(note: string, sourceInput: string
  const sourceSupportsBuprenorphineContinuation = /\b(?:continue|continued|dose unchanged|remain(?:ed)? on|no dose change)\b.{0,80}\bbuprenorphine|\bbuprenorphine\b.{0,80}\b(?:continue|continued|dose unchanged|no dose change)\b/i.test(sourceInput);
  if (!sourceSupportsBuprenorphineContinuation) {
   cleaned = cleaned
-   .replace(/\bContinue current buprenorphine\/naloxone dose[^.\n]*(?:\.\s*)?/gi, 'No buprenorphine dose change is documented from this source. ')
-   .replace(/\bContinue buprenorphine\/naloxone[^.\n]*(?:\.\s*)?/gi, 'No buprenorphine dose change is documented from this source. ');
+   .replace(/\bContinue current buprenorphine\/naloxone dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+   .replace(/\bContinue buprenorphine\/naloxone[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+   .replace(/\bDo not change buprenorphine(?:\/naloxone)? dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+   .replace(/\bNo changes? to (?:the )?buprenorphine(?:\/naloxone)? dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+   .replace(/\bNo buprenorphine dose change is documented[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ');
  }
 
  const sourceDocumentsNaloxoneProvision = /\b(?:naloxone|narcan)\b.{0,80}\b(?:provided|given|dispensed|prescribed|sent)\b|\b(?:provided|given|dispensed|prescribed|sent)\b.{0,80}\b(?:naloxone|narcan)\b/i.test(sourceInput);
