@@ -142,4 +142,36 @@ describe('assistant diagnostic conversation continuity', () => {
     expect(followup.message).not.toContain("I don't have a safe Veranote answer");
     expect(followup.message).not.toMatch(/hidden scratchpad|chain-of-thought|step 1/i);
   });
+
+  it('switches topics when a new direct clinical question follows a prior thread', async () => {
+    const medicationQuestion = 'can wellbutrin be taken with paxil?';
+    const medication = await askDiagnosticThread(medicationQuestion);
+
+    const medicationThread: AssistantThreadTurn[] = [
+      { role: 'provider', content: medicationQuestion },
+      { role: 'assistant', content: medication.message, answerMode: medication.answerMode },
+    ];
+    const diagnosticSwitch = await askDiagnosticThread('what is schizoaffective disorder criteria?', medicationThread);
+
+    expectDiagnosticReferenceAnswer(diagnosticSwitch);
+    expect(diagnosticSwitch.message).toMatch(/schizoaffective/i);
+    expect(diagnosticSwitch.message).toMatch(/psychosis/i);
+    expect(diagnosticSwitch.message).toMatch(/mood/i);
+    expect(diagnosticSwitch.message).not.toMatch(/bupropion|wellbutrin|paxil|paroxetine/i);
+
+    const diagnosticThread: AssistantThreadTurn[] = [
+      { role: 'provider', content: 'what is dsm criteria for schizoaffective disorder?' },
+      {
+        role: 'assistant',
+        content: 'Schizoaffective disorder is mainly a timeline diagnosis involving psychosis and mood episode evidence.',
+        answerMode: 'direct_reference_answer',
+      },
+    ];
+    const medicationSwitch = await askDiagnosticThread('what about wellbutrin and paxil together?', diagnosticThread);
+
+    expect(medicationSwitch.answerMode).toBe('medication_reference_answer');
+    expect(medicationSwitch.message).toMatch(/bupropion|wellbutrin/i);
+    expect(medicationSwitch.message).toMatch(/paxil|paroxetine|ssri/i);
+    expect(medicationSwitch.message).not.toContain("I don't have a safe Veranote answer");
+  });
 });

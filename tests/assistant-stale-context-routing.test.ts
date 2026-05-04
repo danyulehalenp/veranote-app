@@ -74,6 +74,41 @@ describe('assistant stale-context routing', () => {
     expect(payload.answerMode).toBe('general_health_reference');
   });
 
+  it('answers direct clinical abbreviation questions instead of reusing stale MSE context', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'What does MSE mean?',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Inpatient Psych Progress Note',
+          focusedSectionHeading: 'MSE',
+          currentDraftText: 'Source-supported MSE findings remain limited because the source only says anxious and late.',
+        },
+        recentMessages: [
+          {
+            role: 'provider',
+            content: 'The source only says mood anxious and late. What should Atlas refuse to auto-complete in the MSE?',
+          },
+          {
+            role: 'assistant',
+            content: 'Source-supported MSE findings remain limited; do not invent normal domains.',
+            answerMode: 'mse_completion_limits',
+          },
+        ],
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.message).toContain('MSE means Mental Status Exam');
+    expect(payload.message).not.toContain('Source-supported MSE findings');
+    expect(payload.message).not.toContain('refuse to auto-complete');
+    expect(payload.answerMode).toBe('direct_reference_answer');
+  });
+
   it('does not reuse stale eating-disorder context for antidepressant letter questions', async () => {
     const response = await POST(new Request('http://localhost/api/assistant/respond', {
       method: 'POST',

@@ -2462,6 +2462,22 @@ function isDirectReferenceStyleQuestion(message: string) {
   ].some((pattern) => pattern.test(normalized));
 }
 
+function looksLikeDirectClinicalTermDefinitionQuestion(message: string) {
+  const normalized = normalizeMessageForClinicalRouting(message);
+
+  if (!/\b(what is|what does|what are|meaning of|define|what's)\b/.test(normalized)) {
+    return false;
+  }
+
+  const asksKnownTerm = /\b(h&p|history and physical|hpi|mse|mental status exam|uds|upt|icd-?10|a1c|cbc|cmp|phq-?9|c-ssrs|cssrs)\b/.test(normalized);
+  if (!asksKnownTerm) {
+    return false;
+  }
+
+  // Keep note-grounded completion/rewrite prompts in the clinical safety lanes.
+  return !/\b(in this note|for this note|current note|current draft|this patient|the patient|source says|draft says|patient reports|patient denies|chart|document|write|word|assessment|plan|auto-?complete|fill in|refuse|missing|leave blank|leave unfilled)\b/.test(normalized);
+}
+
 function referencesCurrentNote(message: string) {
   const normalized = message.trim().toLowerCase();
 
@@ -2486,6 +2502,7 @@ function referencesCurrentNote(message: string) {
 function shouldIgnoreStaleClinicalContext(message: string) {
   const normalized = normalizeMessageForClinicalRouting(message);
   const medicationDocumentationWithoutExplicitCurrentNote = isStandaloneMedicationDocumentationPrompt(message);
+  const directClinicalTermQuestion = looksLikeDirectClinicalTermDefinitionQuestion(normalized);
   const directReferenceWithoutCurrentNote = !referencesCurrentNote(message) && (
     isDirectReferenceStyleQuestion(normalized)
     || looksLikeDirectInteractionReferenceQuestion(normalized)
@@ -2495,7 +2512,7 @@ function shouldIgnoreStaleClinicalContext(message: string) {
     || looksLikeMedicationUseSafetyQuestion(normalized)
   );
 
-  return directReferenceWithoutCurrentNote || medicationDocumentationWithoutExplicitCurrentNote;
+  return directClinicalTermQuestion || directReferenceWithoutCurrentNote || medicationDocumentationWithoutExplicitCurrentNote;
 }
 
 function isStandaloneMedicationDocumentationPrompt(message: string) {
@@ -2935,6 +2952,57 @@ export async function POST(request: Request) {
     const [sanitizedMessage, sanitizedEffectiveMessage, sanitizedSourceText, sanitizedDraftText] = sanitizedTexts;
     const assistantMessageForRouting = normalizeVisibleClinicalTyposForRouting(atlasConversation.didRewrite ? sanitizedEffectiveMessage : sanitizedMessage);
     const providerId = resolveAssistantProviderId(body.context, authenticatedProviderId);
+    const directClinicalTermKnowledgePayload = looksLikeDirectClinicalTermDefinitionQuestion(assistantMessageForRouting)
+      ? buildGeneralKnowledgeHelp(assistantMessageForRouting, body.context, body.recentMessages)
+      : null;
+    if (
+      directClinicalTermKnowledgePayload
+      && !standaloneMedicationDocumentationPrompt
+      && (
+        directClinicalTermKnowledgePayload.answerMode === 'direct_reference_answer'
+        || directClinicalTermKnowledgePayload.answerMode === 'general_health_reference'
+        || !directClinicalTermKnowledgePayload.answerMode
+      )
+    ) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'reference_help',
+          answerMode: directClinicalTermKnowledgePayload.answerMode || 'direct_reference_answer',
+          routePriority: 'direct-clinical-term-reference',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...directClinicalTermKnowledgePayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: directClinicalTermKnowledgePayload.message,
+            warnings: [],
+            knowledgeIntent: 'reference_help',
+            answerMode: directClinicalTermKnowledgePayload.answerMode,
+            builderFamily: directClinicalTermKnowledgePayload.builderFamily,
+            routePriority: 'direct-clinical-term-reference',
+          },
+        } : {}),
+      });
+    }
     const frustratedClinicalCorrectionPayload = buildFrustratedClinicalCorrectionHelp(
       sanitizedMessage,
       body.recentMessages,
