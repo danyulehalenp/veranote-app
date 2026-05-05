@@ -29,6 +29,20 @@ export type ReviewedDocumentSourceInput = {
   reviewedText: string;
 };
 
+export type DocumentReliabilityWarningId =
+  | 'pending-results'
+  | 'clearance-uncertain'
+  | 'diagnosis-overclaim-risk'
+  | 'collateral-conflict'
+  | 'ocr-review-required'
+  | 'truncated-source';
+
+export type DocumentReliabilityWarning = {
+  id: DocumentReliabilityWarningId;
+  label: string;
+  instruction: string;
+};
+
 const TEXT_EXTENSIONS = new Set(['txt', 'md', 'markdown', 'csv', 'json', 'rtf', 'log']);
 const WORD_EXTENSIONS = new Set(['doc', 'docx']);
 const SPREADSHEET_EXTENSIONS = new Set(['xls', 'xlsx']);
@@ -170,6 +184,69 @@ export function normalizeReviewedDocumentText(value: string, maxCharacters = DOC
   return `${normalized.slice(0, maxCharacters).trim()}\n\n[Document text truncated for source review. Keep only clinically relevant reviewed excerpts.]`;
 }
 
+export function getDocumentReliabilityWarnings(input: {
+  reviewedText: string;
+  extractionMode: DocumentExtractionMode;
+  sourceKind?: DocumentSourceKind;
+}) {
+  const warnings: DocumentReliabilityWarning[] = [];
+  const normalized = input.reviewedText.toLowerCase();
+  const sourceKind = input.sourceKind || 'unknown';
+
+  if (/\b(pending|ordered but not resulted|awaiting|not resulted|not visible|not visable|not included|question mark|\?)\b/.test(normalized)) {
+    warnings.push({
+      id: 'pending-results',
+      label: 'Pending or incomplete results are present.',
+      instruction: 'Do not convert pending, missing, question-marked, or not-visible results into normal/negative findings.',
+    });
+  }
+
+  if (/\b(?:med clear\?|medical(?:ly)? clear\?|medical clearance\b|cleared for psych\b|cleared for psychiatric\b)/.test(normalized)) {
+    warnings.push({
+      id: 'clearance-uncertain',
+      label: 'Medical clearance wording needs source-bound review.',
+      instruction: 'Do not state medically cleared unless the reviewed source clearly supports final clearance.',
+    });
+  }
+
+  if (/\b(rule out|r\/o|history of|historical|prior diagnosis|listed diagnosis|diagnosis listed|not confirmed|uncertain|provisional)\b/.test(normalized)) {
+    warnings.push({
+      id: 'diagnosis-overclaim-risk',
+      label: 'Diagnosis labels may be historical, provisional, or unconfirmed.',
+      instruction: 'Keep diagnosis labels attributed to the outside record unless the current assessment independently supports them.',
+    });
+  }
+
+  if (/\b(collateral|mother|father|partner|spouse|staff|nursing|school|police)\b/.test(normalized)
+    && /\b(denies|denied|disputes|contradict|conflict|but|however)\b/.test(normalized)) {
+    warnings.push({
+      id: 'collateral-conflict',
+      label: 'Collateral/source conflict may be present.',
+      instruction: 'Preserve patient report, collateral report, staff observation, and objective data as separate source voices.',
+    });
+  }
+
+  if (input.extractionMode === 'manual-ocr-review' || sourceKind === 'pdf' || sourceKind === 'image') {
+    warnings.push({
+      id: 'ocr-review-required',
+      label: 'Reviewed OCR/scanned-source limitations apply.',
+      instruction: 'Treat OCR text as provider-reviewed source material, not a perfect source of truth.',
+    });
+  }
+
+  if (/\[document text truncated/i.test(input.reviewedText)) {
+    warnings.push({
+      id: 'truncated-source',
+      label: 'Document source was truncated.',
+      instruction: 'Avoid implying the reviewed excerpt represents the full outside record.',
+    });
+  }
+
+  return warnings.filter((warning, index, all) => (
+    all.findIndex((candidate) => candidate.id === warning.id) === index
+  ));
+}
+
 export function inferDocumentSourceBucket(text: string) {
   const normalized = text.toLowerCase();
 
@@ -218,6 +295,11 @@ export function buildReviewedDocumentSourceBlock(input: ReviewedDocumentSourceIn
   const sourceKind = input.sourceKind || classifyDocumentSourceKind(input.fileName, input.mimeType);
   const fileName = sanitizeDocumentFileName(input.fileName);
   const bucket = inferDocumentSourceBucket(reviewedText);
+  const warnings = getDocumentReliabilityWarnings({
+    reviewedText,
+    extractionMode: input.extractionMode,
+    sourceKind,
+  });
 
   return [
     `Reviewed Document Source: ${fileName}`,
@@ -226,6 +308,10 @@ export function buildReviewedDocumentSourceBlock(input: ReviewedDocumentSourceIn
     `Extraction mode: ${documentExtractionModeLabel(input.extractionMode)}`,
     'Review status: provider reviewed before loading into source.',
     'Use instruction: preserve attribution and uncertainty; do not convert OCR or outside-record text into confirmed facts unless supported.',
+    ...(warnings.length ? [
+      'Reliability warnings:',
+      ...warnings.map((warning) => `- ${warning.label} ${warning.instruction}`),
+    ] : []),
     '',
     reviewedText,
   ].join('\n');

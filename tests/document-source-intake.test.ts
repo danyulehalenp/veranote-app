@@ -5,6 +5,7 @@ import {
   canReadDocumentAsBrowserText,
   classifyDocumentSourceKind,
   getDocumentIntakePlan,
+  getDocumentReliabilityWarnings,
   inferDocumentSourceBucket,
   normalizeReviewedDocumentText,
   sanitizeDocumentFileName,
@@ -72,6 +73,29 @@ describe('document source intake', () => {
     expect(block).toContain('Reviewed Document Source: ER packet.pdf');
     expect(block).toContain('Review status: provider reviewed before loading into source.');
     expect(block).toContain('preserve attribution and uncertainty');
+    expect(block).toContain('Reliability warnings:');
+    expect(block).toContain('Reviewed OCR/scanned-source limitations apply.');
     expect(block).toContain('lithium level pending');
+  });
+
+  it('detects reliability warnings before reviewed document text enters note generation', () => {
+    const warningIds = getDocumentReliabilityWarnings({
+      extractionMode: 'manual-ocr-review',
+      sourceKind: 'pdf',
+      reviewedText: [
+        'Prior diagnosis listed: bipolar disorder.',
+        'Lithium level ordered but not resulted.',
+        'Transfer says med clear? with question mark.',
+        'Mother collateral conflicts with patient denial.',
+      ].join('\n'),
+    }).map((warning) => warning.id);
+
+    expect(warningIds).toEqual(expect.arrayContaining([
+      'pending-results',
+      'clearance-uncertain',
+      'diagnosis-overclaim-risk',
+      'collateral-conflict',
+      'ocr-review-required',
+    ]));
   });
 });

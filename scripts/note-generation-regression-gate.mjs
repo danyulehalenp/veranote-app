@@ -15,6 +15,9 @@ const steps = [
       'tests/assemble-prompt.test.ts',
       'tests/note-generation-source-packet-regression.test.ts',
       'tests/defensibility-layer.test.ts',
+      'tests/post-note-cpt-regression.test.ts',
+      'tests/document-source-intake.test.ts',
+      'tests/document-source-intake-regression.test.ts',
     ],
   },
   {
