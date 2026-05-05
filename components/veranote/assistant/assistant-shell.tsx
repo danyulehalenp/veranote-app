@@ -305,7 +305,7 @@ export function AssistantShell() {
   useEffect(() => {
     function handleAssistantAction(event: Event) {
       const nextEvent = event as CustomEvent<{
-        type: 'replace-preferences' | 'append-preferences' | 'create-preset-draft' | 'jump-to-source-evidence' | 'run-review-rewrite' | 'apply-conservative-rewrite' | 'apply-note-revision';
+        type: 'replace-preferences' | 'append-preferences' | 'create-preset-draft' | 'jump-to-source-evidence' | 'run-review-rewrite' | 'apply-conservative-rewrite' | 'apply-note-revision' | 'apply-draft-rewrite';
         instructions: string;
         presetName?: string;
         rewriteMode?: 'more-concise' | 'more-formal' | 'closer-to-source' | 'regenerate-full-note';
@@ -313,6 +313,8 @@ export function AssistantShell() {
         replacementText?: string;
         revisionText?: string;
         targetSectionHeading?: string;
+        draftText?: string;
+        rewriteLabel?: string;
       }>;
 
       if (
@@ -320,6 +322,7 @@ export function AssistantShell() {
         || nextEvent.detail.type === 'run-review-rewrite'
         || nextEvent.detail.type === 'apply-conservative-rewrite'
         || nextEvent.detail.type === 'apply-note-revision'
+        || nextEvent.detail.type === 'apply-draft-rewrite'
       ) {
         return;
       }

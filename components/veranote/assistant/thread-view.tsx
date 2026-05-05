@@ -2,44 +2,24 @@
 
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef } from 'react';
-import { AssistantPersonaAvatar } from '@/components/veranote/assistant/assistant-persona-avatar';
-import type { AssistantAvatarId } from '@/lib/veranote/assistant-persona';
 import type { AssistantMessage, AssistantStage } from '@/types/assistant';
 
 type ThreadViewProps = {
   stage: AssistantStage;
   messages: AssistantMessage[];
   isLoading: boolean;
-  emptyStateTitle: string;
-  emptyStateDescription: string;
-  starterPrompts: string[];
-  onSelectStarter: (prompt: string) => void;
-  activityTimeline: Array<{
-    id: string;
-    label: string;
-    detail: string;
-  }>;
   focusedSectionHeading?: string;
   renderAssistantFeedback?: (message: AssistantMessage, isLatestAssistant: boolean) => ReactNode;
   assistantName?: string;
-  assistantRole?: string;
-  assistantAvatar?: AssistantAvatarId;
 };
 
 export function ThreadView({
   stage,
   messages,
   isLoading,
-  emptyStateTitle,
-  emptyStateDescription,
-  starterPrompts,
-  onSelectStarter,
-  activityTimeline,
   focusedSectionHeading,
   renderAssistantFeedback,
   assistantName = 'Assistant',
-  assistantRole = 'Clinical Assistant',
-  assistantAvatar = 'clinical-orbit',
 }: ThreadViewProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
@@ -58,44 +38,8 @@ export function ThreadView({
       className="flex min-h-full flex-col gap-3 px-1 py-1.5 sm:px-2"
     >
       {!messages.length && !isLoading ? (
-        <div className="rounded-[20px] border border-cyan-200/10 bg-[linear-gradient(180deg,rgba(12,27,45,0.84),rgba(8,19,33,0.88))] px-3.5 py-3.5 text-cyan-50 shadow-[0_16px_36px_rgba(4,12,24,0.18)]">
-          <div className="flex items-center gap-3">
-            <AssistantPersonaAvatar avatar={assistantAvatar} label={assistantName} size="sm" />
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/70">{assistantName}</div>
-              <div className="text-[10px] uppercase tracking-[0.14em] text-cyan-100/52">
-                {assistantRole || 'Clinical Assistant'} • Verified by Veranote
-              </div>
-            </div>
-          </div>
-          <div className="mt-2 text-base font-semibold text-white">{emptyStateTitle}</div>
-          <div className="mt-2 text-sm leading-6 text-cyan-50/76">{emptyStateDescription}</div>
-          {starterPrompts.length ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {starterPrompts.map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  onClick={() => onSelectStarter(prompt)}
-                  className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.12)] px-3 py-1.5 text-left text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.18)]"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          {activityTimeline.length ? (
-            <div className="mt-4 rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.56)] px-3 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/70">Recent context</div>
-              <div className="mt-2 space-y-2">
-                {activityTimeline.map((item) => (
-                  <div key={item.id} className="text-xs leading-5 text-cyan-50/72">
-                    <span className="font-semibold text-cyan-50">{item.label}:</span> {item.detail}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
+        <div className="flex min-h-[180px] items-center justify-center rounded-[20px] border border-cyan-200/8 bg-[rgba(7,17,30,0.36)] px-4 py-8 text-center text-sm leading-6 text-cyan-50/54">
+          Ask {assistantName} a question below. Answers and draft edits will appear here.
         </div>
       ) : null}
       {visibleMessages.map((message) => {

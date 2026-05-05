@@ -126,6 +126,13 @@ export type AssistantAction =
       targetSectionHeading?: string;
     }
   | {
+      type: 'apply-draft-rewrite';
+      label: string;
+      instructions: string;
+      draftText: string;
+      rewriteLabel: string;
+    }
+  | {
       type: 'send-beta-feedback';
       label: string;
       instructions: string;
@@ -154,6 +161,8 @@ export type AssistantApiContext = {
   noteType?: string;
   specialty?: string;
   currentDraftText?: string;
+  currentDraftWordCount?: number;
+  currentDraftSectionHeadings?: string[];
   providerProfileId?: string;
   providerProfileName?: string;
   providerAddressingName?: string;

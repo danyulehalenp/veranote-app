@@ -285,6 +285,11 @@ function normalizeDraftRecord(rawDraft: Partial<DraftRecord>): DraftRecord {
     sourceSections: rawDraft.sourceSections,
     dictationInsertions: rawDraft.dictationInsertions && typeof rawDraft.dictationInsertions === 'object' ? rawDraft.dictationInsertions : undefined,
     note: typeof rawDraft.note === 'string' ? rawDraft.note : '',
+    draftRevisions: Array.isArray(rawDraft.draftRevisions)
+      ? rawDraft.draftRevisions
+        .filter((item) => item && typeof item === 'object' && typeof item.note === 'string')
+        .slice(-20)
+      : undefined,
     flags: Array.isArray(rawDraft.flags) ? rawDraft.flags.filter((item): item is string => typeof item === 'string') : [],
     copilotSuggestions: Array.isArray(rawDraft.copilotSuggestions) ? rawDraft.copilotSuggestions : [],
     sectionReviewState: rawDraft.sectionReviewState,
@@ -322,6 +327,7 @@ function hasMeaningfulDraftChanges(previous: DraftRecord, next: DraftSession) {
     || JSON.stringify(previous.sectionReviewState || {}) !== JSON.stringify(next.sectionReviewState || {})
     || JSON.stringify(previous.copilotSuggestions || []) !== JSON.stringify(next.copilotSuggestions || [])
     || JSON.stringify(previous.dictationInsertions || {}) !== JSON.stringify(next.dictationInsertions || {})
+    || JSON.stringify(previous.draftRevisions || []) !== JSON.stringify(next.draftRevisions || [])
     || JSON.stringify(previous.flags || []) !== JSON.stringify(next.flags || []);
 }
 

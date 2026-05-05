@@ -26,6 +26,8 @@ export function assembleAssistantApiContext(snapshot?: Partial<AssistantContextS
     noteType: snapshot.noteType,
     specialty: snapshot.specialty,
     currentDraftText: snapshot.currentDraftText,
+    currentDraftWordCount: snapshot.currentDraftWordCount,
+    currentDraftSectionHeadings: snapshot.currentDraftSectionHeadings,
     providerProfileId: snapshot.providerProfileId,
     providerProfileName: snapshot.providerProfileName,
     providerAddressingName: snapshot.providerAddressingName,

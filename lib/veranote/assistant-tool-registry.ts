@@ -60,6 +60,13 @@ const ASSISTANT_TOOL_REGISTRY: Record<AssistantAction['type'], AssistantToolDefi
     summary: 'Adds a provider-requested note revision into the current draft.',
     allowedStages: ['review'],
   },
+  'apply-draft-rewrite': {
+    type: 'apply-draft-rewrite',
+    title: 'Apply full-draft rewrite',
+    riskLevel: 'apply',
+    summary: 'Replaces the active draft with an assistant rewrite while preserving the prior version.',
+    allowedStages: ['review'],
+  },
   'send-beta-feedback': {
     type: 'send-beta-feedback',
     title: 'Send beta feedback',

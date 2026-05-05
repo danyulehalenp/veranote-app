@@ -46,7 +46,7 @@ import {
   writeCachedProviderSettings,
 } from '@/lib/veranote/provider-settings-client';
 import { resolveVeraAddress } from '@/lib/veranote/vera-relationship';
-import type { DraftSession, PersistedDraftSession, ReviewStatus, SourceSections } from '@/types/session';
+import type { DraftRevision, DraftSession, PersistedDraftSession, ReviewStatus, SourceSections } from '@/types/session';
 import type { DictationTargetSection } from '@/types/dictation';
 import type { NoteSectionKey, OutputScope } from '@/lib/note/section-profiles';
 
@@ -1658,6 +1658,11 @@ export function ReviewWorkspace({
     () => providerSettings.outputProfiles.find((profile) => profile.id === providerSettings.activeOutputProfileId) || null,
     [providerSettings.activeOutputProfileId, providerSettings.outputProfiles],
   );
+  const draftSections = useMemo(() => parseDraftSections(draftText), [draftText]);
+  const reconciledSectionReviewState = useMemo(
+    () => reconcileSectionReviewState(draftSections, session?.sectionReviewState),
+    [draftSections, session?.sectionReviewState],
+  );
 
   async function handleApplyOutputProfile(profileId: string) {
     if (!profileId) {
@@ -1844,6 +1849,8 @@ export function ReviewWorkspace({
       noteType: session?.noteType,
       specialty: session?.specialty,
       currentDraftText: draftText ? draftText.slice(0, 4000) : undefined,
+      currentDraftWordCount: draftText ? countWords(draftText) : undefined,
+      currentDraftSectionHeadings: draftSections.map((section) => section.heading).slice(0, 12),
       providerProfileId: providerSettings.providerProfileId,
       providerProfileName: activeProviderProfile?.name,
       providerAddressingName: resolveVeraAddress(providerSettings, activeProviderProfile?.name),
@@ -1861,6 +1868,7 @@ export function ReviewWorkspace({
     assistantPersona.name,
     assistantPersona.role,
     draftText,
+    draftSections,
     providerSettings.outputDestination,
     providerSettings.providerProfileId,
     providerSettings.veraInteractionStyle,
@@ -1876,7 +1884,7 @@ export function ReviewWorkspace({
   useEffect(() => {
     function handleAssistantAction(event: Event) {
       const nextEvent = event as CustomEvent<{
-        type: 'replace-preferences' | 'append-preferences' | 'create-preset-draft' | 'jump-to-source-evidence' | 'run-review-rewrite' | 'apply-conservative-rewrite' | 'apply-note-revision';
+        type: 'replace-preferences' | 'append-preferences' | 'create-preset-draft' | 'jump-to-source-evidence' | 'run-review-rewrite' | 'apply-conservative-rewrite' | 'apply-note-revision' | 'apply-draft-rewrite';
         instructions: string;
         presetName?: string;
         rewriteMode?: RewriteMode;
@@ -1884,6 +1892,8 @@ export function ReviewWorkspace({
         replacementText?: string;
         revisionText?: string;
         targetSectionHeading?: string;
+        draftText?: string;
+        rewriteLabel?: string;
       }>;
 
       if (
@@ -1897,6 +1907,11 @@ export function ReviewWorkspace({
 
       if (nextEvent.detail.type === 'apply-note-revision' && nextEvent.detail.revisionText) {
         applyAssistantNoteRevision(nextEvent.detail.revisionText, nextEvent.detail.targetSectionHeading);
+        return;
+      }
+
+      if (nextEvent.detail.type === 'apply-draft-rewrite' && nextEvent.detail.draftText) {
+        void applyAssistantDraftRewrite(nextEvent.detail.draftText, nextEvent.detail.rewriteLabel || 'Assistant rewrite');
         return;
       }
 
@@ -1927,13 +1942,7 @@ export function ReviewWorkspace({
 
     window.addEventListener(ASSISTANT_ACTION_EVENT, handleAssistantAction);
     return () => window.removeEventListener(ASSISTANT_ACTION_EVENT, handleAssistantAction);
-  }, []);
-
-  const draftSections = useMemo(() => parseDraftSections(draftText), [draftText]);
-  const reconciledSectionReviewState = useMemo(
-    () => reconcileSectionReviewState(draftSections, session?.sectionReviewState),
-    [draftSections, session?.sectionReviewState],
-  );
+  });
 
   useEffect(() => {
     if (!session) {
@@ -1976,6 +1985,107 @@ export function ReviewWorkspace({
     }
 
     return nextSession;
+  }
+
+  function buildDraftRevision(label: string, source: DraftRevision['source'], note: string): DraftRevision {
+    return {
+      id: `draft_revision_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      label,
+      source,
+      note,
+      createdAt: new Date().toISOString(),
+      wordCount: countWords(note),
+    };
+  }
+
+  function appendDraftRevision(
+    baseSession: DraftSession,
+    previousNote: string,
+    label: string,
+    source: DraftRevision['source'],
+  ) {
+    const trimmedPrevious = previousNote.trim();
+    if (!trimmedPrevious) {
+      return baseSession.draftRevisions || [];
+    }
+
+    const existing = baseSession.draftRevisions || [];
+    const latest = existing[existing.length - 1];
+    if (latest?.note.trim() === trimmedPrevious) {
+      return existing;
+    }
+
+    return [...existing, buildDraftRevision(label, source, previousNote)].slice(-20);
+  }
+
+  function buildDraftChangeSession(
+    nextDraft: string,
+    revisionLabel: string,
+    revisionSource: DraftRevision['source'],
+  ) {
+    const baseSession = buildLatestReviewSession();
+    if (!baseSession) {
+      return null;
+    }
+
+    return {
+      ...baseSession,
+      note: nextDraft,
+      draftRevisions: appendDraftRevision(baseSession, draftText, revisionLabel, revisionSource),
+      sectionReviewState: reconcileSectionReviewState(parseDraftSections(nextDraft), baseSession.sectionReviewState),
+    } satisfies DraftSession;
+  }
+
+  async function commitDraftTextChange(
+    nextDraft: string,
+    revisionLabel: string,
+    revisionSource: DraftRevision['source'],
+    successMessage: string,
+  ) {
+    const normalizedDraft = nextDraft.trim();
+    if (!normalizedDraft) {
+      setRewriteMessage('Unable to apply an empty draft update.');
+      window.setTimeout(() => setRewriteMessage(''), 2500);
+      return;
+    }
+
+    if (normalizedDraft === draftText.trim()) {
+      setRewriteMessage('That rewrite already matches the current draft.');
+      window.setTimeout(() => setRewriteMessage(''), 2500);
+      return;
+    }
+
+    const nextSession = buildDraftChangeSession(normalizedDraft, revisionLabel, revisionSource);
+    if (!nextSession) {
+      setRewriteMessage('No active draft found to update.');
+      window.setTimeout(() => setRewriteMessage(''), 2500);
+      return;
+    }
+
+    setDraftText(normalizedDraft);
+    commitDraftSession(nextSession);
+    const persistedSession = await persistDraft(nextSession);
+    commitDraftSession(persistedSession);
+    setRewriteMessage(successMessage);
+    window.setTimeout(() => setRewriteMessage(''), 3200);
+  }
+
+  async function applyAssistantDraftRewrite(rewrittenDraft: string, rewriteLabel: string) {
+    await commitDraftTextChange(
+      rewrittenDraft,
+      `Before ${rewriteLabel}`,
+      'assistant-rewrite',
+      `Applied ${assistantPersona.name} rewrite to Draft. Prior version saved in history.`,
+    );
+  }
+
+  async function handleRestoreDraftRevision(revision: DraftRevision) {
+    await commitDraftTextChange(
+      revision.note,
+      `Before restoring ${revision.label}`,
+      'manual-restore',
+      `Restored "${revision.label}" into Draft. The replaced version was saved in history.`,
+    );
   }
 
   function rememberLanePreferenceFromReview() {
@@ -2144,6 +2254,7 @@ export function ReviewWorkspace({
       const nextSession = {
         ...session,
         note: data.note,
+        draftRevisions: appendDraftRevision(session, draftText, `Before ${mode.replace(/-/g, ' ')} rewrite`, 'review-rewrite'),
         sectionReviewState: reconcileSectionReviewState(parseDraftSections(data.note), session.sectionReviewState),
         mode: data.mode ?? session.mode,
         warning: typeof data.warning === 'string' ? data.warning : session.warning,
@@ -2409,10 +2520,14 @@ export function ReviewWorkspace({
     }
 
     const nextDraft = `${draftText.slice(0, start)}${replacementText}${draftText.slice(start + originalText.length)}`;
-    setDraftText(nextDraft);
-    focusDraftSentence(replacementText);
-    setRewriteMessage('Applied a more cautious revision. Please review the sentence before final use.');
-    window.setTimeout(() => setRewriteMessage(''), 2800);
+    void commitDraftTextChange(
+      nextDraft,
+      'Before focused conservative rewrite',
+      'focused-revision',
+      'Applied a more cautious revision. Prior version saved in history.',
+    ).then(() => {
+      window.setTimeout(() => focusDraftSentence(replacementText), 0);
+    });
   }
 
   function replaceFirstDraftMatch(originalText: string, replacementText: string) {
@@ -2424,10 +2539,14 @@ export function ReviewWorkspace({
     }
 
     const nextDraft = `${draftText.slice(0, start)}${replacementText}${draftText.slice(start + originalText.length)}`;
-    setDraftText(nextDraft);
-    focusDraftMatch(replacementText);
-    setRewriteMessage('Applied a safer wording replacement. Please review the surrounding sentence before final use.');
-    window.setTimeout(() => setRewriteMessage(''), 2800);
+    void commitDraftTextChange(
+      nextDraft,
+      'Before safer wording replacement',
+      'focused-revision',
+      'Applied a safer wording replacement. Prior version saved in history.',
+    ).then(() => {
+      window.setTimeout(() => focusDraftMatch(replacementText), 0);
+    });
   }
 
   function applyAssistantNoteRevision(revisionText: string, targetSectionHeading?: string) {
@@ -2465,19 +2584,27 @@ export function ReviewWorkspace({
         const insertion = [normalizedRevision, ''];
         nextLines.splice(insertAt, 0, ...insertion);
         const nextDraft = nextLines.join('\n').replace(/\n{3,}/g, '\n\n');
-        setDraftText(nextDraft);
-        focusDraftMatch(normalizedRevision);
-        setRewriteMessage(`Applied ${assistantPersona.name} revision in ${targetSectionHeading}. Please review it before final use.`);
-        window.setTimeout(() => setRewriteMessage(''), 3200);
+        void commitDraftTextChange(
+          nextDraft,
+          `Before ${assistantPersona.name} section revision`,
+          'focused-revision',
+          `Applied ${assistantPersona.name} revision in ${targetSectionHeading}. Prior version saved in history.`,
+        ).then(() => {
+          window.setTimeout(() => focusDraftMatch(normalizedRevision), 0);
+        });
         return;
       }
     }
 
     const nextDraft = `${draftText.trim()}\n\n${normalizedRevision}`.trim();
-    setDraftText(nextDraft);
-    focusDraftMatch(normalizedRevision);
-    setRewriteMessage(`Applied ${assistantPersona.name} revision to the current draft. Please review it before final use.`);
-    window.setTimeout(() => setRewriteMessage(''), 3200);
+    void commitDraftTextChange(
+      nextDraft,
+      `Before ${assistantPersona.name} appended revision`,
+      'focused-revision',
+      `Applied ${assistantPersona.name} revision to Draft. Prior version saved in history.`,
+    ).then(() => {
+      window.setTimeout(() => focusDraftMatch(normalizedRevision), 0);
+    });
   }
 
   const flagItems = useMemo(() => session?.flags ?? [], [session]);
@@ -3349,6 +3476,42 @@ export function ReviewWorkspace({
               <DrawerJumpButton key={tag.id} label={tag.label} targetId={tag.targetId} />
             ))}
           </div>
+        ) : null}
+        {currentSession.draftRevisions?.length ? (
+          <details className="workspace-subpanel mt-4 rounded-[22px] p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-cyan-50">
+              Draft version history · {currentSession.draftRevisions.length}
+            </summary>
+            <div className="mt-2 text-xs leading-5 text-cyan-50/66">
+              Atlas rewrites save the prior draft here before replacing the active Draft.
+            </div>
+            <div className="mt-3 grid max-h-56 gap-2 overflow-y-auto pr-1">
+              {[...currentSession.draftRevisions].reverse().slice(0, 8).map((revision) => (
+                <div key={revision.id} className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-3 py-2.5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <div className="text-xs font-semibold text-white">{revision.label}</div>
+                      <div className="mt-0.5 text-[11px] text-cyan-50/58">
+                        {new Date(revision.createdAt).toLocaleString()} · {revision.wordCount ?? countWords(revision.note)} words
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleRestoreDraftRevision(revision);
+                      }}
+                      className="rounded-full border border-cyan-200/14 bg-[rgba(18,181,208,0.1)] px-3 py-1 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/26 hover:bg-[rgba(18,181,208,0.16)]"
+                    >
+                      Restore
+                    </button>
+                  </div>
+                  <div className="mt-2 line-clamp-2 text-[11px] leading-5 text-cyan-50/64">
+                    {revision.note.replace(/\s+/g, ' ').slice(0, 260)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
         ) : null}
         <div className="workspace-subpanel mt-4 rounded-[22px] p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">

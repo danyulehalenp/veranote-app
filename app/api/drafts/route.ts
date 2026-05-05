@@ -64,6 +64,7 @@ export async function POST(request: Request) {
     sourceSections: body.sourceSections,
     dictationInsertions: body.dictationInsertions,
     note: body.note,
+    draftRevisions: Array.isArray(body.draftRevisions) ? body.draftRevisions : undefined,
     flags: Array.isArray(body.flags) ? body.flags.filter((item): item is string => typeof item === 'string') : [],
     copilotSuggestions: Array.isArray(body.copilotSuggestions) ? body.copilotSuggestions : [],
     sectionReviewState: body.sectionReviewState,

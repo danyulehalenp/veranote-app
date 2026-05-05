@@ -10,6 +10,8 @@ export type AssistantContextSnapshot = {
   noteType?: string;
   specialty?: string;
   currentDraftText?: string;
+  currentDraftWordCount?: number;
+  currentDraftSectionHeadings?: string[];
   providerProfileId?: string;
   providerProfileName?: string;
   providerAddressingName?: string;
@@ -53,7 +55,7 @@ export function publishAssistantContext(detail: AssistantContextSnapshot) {
 }
 
 export function publishAssistantAction(detail: {
-  type: 'replace-preferences' | 'append-preferences' | 'create-preset-draft' | 'jump-to-source-evidence' | 'run-review-rewrite' | 'apply-conservative-rewrite' | 'apply-note-revision';
+  type: 'replace-preferences' | 'append-preferences' | 'create-preset-draft' | 'jump-to-source-evidence' | 'run-review-rewrite' | 'apply-conservative-rewrite' | 'apply-note-revision' | 'apply-draft-rewrite';
   instructions: string;
   presetName?: string;
   rewriteMode?: 'more-concise' | 'more-formal' | 'closer-to-source' | 'regenerate-full-note';
@@ -61,6 +63,8 @@ export function publishAssistantAction(detail: {
   replacementText?: string;
   revisionText?: string;
   targetSectionHeading?: string;
+  draftText?: string;
+  rewriteLabel?: string;
 }) {
   if (typeof window === 'undefined') {
     return;

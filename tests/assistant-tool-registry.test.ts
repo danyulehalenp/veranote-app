@@ -18,6 +18,20 @@ describe('assistant tool registry', () => {
     expect(tool.allowedStages).toContain('review');
   });
 
+  it('treats full-draft rewrites as review-stage apply actions', () => {
+    const tool = getAssistantToolDefinition({
+      type: 'apply-draft-rewrite',
+      label: 'Apply to Draft',
+      instructions: 'Replace the active draft and keep the prior version.',
+      draftText: 'HPI: Patient reports improved sleep.',
+      rewriteLabel: 'one-paragraph format',
+    });
+
+    expect(tool.riskLevel).toBe('apply');
+    expect(tool.allowedStages).toEqual(['review']);
+    expect(tool.summary).toContain('prior version');
+  });
+
   it('returns readable risk labels', () => {
     expect(getAssistantToolRiskLabel('read-only')).toBe('Read only');
     expect(getAssistantToolRiskLabel('draft')).toBe('Draft suggestion');

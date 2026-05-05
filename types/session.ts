@@ -87,12 +87,22 @@ export interface DraftSession {
   ambientTranscriptHandoff?: AmbientTranscriptHandoff;
   dictationInsertions?: Partial<Record<DictationTargetSection, DictationInsertionRecord[]>>;
   note: string;
+  draftRevisions?: DraftRevision[];
   flags: string[];
   copilotSuggestions: CopilotSuggestion[];
   sectionReviewState?: SectionReviewState;
   recoveryState?: DraftRecoveryState;
   mode: "live" | "fallback";
   warning?: string;
+}
+
+export interface DraftRevision {
+  id: string;
+  label: string;
+  source: 'assistant-rewrite' | 'review-rewrite' | 'manual-restore' | 'focused-revision';
+  note: string;
+  createdAt: string;
+  wordCount?: number;
 }
 
 export type DraftWorkflowStage = 'compose' | 'review';

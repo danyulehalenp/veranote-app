@@ -195,36 +195,6 @@ function formatCueRecency(value?: string) {
   return 'recently';
 }
 
-function buildEmptyStateTitle(stage: AssistantStage, mode: AssistantMode, assistantName: string) {
-  if (mode === 'prompt-builder') {
-    return stage === 'review' ? 'Turn review habits into reusable preferences' : 'Shape reusable lane preferences before you generate';
-  }
-
-  if (mode === 'reference-lookup') {
-    return 'Look up documentation terms and coding references';
-  }
-
-  return stage === 'review'
-    ? `Use ${assistantName} to tighten this draft without drifting from source`
-    : `Use ${assistantName} to set up the lane and organize source material`;
-}
-
-function buildEmptyStateDescription(stage: AssistantStage, mode: AssistantMode, assistantName: string) {
-  if (mode === 'prompt-builder') {
-    return stage === 'review'
-      ? `Ask ${assistantName} to capture recurring review edits so future drafts lean closer to the way you actually revise.`
-      : `Ask ${assistantName} to translate your workflow into note-lane preferences, presets, or reusable setup patterns.`;
-  }
-
-  if (mode === 'reference-lookup') {
-    return `${assistantName} can explain note sections, documentation language, and approved reference lookups without leaving your current workflow.`;
-  }
-
-  return stage === 'review'
-    ? `Start with a warning, a risky sentence, or a missing detail and ${assistantName} will help you correct it conservatively.`
-    : `Start with a note type, a source-organizing question, or a workflow problem and ${assistantName} will help you set up the next step.`;
-}
-
 function buildComposerPlaceholder(stage: AssistantStage, context: AssistantApiContext) {
   if (stage === 'review' && context.topHighRiskWarningTitle) {
     return `Review "${context.topHighRiskWarningTitle}", this section, conservative rewrites, or what to verify before export...`;
@@ -292,6 +262,15 @@ function buildActionPresentation(
   context: AssistantApiContext,
   assistantName: string,
 ) {
+  if (action.type === 'apply-draft-rewrite') {
+    return {
+      lane: 'Rewrite draft',
+      rationale: context.currentDraftWordCount
+        ? `This replaces the active ${context.currentDraftWordCount}-word draft while preserving the prior version.`
+        : 'This replaces the active draft while preserving the prior version.',
+    };
+  }
+
   if (action.type === 'apply-conservative-rewrite' || action.type === 'run-review-rewrite') {
     return {
       lane: 'Fix now',
@@ -718,6 +697,8 @@ export const AssistantPanel = memo(function AssistantPanel({
       replacementText: action.type === 'apply-conservative-rewrite' ? action.replacementText : undefined,
       revisionText: action.type === 'apply-note-revision' ? action.revisionText : undefined,
       targetSectionHeading: action.type === 'apply-note-revision' ? action.targetSectionHeading : undefined,
+      draftText: action.type === 'apply-draft-rewrite' ? action.draftText : undefined,
+      rewriteLabel: action.type === 'apply-draft-rewrite' ? action.rewriteLabel : undefined,
     });
 
     setActionMessage(
@@ -729,6 +710,8 @@ export const AssistantPanel = memo(function AssistantPanel({
         ? `${assistantName} applied a focused conservative rewrite. Please review the sentence before final use.`
         : action.type === 'apply-note-revision'
         ? `${assistantName} applied the requested revision${action.targetSectionHeading ? ` in ${action.targetSectionHeading}` : ''}. Please review it before final use.`
+        : action.type === 'apply-draft-rewrite'
+        ? `${assistantName} applied the ${action.rewriteLabel} to Draft and kept the prior version in history. Please review before final use.`
         : action.type === 'create-preset-draft'
         ? `Preset draft sent to the current note lane as ${action.presetName}.`
         : `${assistantName} preference suggestion sent into the current note lane.`,
@@ -980,8 +963,6 @@ export const AssistantPanel = memo(function AssistantPanel({
   );
   const modeDefinitions = listAssistantModeDefinitions();
   const activeModeDefinition = getAssistantModeDefinition(mode);
-  const emptyStateTitle = buildEmptyStateTitle(stage, mode, assistantName);
-  const emptyStateDescription = buildEmptyStateDescription(stage, mode, assistantName);
   const stageActionStrip = stage === 'review'
     ? [
         { label: 'Explain warning', prompt: 'Explain the main warning on this note and tell me what to fix first.', nextMode: 'workflow-help' as AssistantMode },
@@ -1170,6 +1151,75 @@ export const AssistantPanel = memo(function AssistantPanel({
     void sendMessage(prompt);
   }
 
+  const draftRewriteQuickPrompts = useMemo(() => {
+    if (stage !== 'review' || !context.currentDraftText?.trim()) {
+      return [];
+    }
+
+    const destination = context.outputDestination && context.outputDestination !== 'Generic'
+      ? context.outputDestination
+      : 'the selected EHR';
+
+    return [
+      {
+        label: 'One paragraph',
+        prompt: 'Make the current draft into one paragraph without adding new facts.',
+      },
+      {
+        label: 'Shorter',
+        prompt: 'Make the current draft shorter and more concise without adding new facts.',
+      },
+      {
+        label: 'More detail',
+        prompt: 'Make the current draft longer and include more source-supported details only.',
+      },
+      {
+        label: 'Story flow',
+        prompt: 'Make the current draft flow like a story without adding new facts.',
+      },
+      {
+        label: 'HPI + MSE/Plan',
+        prompt: 'Make HPI the first paragraph and MSE and plan the second paragraph.',
+      },
+      {
+        label: 'EHR-ready',
+        prompt: `Make the current draft EHR-ready for ${destination}.`,
+      },
+    ];
+  }, [context.currentDraftText, context.outputDestination, stage]);
+
+  function renderDraftRewriteMenu() {
+    if (!draftRewriteQuickPrompts.length) {
+      return null;
+    }
+
+    return (
+      <details className="shrink-0 border-b border-cyan-200/10 bg-[rgba(5,14,25,0.66)] px-2.5 py-2">
+        <summary className="cursor-pointer list-none rounded-[14px] border border-cyan-200/10 bg-[rgba(8,20,34,0.62)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/74 transition hover:border-cyan-200/22 hover:bg-[rgba(18,181,208,0.1)]">
+          Draft rewrite menu
+          {context.currentDraftWordCount ? (
+            <span className="ml-2 font-medium normal-case tracking-normal text-cyan-50/58">
+              {context.currentDraftWordCount} words
+            </span>
+          ) : null}
+        </summary>
+        <div className="mt-2 flex max-h-[88px] flex-wrap gap-2 overflow-y-auto pr-1">
+          {draftRewriteQuickPrompts.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              disabled={isLoading}
+              onClick={() => void sendMessage(item.prompt)}
+              className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.11)] px-3 py-1.5 text-left text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.17)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </details>
+    );
+  }
+
   function renderAvailableActions() {
     return actions.map((action) => (
       <div key={`${action.type}-${action.label}`} className="rounded-[14px] border border-cyan-200/12 bg-[rgba(13,30,50,0.56)] px-3 py-3">
@@ -1208,6 +1258,8 @@ export const AssistantPanel = memo(function AssistantPanel({
           >
             {action.type === 'send-beta-feedback'
               ? 'Send to Beta Feedback'
+              : action.type === 'apply-draft-rewrite'
+              ? 'Apply to Draft'
               : action.type === 'apply-note-revision'
               ? 'Apply revision'
               : stage === 'review'
@@ -1442,6 +1494,7 @@ export const AssistantPanel = memo(function AssistantPanel({
           data-testid="assistant-conversation-box"
           className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] border border-cyan-200/12 bg-[linear-gradient(180deg,rgba(6,15,27,0.9),rgba(4,12,24,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
         >
+          {renderDraftRewriteMenu()}
           {renderAssistantOptionsBlock()}
           <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 pr-1">
           <div className="flex min-h-full flex-col gap-3">
@@ -1450,15 +1503,8 @@ export const AssistantPanel = memo(function AssistantPanel({
                 stage={stage}
                 messages={messages}
                 isLoading={isLoading}
-                emptyStateTitle={emptyStateTitle}
-                emptyStateDescription={emptyStateDescription}
-                starterPrompts={quickPrompts.slice(0, 4)}
-                onSelectStarter={(prompt) => void sendMessage(prompt)}
-                activityTimeline={assistantActivityTimeline}
                 focusedSectionHeading={context.focusedSectionHeading}
                 assistantName={assistantName}
-                assistantRole={assistantRole}
-                assistantAvatar={assistantPersona.avatar}
                 renderAssistantFeedback={(message, isLatestAssistant) => {
                   if (!isLatestAssistant) {
                     return null;

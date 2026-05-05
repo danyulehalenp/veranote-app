@@ -34,6 +34,7 @@ import { getDifferentialCautionForDiagnosis, getTimeframeRuleForDiagnosis, listD
 import { buildDiagnosisProfileSummary, createEmptyDiagnosisProfileEntry, hasDiagnosisProfileUnresolvedEntries, normalizeDiagnosisProfile } from '@/lib/note/diagnosis-profile';
 import { buildMedicationProfileGapSummary, buildMedicationProfileSummary, createEmptyMedicationProfileEntry, hasMedicationProfileUnresolvedEntries, normalizeMedicationProfile } from '@/lib/note/medication-profile';
 import { mergePresetCatalog, findPresetForNoteType, type NotePreset } from '@/lib/note/presets';
+import { countWords, parseDraftSections } from '@/lib/note/review-sections';
 import { buildEncounterSupportSummary, createEncounterSupportDefaults, getEncounterSupportConfig, normalizeEncounterSupport } from '@/lib/note/encounter-support';
 import { planSections, SECTION_LABELS, type NoteSectionKey, type OutputScope } from '@/lib/note/section-profiles';
 import { ASSISTANT_ACTION_EVENT, publishAssistantContext } from '@/lib/veranote/assistant-context';
@@ -3065,6 +3066,10 @@ export function NewNoteForm() {
       noteType: workflowStage === 'review' && generatedSession ? generatedSession.noteType : noteType,
       specialty: workflowStage === 'review' && generatedSession ? generatedSession.specialty : specialty,
       currentDraftText: workflowStage === 'review' && generatedSession?.note ? generatedSession.note.slice(0, 4000) : undefined,
+      currentDraftWordCount: workflowStage === 'review' && generatedSession?.note ? countWords(generatedSession.note) : undefined,
+      currentDraftSectionHeadings: workflowStage === 'review' && generatedSession?.note
+        ? parseDraftSections(generatedSession.note).map((section) => section.heading).slice(0, 12)
+        : undefined,
       providerProfileId: providerSettings.providerProfileId,
       providerProfileName: activeProviderProfile?.name,
       providerAddressingName: resolveVeraAddress(providerSettings, activeProviderProfile?.name),

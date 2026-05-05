@@ -217,6 +217,10 @@ describe('assistant stale-context routing', () => {
     expect(payload.message).toContain('Plan: Continue current safety monitoring');
     expect(payload.message).not.toContain('Source-supported MSE findings');
     expect(payload.message).not.toContain('Leave these domains unfilled');
+    expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
+    expect(payload.actions?.[0]?.label).toBe('Apply to Draft');
+    expect(payload.actions?.[0]?.draftText).toContain('Subjective: Patient reports mood is depressed');
+    expect(payload.actions?.[0]?.rewriteLabel).toBe('one-paragraph format');
   });
 
   it('supports two-paragraph HPI plus MSE/plan draft shape requests', async () => {
@@ -251,5 +255,44 @@ describe('assistant stale-context routing', () => {
     expect(payload.message).toContain('\n\nMSE: Mood anxious');
     expect(payload.message).toContain('Plan: Continue current therapy plan');
     expect(payload.message).not.toContain('Source-supported MSE findings');
+    expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
+    expect(payload.actions?.[0]?.draftText).toContain('\n\nMSE: Mood anxious');
+    expect(payload.actions?.[0]?.rewriteLabel).toBe('two-paragraph HPI/MSE/Plan format');
+  });
+
+  it('formats the active draft for EHR copy-paste without hijacking clinical routing', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'Make this draft EHR-ready for WellSky copy paste.',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Inpatient Psych Follow Up Note',
+          outputDestination: 'WellSky',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports sleep remains poor and mood is depressed.',
+            '',
+            'MSE:',
+            '- Affect constricted.',
+            '- Thought process linear.',
+            '',
+            'Plan:',
+            'Continue source-supported monitoring plan.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.message).toContain('EHR-ready copy/paste format');
+    expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
+    expect(payload.actions?.[0]?.draftText).toContain('HPI:\nPatient reports sleep remains poor');
+    expect(payload.actions?.[0]?.draftText).toContain('MSE:\nAffect constricted.');
+    expect(payload.actions?.[0]?.draftText).not.toContain('•');
   });
 });

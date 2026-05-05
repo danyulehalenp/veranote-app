@@ -1001,7 +1001,8 @@ type DraftFormatKind =
   | 'shorter'
   | 'longer'
   | 'narrative'
-  | 'two-paragraph-hpi-mse-plan';
+  | 'two-paragraph-hpi-mse-plan'
+  | 'ehr-ready';
 
 type DraftFormatRequest = {
   kind: DraftFormatKind;
@@ -1012,7 +1013,9 @@ function classifyDraftFormatRequest(message: string): DraftFormatRequest | null 
   const normalized = normalizeMessageForClinicalRouting(message)
     .replace(/\bparagraf\b/g, 'paragraph')
     .replace(/\bparagrph\b/g, 'paragraph')
-    .replace(/\bparagaph\b/g, 'paragraph');
+    .replace(/\bparagaph\b/g, 'paragraph')
+    .replace(/\bparagragh\b/g, 'paragraph')
+    .replace(/\bparagrah\b/g, 'paragraph');
 
   const hasDraftAnchor = /\b(note|draft|follow[-\s]?up|progress note|hpi|mse|plan|this|it)\b/.test(normalized);
   const hasRewriteVerb = /\b(make|turn|convert|change|format|rewrite|put|collapse|flow|split)\b/.test(normalized);
@@ -1060,6 +1063,13 @@ function classifyDraftFormatRequest(message: string): DraftFormatRequest | null 
     return {
       kind: 'narrative',
       label: 'narrative story-flow format',
+    };
+  }
+
+  if (/\b(ehr[-\s]?ready|copy[-\s]?paste|copy into|paste into|wellsky|tebra|epic|cerner|simplepractice|therapy ?notes|export format|field ready)\b/.test(normalized)) {
+    return {
+      kind: 'ehr-ready',
+      label: 'EHR-ready copy/paste format',
     };
   }
 
@@ -1254,6 +1264,15 @@ function formatDraftForRequest(draftText: string, request: DraftFormatRequest) {
         .replace(/\bObjective:/g, 'Objective summary:')
         .replace(/\bAssessment:/g, 'Assessment:')
         .replace(/\bPlan:/g, 'Plan:');
+    case 'ehr-ready':
+      return splitDraftIntoNamedSections(draftText)
+        .map((section) => `${section.heading}:\n${section.text}`)
+        .join('\n\n')
+        .replace(/[•]/g, '-')
+        .replace(/[“”]/g, '"')
+        .replace(/[‘’]/g, "'")
+        .replace(/\n{3,}/g, '\n\n')
+        .trim() || collapsed;
     case 'one-paragraph':
     default:
       return collapsed;
@@ -1299,6 +1318,15 @@ function buildDraftFormattingHelp(
       'I treated this as writing shape only, not a new MSE checklist.',
       'You can ask for another shape: shorter, longer, story flow, or two paragraphs.',
       ...(formattedDraft.length > visibleDraft.length ? ['The visible draft was long, so this response shows the first portion available to the assistant.'] : []),
+    ],
+    actions: [
+      {
+        type: 'apply-draft-rewrite',
+        label: 'Apply to Draft',
+        instructions: `Replace the active draft with this ${formatRequest.label}. The prior draft will be kept in version history.`,
+        draftText: formattedDraft,
+        rewriteLabel: formatRequest.label,
+      },
     ],
     answerMode: 'chart_ready_wording',
     builderFamily: 'chart-wording',
@@ -3100,6 +3128,14 @@ function rehydrateAssistantPayload(payload: AssistantResponsePayload, entities: 
             instructions: rehydratePHI(action.instructions, entities),
             revisionText: rehydratePHI(action.revisionText, entities),
             targetSectionHeading: action.targetSectionHeading ? rehydratePHI(action.targetSectionHeading, entities) : action.targetSectionHeading,
+          };
+        case 'apply-draft-rewrite':
+          return {
+            ...action,
+            label: rehydratePHI(action.label, entities),
+            instructions: rehydratePHI(action.instructions, entities),
+            draftText: rehydratePHI(action.draftText, entities),
+            rewriteLabel: rehydratePHI(action.rewriteLabel, entities),
           };
         case 'send-beta-feedback':
           return {
