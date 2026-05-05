@@ -383,9 +383,15 @@ h1, h2, h3, h4 {
   min-width: 0;
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 860px) {
   .workspace-left-shell {
     align-items: start;
+    grid-template-columns: minmax(210px, 240px) minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 1180px) {
+  .workspace-left-shell {
     grid-template-columns: 280px minmax(0, 1fr);
   }
 }

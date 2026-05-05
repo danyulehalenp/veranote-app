@@ -2627,28 +2627,23 @@ export function NewNoteForm() {
         }
 
         const raw = localStorage.getItem(draftSessionStorageKey);
-        const savedStage = localStorage.getItem(draftStageStorageKey);
-        const recoveryRaw = localStorage.getItem(draftRecoveryStorageKey);
 
         if (raw) {
           try {
           const parsed = JSON.parse(raw) as DraftSession;
-          const recoveryPayload = recoveryRaw ? JSON.parse(recoveryRaw) as {
-            draftId?: string | null;
-            recoveryState?: DraftSession['recoveryState'];
-          } : null;
 
           if (parsed.providerIdentityId && parsed.providerIdentityId !== resolvedProviderIdentityId) {
             throw new Error('Mismatched provider draft session.');
           }
 
-          const recoveryState = recoveryPayload?.recoveryState || parsed.recoveryState;
+          const restoredSourceSections = hydrateSectionsFromDraft(parsed);
+          const restoredSourceInput = buildSourceInputFromSections(restoredSourceSections);
           hydratedFromSavedStateRef.current = true;
           setSpecialty(parsed.specialty || 'Psychiatry');
           setRole(parsed.role || 'Psychiatric NP');
           setNoteType(parsed.noteType || 'Inpatient Psych Progress Note');
           setTemplate(parsed.template || 'Default Inpatient Psych Progress Note');
-          setSourceSections(hydrateSectionsFromDraft(parsed));
+          setSourceSections(restoredSourceSections);
           setEncounterSupport(normalizeEncounterSupport(parsed.encounterSupport, parsed.noteType || 'Inpatient Psych Progress Note'));
           setMedicationProfile(normalizeMedicationProfile(parsed.medicationProfile));
           setDiagnosisProfile(normalizeDiagnosisProfile(parsed.diagnosisProfile));
@@ -2663,8 +2658,8 @@ export function NewNoteForm() {
           setPresetName('');
           setDraftCheckpoint(parsed);
           setGeneratedSession(parsed.note ? parsed : null);
-          setWorkflowStage(recoveryState?.workflowStage || (parsed.note && savedStage === 'review' ? 'review' : 'compose'));
-          setActiveComposeLane(recoveryState?.composeLane || (parsed.note ? 'finish' : 'setup'));
+          setWorkflowStage('compose');
+          setActiveComposeLane(restoredSourceInput.trim() ? 'source' : 'setup');
             return;
           } catch {
             localStorage.removeItem(draftSessionStorageKey);
@@ -2682,11 +2677,13 @@ export function NewNoteForm() {
           }
 
           hydratedFromSavedStateRef.current = true;
+          const restoredSourceSections = hydrateSectionsFromDraft(parsed);
+          const restoredSourceInput = buildSourceInputFromSections(restoredSourceSections);
           setSpecialty(parsed.specialty || 'Psychiatry');
           setRole(parsed.role || 'Psychiatric NP');
           setNoteType(parsed.noteType || 'Inpatient Psych Progress Note');
           setTemplate(parsed.template || 'Default Inpatient Psych Progress Note');
-          setSourceSections(hydrateSectionsFromDraft(parsed));
+          setSourceSections(restoredSourceSections);
           setEncounterSupport(normalizeEncounterSupport(parsed.encounterSupport, parsed.noteType || 'Inpatient Psych Progress Note'));
           setMedicationProfile(normalizeMedicationProfile(parsed.medicationProfile));
           setDiagnosisProfile(normalizeDiagnosisProfile(parsed.diagnosisProfile));
@@ -2701,8 +2698,8 @@ export function NewNoteForm() {
           setPresetName('');
           setDraftCheckpoint(parsed);
           setGeneratedSession(parsed.note ? parsed : null);
-          setWorkflowStage(parsed.recoveryState?.workflowStage || (parsed.note && savedStage === 'review' ? 'review' : 'compose'));
-          setActiveComposeLane(parsed.recoveryState?.composeLane || (parsed.note ? 'finish' : 'setup'));
+          setWorkflowStage('compose');
+          setActiveComposeLane(restoredSourceInput.trim() ? 'source' : 'setup');
           localStorage.setItem(draftSessionStorageKey, JSON.stringify(parsed));
           localStorage.setItem(draftRecoveryStorageKey, JSON.stringify({
             draftId: parsed.id,
@@ -3609,9 +3606,14 @@ export function NewNoteForm() {
     setActiveComposeLane('finish');
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        document.getElementById('generate-note-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        scrollToWorkspaceActiveLaneTop();
       });
     });
+  }
+
+  function scrollToWorkspaceActiveLaneTop() {
+    const target = document.getElementById('workspace-active-lane-top') || composeWorkspaceRef.current;
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function scrollToElementWhenReady(
@@ -3764,18 +3766,11 @@ export function NewNoteForm() {
   }
 
   function scrollToComposeLane(lane: DraftComposeLane) {
-    const targetIdByLane: Record<DraftComposeLane, string> = {
-      setup: 'setup-panel',
-      source: 'source-panel',
-      support: 'support-panel',
-      finish: 'generate-note-panel',
-    };
-
     setWorkflowStage('compose');
     setActiveComposeLane(lane);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        document.getElementById(targetIdByLane[lane])?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        scrollToWorkspaceActiveLaneTop();
       });
     });
   }
@@ -4760,6 +4755,7 @@ export function NewNoteForm() {
 
 	      <div className="workspace-main-column grid gap-4">
 	      {evalBanner ? <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900">{evalBanner.replace('Loaded evaluation case:', 'Loaded example case:').replace('Loaded blueprint starter:', 'Loaded starter:')}</div> : null}
+	      <div id="workspace-active-lane-top" className="scroll-mt-24" aria-hidden="true" />
 
 		      <div className="hidden">
 	        <div className="grid gap-3 2xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)]">
