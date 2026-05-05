@@ -9,10 +9,12 @@ const steps = [
       'run',
       '--silent=true',
       '--maxWorkers=1',
+      'tests/note-generation-core-workflow-readiness.test.ts',
       'tests/source-lane-contract.test.ts',
       'tests/note-generation-ehr-coverage.test.ts',
       'tests/assemble-prompt.test.ts',
       'tests/note-generation-source-packet-regression.test.ts',
+      'tests/defensibility-layer.test.ts',
     ],
   },
   {
