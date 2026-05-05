@@ -11,8 +11,12 @@ import { summarizeBetaFeedbackQueue } from '@/lib/beta/vera-gaps';
 import type { BetaFeedbackItem } from '@/types/beta-feedback';
 
 const primaryLinks = [
-  { href: '/dashboard/new-note', label: 'Workspace' },
-  { href: '/dashboard/drafts', label: 'Saved Drafts' },
+  { href: '/dashboard/new-note', label: 'Workspace', helper: 'Build and review notes' },
+  { href: '/dashboard/drafts', label: 'Saved Drafts', helper: 'Recover prior work' },
+];
+
+const supportLinks = [
+  { href: '/dashboard/review', label: 'Deep Review', status: 'Secondary' },
 ];
 
 const secondaryLinks = [
@@ -72,6 +76,20 @@ export function TopNav() {
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             {INTERNAL_MODE_ENABLED ? <ProviderIdentitySwitcher /> : null}
             <AuthControls />
+            <nav className="flex flex-wrap gap-1.5 sm:gap-2" aria-label="Provider navigation">
+              {primaryLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  title={link.helper}
+                  className={`rounded-full border px-3 py-1.5 text-sm font-medium transition sm:px-4 sm:py-2 ${pathname === link.href
+                    ? 'border-cyan-200/30 bg-[rgba(18,181,208,0.18)] text-cyan-50 shadow-[0_8px_24px_rgba(15,157,180,0.18)]'
+                    : 'border-cyan-200/10 bg-[rgba(13,30,50,0.68)] text-ink hover:border-cyan-200/20 hover:bg-[rgba(18,181,208,0.12)] hover:text-cyan-50'}`}
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
             <Link
               href={feedbackHref}
               className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.68)] px-3 py-1.5 text-sm font-medium text-ink transition hover:border-cyan-200/20 hover:bg-[rgba(18,181,208,0.12)] hover:text-cyan-50 sm:px-3.5 sm:py-2"
@@ -85,19 +103,23 @@ export function TopNav() {
                 ) : null}
               </span>
             </Link>
-	            <nav className="flex flex-wrap gap-1.5 sm:gap-2">
-            {primaryLinks.map((link) => (
+          </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-[18px] border border-cyan-200/10 bg-[rgba(11,29,49,0.52)] px-3 py-2 text-xs text-muted">
+            <span className="font-semibold uppercase tracking-[0.18em] text-cyan-100/54">Main lane</span>
+            <span className="text-cyan-50/76">Workspace to Saved Drafts</span>
+            <span className="hidden text-cyan-50/48 sm:inline">Review stays inside Workspace unless you need the secondary screen.</span>
+            {supportLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-	                className={`rounded-full border px-3 py-1.5 text-sm font-medium transition sm:px-4 sm:py-2 ${pathname === link.href
-                  ? 'border-cyan-200/30 bg-[rgba(18,181,208,0.18)] text-cyan-50 shadow-[0_8px_24px_rgba(15,157,180,0.18)]'
-                  : 'border-cyan-200/10 bg-[rgba(13,30,50,0.68)] text-ink hover:border-cyan-200/20 hover:bg-[rgba(18,181,208,0.12)] hover:text-cyan-50'}`}
+                className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${pathname === link.href
+                  ? 'border-cyan-200/34 bg-[rgba(18,181,208,0.16)] text-cyan-50'
+                  : 'border-cyan-200/14 bg-[rgba(13,30,50,0.72)] text-cyan-50/78 hover:border-cyan-200/28 hover:text-cyan-50'}`}
               >
-                {link.label}
+                <span>{link.label}</span>
+                <span className="text-[9px] uppercase tracking-[0.14em] text-cyan-100/58">{link.status}</span>
               </Link>
             ))}
-            </nav>
           </div>
           {INTERNAL_MODE_ENABLED ? (
             <div className="flex flex-wrap items-center gap-3 rounded-[18px] border border-cyan-200/10 bg-[rgba(11,29,49,0.72)] px-4 py-2.5 text-xs text-muted shadow-[0_10px_30px_rgba(4,12,24,0.28)]">

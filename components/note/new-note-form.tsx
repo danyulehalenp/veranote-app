@@ -4546,7 +4546,7 @@ export function NewNoteForm() {
     {
       id: 'review-draft',
       label: 'Review Draft',
-      helper: 'Jump to draft review, copy/export, Atlas review, and finish controls.',
+      helper: 'Review happens inside this workspace with copy/export and finish controls.',
       keywords: ['review', 'finish', 'copy', 'export', 'complete', 'final', 'sign'],
       action: scrollToDraftControls,
     },
@@ -4609,7 +4609,7 @@ export function NewNoteForm() {
     {
       id: 'deep-review',
       label: 'Deep Review Screen',
-      helper: 'Open the separate review workspace.',
+      helper: 'Secondary screen for focused review when you want separation.',
       keywords: ['deep review', 'review screen', 'separate review', 'full review'],
       action: () => router.push('/dashboard/review'),
     },
@@ -4776,8 +4776,20 @@ export function NewNoteForm() {
 	      <aside className="workspace-left-rail">
 	        <div className="workspace-left-rail-header">
 	          <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-100/54">Veranote</div>
-          <div className="mt-1 text-lg font-semibold leading-tight tracking-[-0.03em] text-white">Provider path</div>
-          <p className="mt-1 text-xs leading-5 text-cyan-50/60">Workspace first. Draft recovery always nearby.</p>
+          <div className="mt-1 text-lg font-semibold leading-tight tracking-[-0.03em] text-white">Main workflow</div>
+          <p className="mt-1 text-xs leading-5 text-cyan-50/60">One path: set up, add source, generate, review, then finish.</p>
+	        </div>
+
+	        <div className="workspace-rail-flow" aria-label="Primary note workflow">
+	          <div className="workspace-rail-flow-title">Airplane view</div>
+	          <div className="workspace-rail-flow-steps">
+	            <span>Setup</span>
+	            <span>Source</span>
+	            <span>Draft</span>
+	            <span>Review</span>
+	            <span>Finish</span>
+	          </div>
+	          <p>Deep Review is optional. Saved Drafts is where completed or paused work lives.</p>
 	        </div>
 
 	        <div className="workspace-rail-search" data-testid="workspace-quick-find">
@@ -4867,13 +4879,13 @@ export function NewNoteForm() {
 	        </div>
 
 	        <div className="workspace-rail-section">
-	          <div className="workspace-rail-section-title">Provider path</div>
+	          <div className="workspace-rail-section-title">Main workflow</div>
 	          <div className="grid gap-1.5">
 	            {[
-	              { label: 'Setup', lane: 'setup' as const },
-	              { label: 'Source Packet', lane: 'source' as const },
-	              { label: 'Review Draft', lane: 'finish' as const },
-	              { label: 'Optional Support', lane: 'support' as const },
+	              { label: '1 Setup', lane: 'setup' as const },
+	              { label: '2 Source Packet', lane: 'source' as const },
+	              { label: '3 Review Draft', lane: 'finish' as const },
+	              { label: 'Support Tools', lane: 'support' as const },
 	            ].map((item) => (
 	              <button
 	                key={item.lane}
@@ -4959,20 +4971,20 @@ export function NewNoteForm() {
 	        </div>
 
 	        <div className="workspace-rail-section">
-	          <div className="workspace-rail-section-title">Quick links</div>
+	          <div className="workspace-rail-section-title">Secondary links</div>
 	          <div className="grid gap-1.5">
 	            <button type="button" onClick={handleDocumentSourceJump} className="workspace-rail-tab">Source Documents</button>
 	            <button type="button" onClick={scrollToDraftControls} className="workspace-rail-tab">Draft Settings</button>
 	            <button type="button" onClick={scrollToMyNotePrompt} className="workspace-rail-tab">My Note Prompt</button>
 	            <button type="button" onClick={scrollToOutputPreferences} className="workspace-rail-tab">Preferences</button>
-	            <button type="button" onClick={() => router.push('/dashboard/review')} className="workspace-rail-tab">Deep Review Screen</button>
+	            <button type="button" onClick={() => router.push('/dashboard/review')} className="workspace-rail-tab">Deep Review (optional)</button>
 	          </div>
 	        </div>
 	      </aside>
 
 	      <div className="workspace-main-column grid gap-4">
 	      {evalBanner ? <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900">{evalBanner.replace('Loaded evaluation case:', 'Loaded example case:').replace('Loaded blueprint starter:', 'Loaded starter:')}</div> : null}
-	      <div id="workspace-active-lane-top" className="scroll-mt-24" aria-hidden="true" />
+	      <div id="workspace-active-lane-top" className="scroll-mt-28" aria-hidden="true" />
 
 		      <div className="hidden">
 	        <div className="grid gap-3 2xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)]">

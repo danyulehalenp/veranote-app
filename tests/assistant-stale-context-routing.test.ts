@@ -295,4 +295,37 @@ describe('assistant stale-context routing', () => {
     expect(payload.actions?.[0]?.draftText).toContain('MSE:\nAffect constricted.');
     expect(payload.actions?.[0]?.draftText).not.toContain('•');
   });
+
+  it('recognizes fast-typed misspelled draft shape requests', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'make this draft shoter and more concice',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports partial improvement in mood with persistent sleep disruption.',
+            '',
+            'MSE:',
+            'Affect constricted and thought process linear.',
+            '',
+            'Plan:',
+            'Continue source-supported follow-up plan.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.message).toContain('shorter concise format');
+    expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
+    expect(payload.actions?.[0]?.rewriteLabel).toBe('shorter concise format');
+    expect(payload.message).not.toContain('I do not have a safe Veranote answer');
+  });
 });

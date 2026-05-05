@@ -1015,7 +1015,14 @@ function classifyDraftFormatRequest(message: string): DraftFormatRequest | null 
     .replace(/\bparagrph\b/g, 'paragraph')
     .replace(/\bparagaph\b/g, 'paragraph')
     .replace(/\bparagragh\b/g, 'paragraph')
-    .replace(/\bparagrah\b/g, 'paragraph');
+    .replace(/\bparagrah\b/g, 'paragraph')
+    .replace(/\bshoter\b/g, 'shorter')
+    .replace(/\bshortter\b/g, 'shorter')
+    .replace(/\bconcice\b/g, 'concise')
+    .replace(/\bconcisse\b/g, 'concise')
+    .replace(/\bdetial\b/g, 'detail')
+    .replace(/\bdetials\b/g, 'details')
+    .replace(/\bnarative\b/g, 'narrative');
 
   const hasDraftAnchor = /\b(note|draft|follow[-\s]?up|progress note|hpi|mse|plan|this|it)\b/.test(normalized);
   const hasRewriteVerb = /\b(make|turn|convert|change|format|rewrite|put|collapse|flow|split)\b/.test(normalized);
@@ -1059,7 +1066,7 @@ function classifyDraftFormatRequest(message: string): DraftFormatRequest | null 
     };
   }
 
-  if (/\b(flow like a story|like a story|story form|narrative|narrative form|flow better|make it flow)\b/.test(normalized)) {
+  if (/\b(flow like a story|like a story|story form|narrative|narrative form|flow better|make it flow|story-like|storylike)\b/.test(normalized)) {
     return {
       kind: 'narrative',
       label: 'narrative story-flow format',

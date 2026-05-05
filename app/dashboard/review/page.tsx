@@ -41,7 +41,7 @@ export default function ReviewPage() {
                   Saved drafts
                 </Link>
                 <Link
-                  href="/"
+                  href="/dashboard/new-note"
                   className="inline-flex rounded-xl border border-cyan-200/15 bg-[rgba(8,22,36,0.84)] px-3.5 py-2 text-sm font-semibold text-cyan-50 transition hover:border-cyan-200/30 hover:bg-[rgba(12,34,52,0.92)]"
                 >
                   Back to workspace
