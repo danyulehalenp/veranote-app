@@ -2270,28 +2270,28 @@ export function NewNoteForm() {
         key: 'intakeCollateral',
         label: 'Pre-Visit Data / Paste Source Here',
         shortLabel: 'Pre-Visit',
-        description: 'Labs, vitals, med lists, nursing intake, chart review, collateral, rating scales, and copied raw EHR data gathered before seeing the patient.',
+        description: 'Paste or upload labs, vitals, nursing intake, referrals, prior notes, chart review, collateral, rating scales, scanned/OCR summaries, or copied raw EHR data here. Dictation can target this box too.',
         tone: 'previsit',
       },
       {
         key: 'clinicianNotes',
         label: 'Live Visit Notes',
         shortLabel: 'Live Visit',
-        description: 'Provider typing or dictation during the visit: HPI, observed behavior, MSE impressions, risk language, medication discussion, and clinical reasoning.',
+        description: 'Type or dictate during the visit: HPI, observed behavior, MSE impressions, risk language, medication discussion, clinical reasoning, and plan thoughts.',
         tone: 'live',
       },
       {
         key: 'patientTranscript',
         label: 'Ambient Transcript',
         shortLabel: 'Ambient',
-        description: 'Ambient listening output, patient/provider dialogue, direct quotes, transcript corrections, and any spoken material the provider wants included.',
+        description: 'Ambient flow lands here after consent, listening, transcript review, and provider correction. Keep patient/provider dialogue, direct quotes, and spoken-session material here.',
         tone: 'ambient',
       },
       {
         key: 'objectiveData',
         label: 'Provider Add-On',
         shortLabel: 'Add-On',
-        description: 'Diagnosis or billing codes, preferred plan language, site-specific instructions, discharge wording, or anything important that does not fit the other fields.',
+        description: 'Type or dictate diagnosis/code preferences, named prompt instructions, preferred plan language, site-specific rules, discharge wording, or anything important that does not fit elsewhere.',
         tone: 'addon',
       },
     ]),
@@ -2304,6 +2304,23 @@ export function NewNoteForm() {
     : dictationTargetSteps[0];
   const sourceCompletionCount = populatedSectionLabels.length;
   const sourceCompletionPercent = Math.round((sourceCompletionCount / sourceEntrySteps.length) * 100);
+  const captureFlowGuides = useMemo(
+    () => [
+      {
+        label: 'Dictation',
+        detail: 'Turn dictation on, choose any of the four source boxes as the target, then review the inserted text before generating.',
+      },
+      {
+        label: 'Ambient',
+        detail: 'Use consent -> listen -> review transcript -> commit. The reviewed transcript lands in Ambient Transcript, not straight into the final note.',
+      },
+      {
+        label: 'Generation',
+        detail: 'Generate Draft from Source only after the boxes reflect what you want Veranote to use.',
+      },
+    ],
+    [],
+  );
   const sourceModeCards = useMemo(
     () => ([
       {
@@ -5746,12 +5763,20 @@ export function NewNoteForm() {
                       <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Source packet</div>
                       <div className="mt-1 text-sm font-semibold text-white">Fill any of the four fields Veranote should use for this note</div>
                       <p className="mt-1 max-w-2xl text-xs leading-5 text-cyan-50/70">
-                        Paste copied ER notes, referral notes, labs, nursing intake, chart review, or outside records into Pre-Visit Data first. Use the other boxes only when the information fits that lane better.
+                        Paste copied ER notes, referral notes, labs, nursing intake, chart review, or outside records into Pre-Visit Data first. Dictation can go into any box; ambient listening is reviewed before it commits into Ambient Transcript.
                       </p>
                     </div>
                     <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
                       {sourceCompletionCount}/{sourceEntrySteps.length} fields loaded
                     </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 md:grid-cols-3">
+                    {captureFlowGuides.map((item) => (
+                      <div key={item.label} className="rounded-[16px] border border-cyan-200/12 bg-[rgba(7,18,32,0.52)] px-3 py-2.5">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100/70">{item.label}</div>
+                        <div className="mt-1 text-xs leading-5 text-cyan-50/66">{item.detail}</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 

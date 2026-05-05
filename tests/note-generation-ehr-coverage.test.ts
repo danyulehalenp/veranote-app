@@ -40,9 +40,13 @@ describe('note generation EHR and workflow coverage', () => {
       'ICANotes',
       'TheraNest',
       'Sessions Health',
+      'Epic',
+      'Oracle Health/Cerner',
+      'athenaOne',
     ]));
 
     const destinationCases = sourcePacketRegressionCases.filter((item) => item.ehr && item.ehr !== 'Generic');
+    expect(destinationCases.length).toBeGreaterThanOrEqual(12);
     expect(destinationCases.every((item) => !/direct writeback|auto[-\s]?insert|seamless insertion/i.test(item.customInstructions || ''))).toBe(true);
   });
 

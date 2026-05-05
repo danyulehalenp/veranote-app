@@ -1001,6 +1001,9 @@ type DraftFormatKind =
   | 'shorter'
   | 'longer'
   | 'narrative'
+  | 'chronological'
+  | 'soap'
+  | 'concise-headings'
   | 'two-paragraph-hpi-mse-plan'
   | 'ehr-ready';
 
@@ -1016,16 +1019,24 @@ function classifyDraftFormatRequest(message: string): DraftFormatRequest | null 
     .replace(/\bparagaph\b/g, 'paragraph')
     .replace(/\bparagragh\b/g, 'paragraph')
     .replace(/\bparagrah\b/g, 'paragraph')
+    .replace(/\bpargraph\b/g, 'paragraph')
+    .replace(/\bsectons\b/g, 'sections')
+    .replace(/\bsectionz\b/g, 'sections')
     .replace(/\bshoter\b/g, 'shorter')
     .replace(/\bshortter\b/g, 'shorter')
     .replace(/\bconcice\b/g, 'concise')
     .replace(/\bconcisse\b/g, 'concise')
+    .replace(/\bconscise\b/g, 'concise')
+    .replace(/\bbreif\b/g, 'brief')
     .replace(/\bdetial\b/g, 'detail')
     .replace(/\bdetials\b/g, 'details')
-    .replace(/\bnarative\b/g, 'narrative');
+    .replace(/\bnarative\b/g, 'narrative')
+    .replace(/\bnarritive\b/g, 'narrative')
+    .replace(/\bassesment\b/g, 'assessment')
+    .replace(/\bsummery\b/g, 'summary');
 
   const hasDraftAnchor = /\b(note|draft|follow[-\s]?up|progress note|hpi|mse|plan|this|it)\b/.test(normalized);
-  const hasRewriteVerb = /\b(make|turn|convert|change|format|rewrite|put|collapse|flow|split)\b/.test(normalized);
+  const hasRewriteVerb = /\b(make|turn|convert|change|format|rewrite|put|collapse|flow|split|organize|reorganize|shape)\b/.test(normalized);
   if (!hasDraftAnchor || !hasRewriteVerb) {
     return null;
   }
@@ -1053,6 +1064,13 @@ function classifyDraftFormatRequest(message: string): DraftFormatRequest | null 
   }
 
   if (/\b(shorter|more concise|concise|tighten|tighter|less wordy|brief)\b/.test(normalized)) {
+    if (/\b(keep|leave|preserve)\b.*\b(headings?|sections?)\b|\b(headings?|sections?)\b.*\b(keep|leave|preserve)\b/.test(normalized)) {
+      return {
+        kind: 'concise-headings',
+        label: 'concise sectioned format',
+      };
+    }
+
     return {
       kind: 'shorter',
       label: 'shorter concise format',
@@ -1073,7 +1091,21 @@ function classifyDraftFormatRequest(message: string): DraftFormatRequest | null 
     };
   }
 
-  if (/\b(ehr[-\s]?ready|copy[-\s]?paste|copy into|paste into|wellsky|tebra|epic|cerner|simplepractice|therapy ?notes|export format|field ready)\b/.test(normalized)) {
+  if (/\b(chronological|chronologic|timeline|in order|order it happened|sequence)\b/.test(normalized)) {
+    return {
+      kind: 'chronological',
+      label: 'chronological story-flow format',
+    };
+  }
+
+  if (/\bsoap\b|\bsubjective\b.*\bobjective\b.*\bassessment\b.*\bplan\b/.test(normalized)) {
+    return {
+      kind: 'soap',
+      label: 'SOAP format',
+    };
+  }
+
+  if (/\b(ehr[-\s]?ready|copy[-\s]?paste|copy into|paste into|wellsky|tebra|epic|cerner|athena|athenaone|eclinicalworks|advancedmd|drchrono|simplepractice|therapy ?notes|export format|field ready)\b/.test(normalized)) {
     return {
       kind: 'ehr-ready',
       label: 'EHR-ready copy/paste format',
@@ -1251,12 +1283,64 @@ function formatDraftAsTwoParagraphs(draftText: string) {
     .join('\n\n');
 }
 
+function formatDraftAsSoap(draftText: string) {
+  const sections = splitDraftIntoNamedSections(draftText);
+  if (!sections.length) {
+    return collapseDraftToOneParagraph(draftText);
+  }
+
+  const buckets: Record<'Subjective' | 'Objective' | 'Assessment' | 'Plan', string[]> = {
+    Subjective: [],
+    Objective: [],
+    Assessment: [],
+    Plan: [],
+  };
+
+  for (const section of sections) {
+    const heading = normalizeMessageForClinicalRouting(section.heading);
+    if (/\b(plan|follow[-\s]?up|labs?|medications?|safety plan|referral|homework|next steps?)\b/.test(heading)) {
+      buckets.Plan.push(section.text);
+    } else if (/\b(assessment|diagnos|impression|formulation|response to intervention|clinical status)\b/.test(heading)) {
+      buckets.Assessment.push(section.text);
+    } else if (/\b(objective|mse|mental status|exam|vitals?|observations?|appearance|affect|thought process|insight|judgment)\b/.test(heading)) {
+      buckets.Objective.push(section.text);
+    } else {
+      buckets.Subjective.push(section.text);
+    }
+  }
+
+  return (['Subjective', 'Objective', 'Assessment', 'Plan'] as const)
+    .map((heading) => {
+      const text = buckets[heading].join(' ').replace(/\s+/g, ' ').trim();
+      return text ? `${heading}:\n${text}` : '';
+    })
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function formatDraftWithConciseHeadings(draftText: string) {
+  const sections = splitDraftIntoNamedSections(draftText);
+  if (!sections.length) {
+    return collapseDraftToOneParagraph(draftText);
+  }
+
+  return sections
+    .map((section) => `${section.heading}:\n${section.text}`)
+    .join('\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function formatDraftForRequest(draftText: string, request: DraftFormatRequest) {
   const collapsed = collapseDraftToOneParagraph(draftText);
 
   switch (request.kind) {
     case 'two-paragraph-hpi-mse-plan':
       return formatDraftAsTwoParagraphs(draftText);
+    case 'soap':
+      return formatDraftAsSoap(draftText);
+    case 'concise-headings':
+      return formatDraftWithConciseHeadings(draftText);
     case 'shorter':
       return collapsed;
     case 'longer':
@@ -1271,6 +1355,12 @@ function formatDraftForRequest(draftText: string, request: DraftFormatRequest) {
         .replace(/\bObjective:/g, 'Objective summary:')
         .replace(/\bAssessment:/g, 'Assessment:')
         .replace(/\bPlan:/g, 'Plan:');
+    case 'chronological':
+      return splitDraftIntoNamedSections(draftText)
+        .map((section) => `${section.heading}: ${section.text}`)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim() || collapsed;
     case 'ehr-ready':
       return splitDraftIntoNamedSections(draftText)
         .map((section) => `${section.heading}:\n${section.text}`)
@@ -1323,7 +1413,7 @@ function buildDraftFormattingHelp(
     suggestions: [
       'Review once for source fidelity before copying forward.',
       'I treated this as writing shape only, not a new MSE checklist.',
-      'You can ask for another shape: shorter, longer, story flow, or two paragraphs.',
+      'You can ask for another shape: shorter, longer, story flow, SOAP, chronological, or two paragraphs.',
       ...(formattedDraft.length > visibleDraft.length ? ['The visible draft was long, so this response shows the first portion available to the assistant.'] : []),
     ],
     actions: [

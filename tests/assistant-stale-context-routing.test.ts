@@ -328,4 +328,109 @@ describe('assistant stale-context routing', () => {
     expect(payload.actions?.[0]?.rewriteLabel).toBe('shorter concise format');
     expect(payload.message).not.toContain('I do not have a safe Veranote answer');
   });
+
+  it('recognizes misspelled narrative draft-shaping requests as writing changes', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'make this follow up note flow like a narritive story',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: [
+            'Subjective:',
+            'Patient reports anxiety is partially improved but still avoids stores.',
+            '',
+            'Objective:',
+            'Affect anxious and thought process goal directed.',
+            '',
+            'Plan:',
+            'Continue source-supported follow-up plan.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.message).toContain('narrative story-flow format');
+    expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
+    expect(payload.actions?.[0]?.rewriteLabel).toBe('narrative story-flow format');
+    expect(payload.message).not.toContain('I do not have a safe Veranote answer');
+  });
+
+  it('formats active draft into SOAP structure when requested', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'Format this draft into SOAP format.',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports anxiety is 30% improved but continues to avoid grocery stores.',
+            '',
+            'MSE:',
+            'Mood anxious, affect congruent, thought process linear.',
+            '',
+            'Assessment:',
+            'Anxiety symptoms remain partially improved with ongoing functional avoidance.',
+            '',
+            'Plan:',
+            'Continue source-supported follow-up plan and review safety each visit.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.message).toContain('SOAP format');
+    expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
+    expect(payload.actions?.[0]?.draftText).toContain('Subjective:\nPatient reports anxiety');
+    expect(payload.actions?.[0]?.draftText).toContain('Objective:\nMood anxious');
+    expect(payload.actions?.[0]?.draftText).toContain('Assessment:\nAnxiety symptoms remain');
+    expect(payload.actions?.[0]?.draftText).toContain('Plan:\nContinue source-supported follow-up plan');
+  });
+
+  it('keeps headings when provider asks for a concise sectioned draft', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'Make this draft breif and conscise but keep the headings.',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Inpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports mood remains depressed with poor sleep.',
+            '',
+            'MSE:',
+            'Affect constricted; thought content includes hopelessness without active intent stated.',
+            '',
+            'Plan:',
+            'Continue source-supported monitoring and reassess after collateral review.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.message).toContain('concise sectioned format');
+    expect(payload.actions?.[0]?.draftText).toContain('HPI:\nPatient reports mood remains depressed');
+    expect(payload.actions?.[0]?.draftText).toContain('MSE:\nAffect constricted');
+    expect(payload.actions?.[0]?.draftText).toContain('Plan:\nContinue source-supported monitoring');
+    expect(payload.actions?.[0]?.rewriteLabel).toBe('concise sectioned format');
+  });
 });

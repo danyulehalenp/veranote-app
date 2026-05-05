@@ -30,6 +30,9 @@ const DEFAULT_CASE_TARGETS = [
   { id: 'therapy-progress-note-dictated-cbt-no-medical-plan', ehr: 'TheraNest' },
   { id: 'mat-followup-fentanyl-denial-naloxone-no-dose-change', ehr: 'Valant' },
   { id: 'discharge-summary-pending-labs-and-collateral-risk', ehr: 'ICANotes' },
+  { id: 'epic-outpatient-med-allergy-reconciliation-conflict', ehr: 'Epic' },
+  { id: 'cerner-inpatient-delirium-medical-confounder-packet', ehr: 'Oracle Health/Cerner' },
+  { id: 'athenaone-outpatient-followup-pcp-ssri-side-effect-referral', ehr: 'athenaOne' },
 ];
 
 function parseCaseTarget(value) {
@@ -293,6 +296,9 @@ function evaluateEhrCopyReadiness(note) {
     { label: 'provider add-on leaked as heading', pattern: /Provider Add-On/i },
     { label: 'nonclinical QA marker leaked', pattern: /Nonclinical QA marker|E2E-|MATRIX-/i },
     { label: 'object serialization artifact', pattern: /\[object Object\]/i },
+    { label: 'markdown code fence', pattern: /```/ },
+    { label: 'direct EHR writeback claim', pattern: /direct (?:EHR )?writeback|auto[-\s]?insert(?:ed|ion)?|seamless(?:ly)? (?:insert|push|send)/i },
+    { label: 'assistant meta commentary', pattern: /\bas an AI\b|I cannot create a note/i },
   ];
 
   const forbiddenHits = forbidden

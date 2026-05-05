@@ -285,6 +285,8 @@ async function runLaptopRailScenario(browser) {
   assertState(/px/.test(initial.columns) && initial.columns.split(' ').length >= 2, `workspace shell did not expose two grid columns: ${initial.columns}`, failures);
   assertState(initial.scrollY <= 24, `workspace did not start near top; scrollY=${initial.scrollY}`, failures);
   assertState(await page.getByTestId('workspace-quick-find-input').isVisible().catch(() => false), 'workspace quick-find input was not visible in the rail', failures);
+  assertState(await page.getByText(/Dictation can go into any box/i).first().isVisible().catch(() => false), 'source packet did not explain dictation targets across the four boxes', failures);
+  assertState(await page.getByText(/consent -> listen -> review transcript -> commit/i).first().isVisible().catch(() => false), 'source packet did not explain ambient consent-to-commit flow', failures);
 
   await page.getByTestId('workspace-quick-find-input').fill('cpt');
   const cptResult = page.getByTestId('workspace-quick-find-result').filter({ hasText: /CPT Support/i });
