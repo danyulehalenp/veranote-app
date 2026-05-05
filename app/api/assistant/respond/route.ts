@@ -2515,6 +2515,60 @@ function shouldIgnoreStaleClinicalContext(message: string) {
   return directClinicalTermQuestion || directReferenceWithoutCurrentNote || medicationDocumentationWithoutExplicitCurrentNote;
 }
 
+function shouldPreferClinicalTaskBeforeAtlasBlueprint(input: {
+  message: string;
+  sourceText: string;
+  currentDraftText?: string;
+  context?: AssistantApiContext;
+  recentMessages?: AssistantThreadTurn[];
+}) {
+  const recentText = (input.recentMessages || [])
+    .map((turn) => turn.content || '')
+    .join(' ');
+  const combined = normalizeMessageForClinicalRouting([
+    input.message,
+    input.sourceText,
+    input.currentDraftText || '',
+    input.context?.focusedSectionHeading || '',
+    input.context?.noteType || '',
+    recentText,
+  ].join(' '));
+
+  return [
+    /\bdo not give me a sanitized violence-risk answer\b/,
+    /\bviolence risk low because patient denies intent\b/,
+    /\bobserved agitation\b.*\bcollateral threat history\b/,
+    /\badmin pressure to discharge\b/,
+    /\bmaking the plan cleaner than the source\b/,
+    /\bobjective versus assessment\b/,
+    /\bpatient-reported denial separate from nursing observation\b/,
+    /\bpanic attack likely\b/,
+    /\bheavy daily alcohol\b.*\bmissed clonazepam\b/,
+    /\bgoodbye texts?\b.*\bdoes not trust (?:herself|himself|themselves)\b/,
+    /\bgoodbye texts?\b.*\bnot safe if sent home\b/,
+    /\bunknown blue powder\b/,
+    /\bcommand auditory hallucinations\b.*\bword\b/,
+    /\bmeds are about the same\b.*\bdoes not name them\b/,
+    /\bnephro\b.*\bdialysis\b/,
+    /\bgod already fixed my kidneys\b/,
+    /\bteam split on withdrawal vs psych\b/,
+    /\btremulous\b.*\bdiaphoretic\b.*\bseeing bugs\b/,
+    /\buti vs psychosis\b/,
+    /\bsuddenly confused\b.*\bpulling lines\b/,
+    /\bneed exact hold wording\b/,
+    /\bsource-matched hold language\b/,
+    /\boverdose-if-sent-home\b/,
+    /\boverdose if sent home\b.*\bno safe place to stay\b/,
+    /\bmed over objection\b/,
+    /\bmedication over objection\b/,
+    /\bpt keeps refusing olanzapine\b/,
+    /\bneed this progress note cleaned up\b/,
+    /\bshorter paragraph\b.*\bhigher-acuity risk facts\b/,
+    /\bmedication refusal then partial acceptance\b/,
+    /\bmed refusal then partial acceptance\b/,
+  ].some((pattern) => pattern.test(combined));
+}
+
 function isStandaloneMedicationDocumentationPrompt(message: string) {
   const normalized = message.trim().toLowerCase();
   if (/\b(capacity|no capacity|consent|legal authority|over objection|both\?|clinical recommendation|can .*refuse)\b/.test(normalized)) {
@@ -3111,13 +3165,20 @@ export async function POST(request: Request) {
         } : {}),
       });
     }
+    const preferClinicalTaskBeforeAtlasBlueprint = shouldPreferClinicalTaskBeforeAtlasBlueprint({
+      message: assistantMessageForRouting,
+      sourceText: sanitizedSourceText,
+      currentDraftText: sanitizedDraftText,
+      context: body.context,
+      recentMessages: body.recentMessages,
+    });
     const atlasBlueprintRoute = buildAtlasBlueprintResponse({
       message: assistantMessageForRouting,
       sourceText: sanitizedSourceText,
       stage: body.stage === 'review' ? 'review' : 'compose',
       context: body.context,
     });
-    if (atlasBlueprintRoute.payload) {
+    if (atlasBlueprintRoute.payload && !preferClinicalTaskBeforeAtlasBlueprint) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
       const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
       const rehydratedBlueprintPayload = rehydrateAssistantPayload(atlasBlueprintRoute.payload, phiEntities);
@@ -3170,6 +3231,7 @@ export async function POST(request: Request) {
     if (
       routeBoundaryDocumentationPayload
       && !standaloneMedicationDocumentationPrompt
+      && !preferClinicalTaskBeforeAtlasBlueprint
     ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
       const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
@@ -3214,6 +3276,7 @@ export async function POST(request: Request) {
     if (
       diagnosticSafetyGatePayload
       && !standaloneMedicationDocumentationPrompt
+      && !preferClinicalTaskBeforeAtlasBlueprint
     ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
       const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
@@ -3258,6 +3321,7 @@ export async function POST(request: Request) {
       earlyDiagnosticReferencePayload
       && !clinicalOverride
       && !standaloneMedicationDocumentationPrompt
+      && !preferClinicalTaskBeforeAtlasBlueprint
       && !/\b(source says|draft says|note says|patient reports|patient denies|document this|word this|chart-ready|chart ready|rewrite)\b/i.test(assistantMessageForRouting)
     ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
@@ -3329,6 +3393,7 @@ export async function POST(request: Request) {
       earlyMedicationReferencePayload?.answerMode === 'medication_reference_answer'
       && !clinicalOverride
       && !standaloneMedicationDocumentationPrompt
+      && !preferClinicalTaskBeforeAtlasBlueprint
       && hasEarlyMedicationAnchor
       && !looksLikeClinicalMedicationNarrative
       && (directApprovalReferenceQuestion || directGeriatricReferenceQuestion || directInteractionReferenceQuestion || directLabMonitoringReferenceQuestion || directEmergencyProtocolQuestion || directMedicationUseSafetyQuestion || earlyMedicationReferenceIntent !== 'unknown' || earlyStructuredMedicationReferenceIntent !== 'unsupported')

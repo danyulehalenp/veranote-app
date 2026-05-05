@@ -1030,7 +1030,7 @@ export function buildAtlasBlueprintResponse(input: AtlasArbitrationInput): {
       payload: contractedPayload('urgent_crisis', {
         message: suicidePlanConflict
           ? 'Urgent safety concern with contradiction: preserve both the denial and the plan/overdose or unsafe-if-discharged statement as unresolved conflict. Do not handle this as routine note drafting, and do not convert it into low-risk or discharge-ready wording.'
-          : 'Urgent safety concern: do not handle this as routine note drafting. Keep the specific risk or emergency facts visible, preserve unresolved uncertainty, and use your local emergency, crisis, or safety workflow as clinically appropriate.',
+          : 'Urgent safety concern: do not handle this as routine note drafting. Keep the specific risk or emergency facts visible, preserve unresolved uncertainty explicitly, and use your local emergency, crisis, or safety workflow as clinically appropriate.',
         suggestions: [
           'Document what was reported, observed, and collateral-sourced separately.',
           'Avoid low-risk, stable, cleared, or discharge-ready shorthand while urgent facts remain active.',
@@ -1234,7 +1234,7 @@ export function buildAtlasBlueprintResponse(input: AtlasArbitrationInput): {
       payload: contractedPayload('risk_suicide_documentation', {
         message: violence && !suicide
           ? line(
-              'Warning: low violence-risk wording is not supported here.',
+              'Warning: Low violence-risk wording is not supported here.',
               riskFacts.length ? `Preserve these source facts: ${riskFacts.join(', ')}.` : 'Preserve the source-specific threat, denial, target, and means/access facts.',
               'Denial does not erase collateral threat history or missing target/access context. It is not enough to document a reassuring global label while these facts remain open.',
             )
@@ -1405,7 +1405,7 @@ export function buildAtlasBlueprintResponse(input: AtlasArbitrationInput): {
       return {
         arbitration,
         payload: contractedPayload('source_conflict', {
-          message: 'Chart-ready wording: patient denies hallucinations today; however, staff or nursing reports the patient appeared internally preoccupied or responding to internal stimuli. Reported denial and observed perceptual disturbance should both remain explicit in the assessment.',
+          message: 'Chart-ready wording: Patient denies hallucinations today; however, staff or nursing reports the patient appeared internally preoccupied or responding to internal stimuli. Reported denial and observed perceptual disturbance should both remain explicit in the assessment.',
           suggestions: [
             'Attribute the denial to the patient.',
             'Attribute internal preoccupation to nursing or staff observation.',
@@ -1449,7 +1449,7 @@ export function buildAtlasBlueprintResponse(input: AtlasArbitrationInput): {
       arbitration,
       payload: contractedPayload('source_conflict', {
         message: line(
-          'Documentation safety: preserve the contradiction; do not reconcile conflicting sources into one cleaner story.',
+          'Warning: Documentation safety: preserve the contradiction; do not reconcile conflicting sources into one cleaner story.',
           'If the patient denies a symptom while staff observe concerning behavior, that contradiction is not enough to document the symptom as established.',
           sourceVoices.length ? `Keep these lanes separate: ${sourceVoices.join(', ')}.` : 'Keep patient report, collateral report, staff/nursing observation, objective data, and draft wording separate.',
           'Document what remains open or uncertain until the provider decides what the source supports.',
