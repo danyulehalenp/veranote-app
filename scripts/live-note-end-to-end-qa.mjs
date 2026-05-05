@@ -720,6 +720,19 @@ async function main() {
     if (!postNoteCptGuardrailVisible || !/not final billing advice|do not add facts/i.test(postNoteCptGuardrailText)) {
       throw new Error('Post-note CPT support guardrail did not render with conservative billing language.');
     }
+    const postNoteCptCandidateVisible = await waitForVisible(page.getByTestId('post-note-cpt-candidate-card').first(), 5000);
+    const postNoteCptCandidateText = postNoteCptCandidateVisible
+      ? await page.getByTestId('post-note-cpt-candidate-card').first().innerText()
+      : '';
+    if (!postNoteCptCandidateVisible || !/family|E\/M|psychotherapy|diagnostic evaluation|telehealth|interactive complexity/i.test(postNoteCptCandidateText)) {
+      throw new Error('Post-note CPT support did not show a visible candidate-family card.');
+    }
+    if (!/What to verify|Verify payer|current CPT|requirements/i.test(postNoteCptCandidateText)) {
+      throw new Error('Post-note CPT support candidate did not show a visible verification cue.');
+    }
+    if (!/possible review|stronger documentation support|insufficient support/i.test(postNoteCptCandidateText)) {
+      throw new Error('Post-note CPT support candidate did not show a conservative support-strength badge.');
+    }
 
     await openAssistantPanel(page);
     const assistantResult = await askVisibleAssistantTurn(page, 'What should I check before copying this note?');

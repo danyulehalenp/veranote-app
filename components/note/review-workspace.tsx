@@ -52,6 +52,8 @@ import type { NoteSectionKey, OutputScope } from '@/lib/note/section-profiles';
 
 const ASSISTANT_OPEN_EVENT = 'veranote-assistant-open';
 
+type PostNoteCptRecommendations = ReturnType<typeof evaluatePostNoteCptRecommendations>;
+
 function sanitizeFileName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'note-draft';
 }
@@ -873,6 +875,170 @@ function ReviewItemDisclosure(props: {
         {props.children}
       </div>
     </details>
+  );
+}
+
+function formatCptStrength(value: string) {
+  return value.replace(/-/g, ' ');
+}
+
+function PostNoteCptSupportPanel(props: {
+  assessment: PostNoteCptRecommendations;
+  variant: 'embedded' | 'review';
+}) {
+  const isEmbedded = props.variant === 'embedded';
+  const assessment = props.assessment;
+  const panelClassName = isEmbedded
+    ? 'mt-4 rounded-[20px] border border-amber-300/20 bg-[rgba(146,98,18,0.16)] p-4 text-sm text-amber-50'
+    : 'mt-4 rounded-lg border border-amber-200 bg-white p-3 text-sm text-amber-900';
+  const headingClassName = isEmbedded
+    ? 'text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-100/86'
+    : 'text-xs font-semibold uppercase tracking-wide text-amber-900';
+  const summaryClassName = isEmbedded ? 'mt-1 leading-6 text-amber-50/88' : 'mt-1 text-sm text-amber-900';
+  const badgeClassName = isEmbedded
+    ? 'rounded-full border border-amber-200/24 bg-amber-300/12 px-3 py-1 text-xs font-medium text-amber-50'
+    : 'rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900';
+  const metricClassName = isEmbedded
+    ? 'rounded-[14px] border border-amber-200/16 bg-[rgba(255,255,255,0.08)] px-3 py-2'
+    : 'rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2';
+  const metricLabelClassName = isEmbedded
+    ? 'text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-100/70'
+    : 'text-[10px] font-semibold uppercase tracking-wide text-amber-800/70';
+  const metricValueClassName = isEmbedded ? 'mt-1 font-semibold text-white' : 'mt-1 font-semibold text-amber-950';
+  const guardrailClassName = isEmbedded
+    ? 'mt-3 rounded-[14px] border border-amber-200/18 bg-[rgba(255,255,255,0.08)] px-3 py-2 text-xs leading-5 text-amber-50/82'
+    : 'mt-3 rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-xs leading-5 text-amber-900';
+  const candidateClassName = isEmbedded
+    ? 'rounded-[14px] border border-amber-200/16 bg-[rgba(7,18,32,0.42)] p-3'
+    : 'rounded-lg border border-amber-100 bg-amber-50/40 p-3 text-sm text-amber-900';
+  const codeClassName = isEmbedded
+    ? 'rounded-full border border-amber-200/20 bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-50'
+    : 'rounded-full border border-amber-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-amber-900';
+  const strengthClassName = isEmbedded
+    ? 'rounded-full border border-amber-200/24 bg-amber-300/12 px-2.5 py-0.5 text-[11px] font-semibold capitalize text-amber-50'
+    : 'rounded-full border border-amber-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold capitalize text-amber-900';
+  const disclosureClassName = isEmbedded
+    ? 'border-amber-200/16 bg-[rgba(255,255,255,0.08)] text-amber-50'
+    : 'border-amber-100 bg-white text-amber-950';
+  const listClassName = isEmbedded
+    ? 'list-disc space-y-1 pl-5 text-amber-50/78'
+    : 'list-disc space-y-1 pl-5 text-amber-900';
+  const emptyClassName = isEmbedded
+    ? 'mt-4 rounded-[14px] border border-amber-200/18 bg-[rgba(255,255,255,0.08)] px-3 py-3 text-sm text-amber-50/82'
+    : 'mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900';
+  const timeSignalClassName = isEmbedded
+    ? 'rounded-full border border-emerald-200/20 bg-emerald-300/12 px-3 py-1 text-xs font-medium text-emerald-50'
+    : 'rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-900';
+  const allVerificationGaps = assessment.candidates.reduce(
+    (count, candidate) => count + candidate.missingElements.length,
+    assessment.missingGlobalElements.length,
+  );
+
+  return (
+    <div data-testid="post-note-cpt-support-panel" className={panelClassName}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className={headingClassName}>Post-note CPT support candidates</div>
+          <p className={summaryClassName}>{assessment.summary}</p>
+        </div>
+        <div className={badgeClassName}>Coding support only</div>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <div className={metricClassName}>
+          <div className={metricLabelClassName}>Candidate families</div>
+          <div className={metricValueClassName}>{assessment.candidates.length}</div>
+        </div>
+        <div className={metricClassName}>
+          <div className={metricLabelClassName}>Time cues</div>
+          <div className={metricValueClassName}>{assessment.timeSignals.length}</div>
+        </div>
+        <div className={metricClassName}>
+          <div className={metricLabelClassName}>Verify gaps</div>
+          <div className={metricValueClassName}>{allVerificationGaps}</div>
+        </div>
+      </div>
+
+      <p data-testid="post-note-cpt-guardrail" className={guardrailClassName}>
+        Not final billing advice. Do not add facts just to support a code; verify current CPT, payer, facility, telehealth, and state-specific requirements before billing.
+      </p>
+
+      {assessment.candidates.length ? (
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          {assessment.candidates.map((candidate) => (
+            <div key={candidate.family} data-testid="post-note-cpt-candidate-card" className={candidateClassName}>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div className={isEmbedded ? 'font-semibold text-white' : 'font-semibold text-amber-950'}>{candidate.family}</div>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {candidate.candidateCodes.map((code) => (
+                      <span key={code} className={codeClassName}>
+                        {code}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <span data-testid="post-note-cpt-strength" className={strengthClassName}>
+                  {formatCptStrength(candidate.strength)}
+                </span>
+              </div>
+              <div className="mt-3 space-y-2">
+                <ReviewItemDisclosure
+                  className={disclosureClassName}
+                  title="Why this surfaced"
+                  summary={candidate.why[0] || 'This family matched visible note or encounter-support signals.'}
+                >
+                  <ul className={listClassName}>
+                    {candidate.why.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </ReviewItemDisclosure>
+                <ReviewItemDisclosure
+                  className={disclosureClassName}
+                  title="What to verify"
+                  summary={candidate.missingElements[0] || 'Verify payer, facility, and current CPT requirements.'}
+                >
+                  <ul data-testid="post-note-cpt-verify-item" className={listClassName}>
+                    {(candidate.missingElements.length ? candidate.missingElements : ['Verify payer, facility, and current CPT requirements.']).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </ReviewItemDisclosure>
+                {candidate.cautions[0] ? (
+                  <div className={isEmbedded ? 'rounded-[12px] border border-amber-200/14 bg-white/5 px-3 py-2 text-xs leading-5 text-amber-50/72' : 'rounded-lg border border-amber-100 bg-white px-3 py-2 text-xs leading-5 text-amber-900'}>
+                    {candidate.cautions[0]}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className={emptyClassName}>
+          {assessment.missingGlobalElements[0] || 'The completed note does not yet show enough documentation structure for CPT-support candidates.'}
+        </div>
+      )}
+
+      {assessment.timeSignals.length ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {assessment.timeSignals.slice(0, 3).map((item) => (
+            <span key={item} data-testid="post-note-cpt-time-signal" className={timeSignalClassName}>
+              {item}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <div className={isEmbedded ? 'mt-4 rounded-[14px] border border-amber-200/16 bg-[rgba(255,255,255,0.08)] p-3 text-xs text-amber-50/78' : 'mt-4 rounded-lg border border-amber-100 bg-amber-50/40 p-3 text-xs text-amber-900'}>
+        <div className="font-semibold uppercase tracking-wide">Guardrails</div>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          {assessment.guardrails.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </div>
+    </div>
   );
 }
 
@@ -4090,45 +4256,7 @@ export function ReviewWorkspace({
             </div>
           ) : null}
 
-          <div
-            data-testid="post-note-cpt-support-panel"
-            className="mt-4 rounded-[20px] border border-amber-300/20 bg-[rgba(146,98,18,0.16)] p-4 text-sm text-amber-50"
-          >
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-100/86">Post-note CPT support candidates</div>
-                <p className="mt-1 leading-6 text-amber-50/88">{postNoteCptRecommendations.summary}</p>
-              </div>
-              <div className="rounded-full border border-amber-200/24 bg-amber-300/12 px-3 py-1 text-xs font-medium text-amber-50">
-                Coding support only
-              </div>
-            </div>
-            <p data-testid="post-note-cpt-guardrail" className="mt-3 rounded-[14px] border border-amber-200/18 bg-[rgba(255,255,255,0.08)] px-3 py-2 text-xs leading-5 text-amber-50/82">
-              Not final billing advice. Do not add facts just to support a code; verify current CPT, payer, facility, telehealth, and state-specific requirements before billing.
-            </p>
-            {postNoteCptRecommendations.candidates.length ? (
-              <details className="mt-3 rounded-[16px] border border-amber-200/20 bg-[rgba(255,255,255,0.08)] p-3">
-                <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.14em] text-amber-100">
-                  Review {postNoteCptRecommendations.candidates.length} candidate family{postNoteCptRecommendations.candidates.length === 1 ? '' : 'ies'}
-                </summary>
-                <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                  {postNoteCptRecommendations.candidates.map((candidate) => (
-                    <div key={candidate.family} className="rounded-[14px] border border-amber-200/16 bg-[rgba(7,18,32,0.42)] p-3">
-                      <div className="font-semibold text-white">{candidate.family}</div>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {candidate.candidateCodes.map((code) => (
-                          <span key={code} className="rounded-full border border-amber-200/20 bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-50">
-                            {code}
-                          </span>
-                        ))}
-                      </div>
-                      <p className="mt-2 text-xs leading-5 text-amber-50/78">{candidate.why[0]}</p>
-                    </div>
-                  ))}
-                </div>
-              </details>
-            ) : null}
-          </div>
+          <PostNoteCptSupportPanel assessment={postNoteCptRecommendations} variant="embedded" />
 
           <textarea ref={draftTextareaRef} value={draftText} onChange={(event) => setDraftText(event.target.value)} className="workspace-control mt-4 min-h-[780px] w-full rounded-[24px] p-4 text-sm leading-7" />
 
@@ -5657,93 +5785,7 @@ export function ReviewWorkspace({
             </div>
           </div>
         ) : null}
-        <div
-          data-testid="post-note-cpt-support-panel"
-          className="mt-4 rounded-lg border border-amber-200 bg-white p-3"
-        >
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Post-note CPT support candidates</div>
-              <p className="mt-1 text-sm text-amber-900">
-                {postNoteCptRecommendations.summary}
-              </p>
-            </div>
-            <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900">
-              Coding support only
-            </div>
-          </div>
-          <p data-testid="post-note-cpt-guardrail" className="mt-3 rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-xs leading-5 text-amber-900">
-            Not final billing advice. Do not add facts just to support a code; verify current CPT, payer, facility, telehealth, and state-specific requirements before billing.
-          </p>
-          {postNoteCptRecommendations.candidates.length ? (
-            <div className="mt-4 grid gap-3 xl:grid-cols-2">
-              {postNoteCptRecommendations.candidates.map((candidate) => (
-                <div key={candidate.family} className="rounded-lg border border-amber-100 bg-amber-50/40 p-3 text-sm text-amber-900">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <div className="font-semibold text-amber-950">{candidate.family}</div>
-                      <div className="mt-1 flex flex-wrap gap-1.5">
-                        {candidate.candidateCodes.map((code) => (
-                          <span key={code} className="rounded-full border border-amber-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-amber-900">
-                            {code}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <span className="rounded-full border border-amber-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold capitalize text-amber-900">
-                      {candidate.strength.replace(/-/g, ' ')}
-                    </span>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    <ReviewItemDisclosure
-                      className="border-amber-100 bg-white text-amber-950"
-                      title="Why this surfaced"
-                      summary={candidate.why[0] || 'This family matched visible note or encounter-support signals.'}
-                    >
-                      <ul className="list-disc space-y-1 pl-5 text-amber-900">
-                        {candidate.why.map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    </ReviewItemDisclosure>
-                    <ReviewItemDisclosure
-                      className="border-amber-100 bg-white text-amber-950"
-                      title="What to verify"
-                      summary={candidate.missingElements[0] || 'Verify payer, facility, and current CPT requirements.'}
-                    >
-                      <ul className="list-disc space-y-1 pl-5 text-amber-900">
-                        {candidate.missingElements.map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    </ReviewItemDisclosure>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
-              {postNoteCptRecommendations.missingGlobalElements[0] || 'The completed note does not yet show enough documentation structure for CPT-support candidates.'}
-            </div>
-          )}
-          {postNoteCptRecommendations.timeSignals.length ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {postNoteCptRecommendations.timeSignals.slice(0, 3).map((item) => (
-                <span key={item} className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-900">
-                  {item}
-                </span>
-              ))}
-            </div>
-          ) : null}
-          <div className="mt-4 rounded-lg border border-amber-100 bg-amber-50/40 p-3 text-xs text-amber-900">
-            <div className="font-semibold uppercase tracking-wide">Guardrails</div>
-            <ul className="mt-2 list-disc space-y-1 pl-5">
-              {postNoteCptRecommendations.guardrails.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
+        <PostNoteCptSupportPanel assessment={postNoteCptRecommendations} variant="review" />
       </CollapsibleReviewSection>
 
       <CollapsibleReviewSection
