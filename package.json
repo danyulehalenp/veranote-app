@@ -18,6 +18,7 @@
     "live:note:e2e": "npx tsx scripts/live-note-end-to-end-qa.mjs",
     "live:note:matrix": "npx tsx scripts/live-note-workflow-matrix-qa.mjs",
     "live:note:qa": "npx tsx scripts/live-note-workflow-qa.mjs",
+    "live:workspace-rail": "node scripts/live-workspace-rail-qa.mjs",
     "production:durable": "npx tsx scripts/production-durable-storage-qa.mjs",
     "production:smoke": "node scripts/production-smoke-qa.mjs",
     "release:gate": "node scripts/release-readiness-gate.mjs",

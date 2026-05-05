@@ -33,6 +33,12 @@ const COMMANDS = [
     required: true,
   },
   {
+    name: 'Live workspace rail QA',
+    command: 'npm',
+    args: ['run', 'live:workspace-rail'],
+    required: true,
+  },
+  {
     name: 'Live note end-to-end QA',
     command: 'npm',
     args: ['run', 'live:note:e2e'],

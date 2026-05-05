@@ -97,6 +97,15 @@ async function main() {
       },
     },
     {
+      name: 'Production workspace rail smoke',
+      command: npmBin,
+      args: ['run', 'live:workspace-rail'],
+      env: {
+        LIVE_WORKSPACE_RAIL_URL: `${APP_ORIGIN}/dashboard/new-note?fresh=release-gate-workspace-rail`,
+        LIVE_WORKSPACE_RAIL_START_SERVER: '0',
+      },
+    },
+    {
       name: 'Production Atlas conversation smoke',
       command: npmBin,
       args: ['run', 'atlas:live-conversation'],
