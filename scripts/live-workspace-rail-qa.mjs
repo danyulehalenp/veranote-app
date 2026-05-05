@@ -284,6 +284,16 @@ async function runLaptopRailScenario(browser) {
   assertState(initial.rail && initial.main && initial.rail.x < initial.main.x, 'workspace rail was not positioned left of the main column at 900px', failures);
   assertState(/px/.test(initial.columns) && initial.columns.split(' ').length >= 2, `workspace shell did not expose two grid columns: ${initial.columns}`, failures);
   assertState(initial.scrollY <= 24, `workspace did not start near top; scrollY=${initial.scrollY}`, failures);
+  assertState(await page.getByTestId('workspace-quick-find-input').isVisible().catch(() => false), 'workspace quick-find input was not visible in the rail', failures);
+
+  await page.getByTestId('workspace-quick-find-input').fill('cpt');
+  const cptResult = page.getByTestId('workspace-quick-find-result').filter({ hasText: /CPT Support/i });
+  assertState(await cptResult.first().isVisible().catch(() => false), 'workspace quick-find did not surface CPT Support for cpt search', failures);
+  await cptResult.first().click();
+  await page.waitForTimeout(700);
+  const afterQuickFind = await captureWorkspaceState(page);
+  assertState(/Review Draft/i.test(afterQuickFind.active), `CPT quick-find did not jump to review lane; active=${afterQuickFind.active}`, failures);
+  assertState(afterQuickFind.scrollY <= 180, `CPT quick-find scrolled too far down; scrollY=${afterQuickFind.scrollY}`, failures);
 
   await page.locator('.workspace-left-rail').getByRole('button', { name: /Review Draft/i }).first().click();
   await page.waitForTimeout(700);
@@ -303,6 +313,7 @@ async function runLaptopRailScenario(browser) {
     passed: failures.length === 0,
     failures,
     initial,
+    afterQuickFind,
     afterReview,
     afterSource,
   };
@@ -342,6 +353,7 @@ async function runCompactScenario(browser) {
   assertState(Boolean(initial.rail), 'compact rail did not render', failures);
   assertState(initial.scrollY <= 24, `compact workspace did not start near top; scrollY=${initial.scrollY}`, failures);
   assertState(await page.locator('.workspace-left-rail').getByRole('button', { name: /Paste Source/i }).first().isVisible().catch(() => false), 'compact rail primary action was not visible', failures);
+  assertState(await page.getByTestId('workspace-quick-find-input').isVisible().catch(() => false), 'compact rail quick-find input was not visible', failures);
 
   await context.close();
   return {

@@ -117,6 +117,15 @@ const PROVIDER_ROLE_OPTIONS = [
 
 const SPECIALTY_OPTIONS = Object.keys(noteTypeOptionsBySpecialty);
 
+type WorkspaceQuickFindItem = {
+  id: string;
+  label: string;
+  helper: string;
+  keywords: string[];
+  disabled?: boolean;
+  action: () => void;
+};
+
 function defaultRoleForSpecialty(specialty: string) {
   switch (specialty) {
     case 'Social Work':
@@ -1038,6 +1047,8 @@ export function NewNoteForm() {
   const [sessionSnapshotPanel, setSessionSnapshotPanel] = useState<'setup' | 'site-presets' | 'destination-fit' | null>(null);
   const [workflowStage, setWorkflowStage] = useState<'compose' | 'review'>('compose');
   const [activeComposeLane, setActiveComposeLane] = useState<DraftComposeLane>('source');
+  const [workspaceFindQuery, setWorkspaceFindQuery] = useState('');
+  const [workspaceFindFocused, setWorkspaceFindFocused] = useState(false);
   const [generatedSession, setGeneratedSession] = useState<DraftSession | null>(null);
   const [draftCheckpoint, setDraftCheckpoint] = useState<DraftSession | null>(null);
   const [draftCheckpointStatus, setDraftCheckpointStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -3753,6 +3764,23 @@ export function NewNoteForm() {
     );
   }
 
+  function openCaptureOption(mode: 'dictation' | 'transcript') {
+    if (sourceWorkspaceMode !== mode) {
+      handleSourceWorkspaceModeChange(mode);
+    }
+
+    if (mode === 'dictation') {
+      setActiveSourceTab('clinicianNotes');
+      scrollToTopDictationControls();
+      setEvalBanner('Dictation lane opened. Choose the target source section, then start provider voice capture.');
+      return;
+    }
+
+    setActiveSourceTab('patientTranscript');
+    scrollToComposeLane('source');
+    setEvalBanner('Ambient listening lane opened. Use the Ambient Transcript field for encounter dialogue and spoken-session material.');
+  }
+
   function scrollToTopDictationControls() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -4470,6 +4498,140 @@ export function NewNoteForm() {
       title: hasGeneratedDraft ? `Ask ${assistantPersona.name} for finish-readiness issues.` : 'MSE detail review is available after a draft exists.',
     },
   ];
+  const workspaceQuickFindItems = useMemo<WorkspaceQuickFindItem[]>(() => [
+    {
+      id: 'paste-source',
+      label: 'Paste Source',
+      helper: 'Jump to Pre-Visit Data / Paste Source Here.',
+      keywords: ['source', 'paste', 'previsit', 'pre-visit', 'intake', 'labs', 'nursing', 'collateral', 'raw data'],
+      action: handlePasteSourceJump,
+    },
+    {
+      id: 'source-documents',
+      label: 'Source Documents',
+      helper: 'Load outside records, OCR text, referrals, or ER packets.',
+      keywords: ['document', 'documents', 'upload', 'ocr', 'pdf', 'er', 'referral', 'outside record', 'scan'],
+      action: handleDocumentSourceJump,
+    },
+    {
+      id: 'dictation',
+      label: 'Dictation',
+      helper: 'Open provider voice capture controls.',
+      keywords: ['dictation', 'voice', 'mic', 'microphone', 'speak', 'audio'],
+      action: () => openCaptureOption('dictation'),
+    },
+    {
+      id: 'ambient',
+      label: 'Ambient Listening',
+      helper: 'Open the ambient transcript lane.',
+      keywords: ['ambient', 'listening', 'transcript', 'patient dialogue', 'conversation', 'session'],
+      action: () => openCaptureOption('transcript'),
+    },
+    {
+      id: 'generate-draft',
+      label: 'Generate Draft',
+      helper: sourceCompletionCount ? 'Generate a draft from the source packet.' : 'Add source first, then generate a draft.',
+      keywords: ['generate', 'draft', 'create note', 'make note', 'build note'],
+      disabled: isLoading || sourceCompletionCount === 0,
+      action: () => {
+        scrollToDraftControls();
+        void handleGenerate();
+      },
+    },
+    {
+      id: 'review-draft',
+      label: 'Review Draft',
+      helper: 'Jump to draft review, copy/export, Atlas review, and finish controls.',
+      keywords: ['review', 'finish', 'copy', 'export', 'complete', 'final', 'sign'],
+      action: scrollToDraftControls,
+    },
+    {
+      id: 'cpt-support',
+      label: 'CPT Support',
+      helper: 'Find post-note coding-support candidates after a draft exists.',
+      keywords: ['cpt', 'billing', 'code', 'coding', '90833', '99214', 'claim'],
+      action: () => {
+        scrollToDraftControls();
+        setEvalBanner(
+          hasGeneratedDraft
+            ? 'CPT support appears in Review Draft after generation. Treat candidates as coding-support only.'
+            : 'Generate a draft first. CPT support appears after note completion and stays non-final billing guidance.',
+        );
+      },
+    },
+    {
+      id: 'my-note-prompt',
+      label: 'My Note Prompt',
+      helper: 'Edit reusable provider instructions for this note type.',
+      keywords: ['prompt', 'instruction', 'custom', 'template', 'preset', 'my note prompt'],
+      action: scrollToMyNotePrompt,
+    },
+    {
+      id: 'ehr-preferences',
+      label: 'EHR / Output Preferences',
+      helper: 'Change EHR target, field formatting, and copy/paste destination rules.',
+      keywords: ['ehr', 'wellsky', 'tebra', 'simplepractice', 'output', 'preferences', 'copy paste', 'destination'],
+      action: scrollToOutputPreferences,
+    },
+    {
+      id: 'role-field-note',
+      label: 'Role, Field, Note Type',
+      helper: 'Change provider role, specialty, EHR, or note type.',
+      keywords: ['role', 'field', 'specialty', 'note type', 'psychiatry', 'therapy', 'provider', 'setup'],
+      action: scrollToNoteLaneSetup,
+    },
+    {
+      id: 'optional-support',
+      label: 'Optional Support',
+      helper: 'Open medication, diagnosis, MSE, risk, and encounter-support helpers.',
+      keywords: ['optional', 'support', 'mse', 'risk', 'medication', 'diagnosis', 'encounter', 'medical necessity'],
+      action: () => scrollToComposeLane('support'),
+    },
+    {
+      id: 'assistant',
+      label: `Ask ${assistantPersona.name}`,
+      helper: 'Open the assistant for workflow or clinical-reference questions.',
+      keywords: ['assistant', 'atlas', 'ask', 'question', 'help', 'vera'],
+      action: openAtlasAssistant,
+    },
+    {
+      id: 'saved-drafts',
+      label: 'Saved Drafts',
+      helper: 'Open the saved drafts page.',
+      keywords: ['saved', 'drafts', 'recover', 'history', 'old note'],
+      action: () => router.push('/dashboard/drafts'),
+    },
+    {
+      id: 'deep-review',
+      label: 'Deep Review Screen',
+      helper: 'Open the separate review workspace.',
+      keywords: ['deep review', 'review screen', 'separate review', 'full review'],
+      action: () => router.push('/dashboard/review'),
+    },
+  ], [
+    assistantPersona.name,
+    hasGeneratedDraft,
+    isLoading,
+    router,
+    sourceCompletionCount,
+  ]);
+  const workspaceFindTerms = workspaceFindQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const workspaceQuickFindResults = workspaceFindTerms.length
+    ? workspaceQuickFindItems.filter((item) => {
+      const haystack = [item.label, item.helper, ...item.keywords].join(' ').toLowerCase();
+      return workspaceFindTerms.every((term) => haystack.includes(term));
+    }).slice(0, 5)
+    : workspaceQuickFindItems.slice(0, 4);
+
+  function runWorkspaceQuickFind(item: WorkspaceQuickFindItem) {
+    if (item.disabled) {
+      return;
+    }
+
+    item.action();
+    setWorkspaceFindQuery('');
+    setWorkspaceFindFocused(false);
+  }
 
   if (!draftHydrationComplete) {
     return (
@@ -4611,6 +4773,56 @@ export function NewNoteForm() {
 	          <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-100/54">Veranote</div>
           <div className="mt-1 text-lg font-semibold leading-tight tracking-[-0.03em] text-white">Provider path</div>
           <p className="mt-1 text-xs leading-5 text-cyan-50/60">Workspace first. Draft recovery always nearby.</p>
+	        </div>
+
+	        <div className="workspace-rail-search" data-testid="workspace-quick-find">
+	          <label htmlFor="workspace-quick-find-input">Find in workspace</label>
+	          <input
+	            id="workspace-quick-find-input"
+	            data-testid="workspace-quick-find-input"
+	            type="search"
+	            value={workspaceFindQuery}
+	            onChange={(event) => setWorkspaceFindQuery(event.target.value)}
+	            onFocus={() => setWorkspaceFindFocused(true)}
+	            onKeyDown={(event) => {
+	              if (event.key === 'Escape') {
+	                setWorkspaceFindQuery('');
+	                setWorkspaceFindFocused(false);
+	              }
+	              if (event.key === 'Enter' && workspaceQuickFindResults[0] && !workspaceQuickFindResults[0].disabled) {
+	                event.preventDefault();
+	                runWorkspaceQuickFind(workspaceQuickFindResults[0]);
+	              }
+	            }}
+	            placeholder="Try CPT, prompt, EHR, ambient..."
+	            aria-label="Find in workspace"
+	          />
+	          {workspaceFindFocused || workspaceFindQuery.trim() ? (
+	            <div className="workspace-rail-search-results">
+	              {workspaceQuickFindResults.length ? (
+	                workspaceQuickFindResults.map((item) => (
+	                  <button
+	                    key={item.id}
+	                    type="button"
+	                    data-testid="workspace-quick-find-result"
+	                    onMouseDown={(event) => event.preventDefault()}
+	                    onClick={() => runWorkspaceQuickFind(item)}
+	                    disabled={item.disabled}
+	                    className="workspace-rail-search-result"
+	                  >
+	                    <span>{item.label}</span>
+	                    <small>{item.helper}</small>
+	                  </button>
+	                ))
+	              ) : (
+	                <div className="workspace-rail-search-empty">
+	                  No match yet. Try CPT, prompt, MSE, EHR, ambient, export, or saved.
+	                </div>
+	              )}
+	            </div>
+	          ) : (
+	            <div className="workspace-rail-search-hint">Search obscure actions fast: CPT, prompt, MSE, export.</div>
+	          )}
 	        </div>
 
 	        <div className="grid gap-2">
