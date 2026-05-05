@@ -996,6 +996,315 @@ function buildRequestedRevisionHelp(normalizedMessage: string, rawMessage: strin
   };
 }
 
+type DraftFormatKind =
+  | 'one-paragraph'
+  | 'shorter'
+  | 'longer'
+  | 'narrative'
+  | 'two-paragraph-hpi-mse-plan';
+
+type DraftFormatRequest = {
+  kind: DraftFormatKind;
+  label: string;
+};
+
+function classifyDraftFormatRequest(message: string): DraftFormatRequest | null {
+  const normalized = normalizeMessageForClinicalRouting(message)
+    .replace(/\bparagraf\b/g, 'paragraph')
+    .replace(/\bparagrph\b/g, 'paragraph')
+    .replace(/\bparagaph\b/g, 'paragraph');
+
+  const hasDraftAnchor = /\b(note|draft|follow[-\s]?up|progress note|hpi|mse|plan|this|it)\b/.test(normalized);
+  const hasRewriteVerb = /\b(make|turn|convert|change|format|rewrite|put|collapse|flow|split)\b/.test(normalized);
+  if (!hasDraftAnchor || !hasRewriteVerb) {
+    return null;
+  }
+
+  if (
+    /\bhpi\b.*\b(first|1st)\s+paragraph\b.*\b(mse|mental status|plan)\b.*\b(second|2nd)\s+paragraph\b/.test(normalized)
+    || /\b(first|1st)\s+paragraph\b.*\bhpi\b.*\b(second|2nd)\s+paragraph\b.*\b(mse|mental status|plan)\b/.test(normalized)
+    || /\bhpi\b.*\bparagraph\b.*\bmse\b.*\bplan\b/.test(normalized)
+  ) {
+    return {
+      kind: 'two-paragraph-hpi-mse-plan',
+      label: 'two-paragraph HPI/MSE/Plan format',
+    };
+  }
+
+  const asksForParagraph = /\b(one|single|1)\s+paragraph\b/.test(normalized)
+    || /\bparagraph form\b/.test(normalized)
+    || /\bno sections?\b/.test(normalized)
+    || /\binstead of sections?\b/.test(normalized);
+  if (asksForParagraph) {
+    return {
+      kind: 'one-paragraph',
+      label: 'one-paragraph format',
+    };
+  }
+
+  if (/\b(shorter|more concise|concise|tighten|tighter|less wordy|brief)\b/.test(normalized)) {
+    return {
+      kind: 'shorter',
+      label: 'shorter concise format',
+    };
+  }
+
+  if (/\b(longer|more detail|more details|include more detail|include more details|more complete)\b/.test(normalized)) {
+    return {
+      kind: 'longer',
+      label: 'more detailed format',
+    };
+  }
+
+  if (/\b(flow like a story|like a story|story form|narrative|narrative form|flow better|make it flow)\b/.test(normalized)) {
+    return {
+      kind: 'narrative',
+      label: 'narrative story-flow format',
+    };
+  }
+
+  return null;
+}
+
+function normalizeDraftHeading(value: string) {
+  return value
+    .replace(/^#{1,6}\s*/, '')
+    .replace(/:$/, '')
+    .trim();
+}
+
+function isLikelyDraftHeading(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (/^#{1,6}\s+\S/.test(trimmed)) {
+    return true;
+  }
+
+  if (
+    /^[A-Z][A-Za-z0-9 /&(),'-]{1,60}:$/.test(trimmed)
+    && !/[.!?]$/.test(trimmed.replace(/:$/, ''))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function stripListMarker(line: string) {
+  return line
+    .replace(/^\s*[-*]\s+/, '')
+    .replace(/^\s*\d+[.)]\s+/, '')
+    .trim();
+}
+
+function collapseDraftToOneParagraph(draftText: string) {
+  const chunks: string[] = [];
+  let pendingHeading = '';
+
+  for (const rawLine of draftText.replace(/\r/g, '\n').split('\n')) {
+    const line = rawLine.trim();
+    if (!line || /^```/.test(line)) {
+      continue;
+    }
+
+    if (isLikelyDraftHeading(line)) {
+      pendingHeading = normalizeDraftHeading(line);
+      continue;
+    }
+
+    const inlineHeading = line.match(/^([A-Z][A-Za-z0-9 /&(),'-]{1,60}):\s+(.+)$/);
+    if (inlineHeading && inlineHeading[2]?.trim()) {
+      const heading = normalizeDraftHeading(inlineHeading[1]);
+      chunks.push(`${heading}: ${stripListMarker(inlineHeading[2])}`);
+      pendingHeading = '';
+      continue;
+    }
+
+    const cleaned = stripListMarker(line);
+    if (!cleaned) {
+      continue;
+    }
+
+    if (pendingHeading) {
+      chunks.push(`${pendingHeading}: ${cleaned}`);
+      pendingHeading = '';
+    } else {
+      chunks.push(cleaned);
+    }
+  }
+
+  return chunks
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.;:])/g, '$1')
+    .trim();
+}
+
+function splitDraftIntoNamedSections(draftText: string) {
+  const sections: Array<{ heading: string; text: string }> = [];
+  let currentHeading = 'Draft';
+  let currentLines: string[] = [];
+
+  function flush() {
+    const text = currentLines
+      .map(stripListMarker)
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (text) {
+      sections.push({ heading: currentHeading, text });
+    }
+  }
+
+  for (const rawLine of draftText.replace(/\r/g, '\n').split('\n')) {
+    const line = rawLine.trim();
+    if (!line || /^```/.test(line)) {
+      continue;
+    }
+
+    if (isLikelyDraftHeading(line)) {
+      flush();
+      currentHeading = normalizeDraftHeading(line);
+      currentLines = [];
+      continue;
+    }
+
+    const inlineHeading = line.match(/^([A-Z][A-Za-z0-9 /&(),'-]{1,60}):\s+(.+)$/);
+    if (inlineHeading && inlineHeading[2]?.trim()) {
+      flush();
+      currentHeading = normalizeDraftHeading(inlineHeading[1]);
+      currentLines = [inlineHeading[2]];
+      continue;
+    }
+
+    currentLines.push(line);
+  }
+
+  flush();
+
+  return sections;
+}
+
+function sectionMatches(heading: string, patterns: RegExp[]) {
+  const normalized = normalizeMessageForClinicalRouting(heading);
+  return patterns.some((pattern) => pattern.test(normalized));
+}
+
+function formatDraftAsTwoParagraphs(draftText: string) {
+  const sections = splitDraftIntoNamedSections(draftText);
+  if (!sections.length) {
+    return collapseDraftToOneParagraph(draftText);
+  }
+
+  const firstParagraphSections = sections.filter((section) => sectionMatches(section.heading, [
+    /\bhpi\b/,
+    /\bsubjective\b/,
+    /\binterval\b/,
+    /\bchief\b/,
+    /\bhistory\b/,
+  ]));
+  const secondParagraphSections = sections.filter((section) => sectionMatches(section.heading, [
+    /\bmse\b/,
+    /\bmental status\b/,
+    /\bobjective\b/,
+    /\bassessment\b/,
+    /\bplan\b/,
+  ]));
+  const used = new Set([...firstParagraphSections, ...secondParagraphSections]);
+  const remaining = sections.filter((section) => !used.has(section));
+
+  const first = (firstParagraphSections.length ? firstParagraphSections : remaining.slice(0, Math.ceil(remaining.length / 2)))
+    .map((section) => `${section.heading}: ${section.text}`)
+    .join(' ');
+  const secondBase = secondParagraphSections.length
+    ? secondParagraphSections
+    : remaining.slice(Math.ceil(remaining.length / 2));
+  const second = secondBase
+    .map((section) => `${section.heading}: ${section.text}`)
+    .join(' ');
+
+  return [first, second]
+    .filter(Boolean)
+    .map((paragraph) => paragraph.replace(/\s+/g, ' ').trim())
+    .join('\n\n');
+}
+
+function formatDraftForRequest(draftText: string, request: DraftFormatRequest) {
+  const collapsed = collapseDraftToOneParagraph(draftText);
+
+  switch (request.kind) {
+    case 'two-paragraph-hpi-mse-plan':
+      return formatDraftAsTwoParagraphs(draftText);
+    case 'shorter':
+      return collapsed;
+    case 'longer':
+      return splitDraftIntoNamedSections(draftText)
+        .map((section) => `${section.heading}: ${section.text}`)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim() || collapsed;
+    case 'narrative':
+      return collapsed
+        .replace(/\bSubjective:/g, 'Subjective summary:')
+        .replace(/\bObjective:/g, 'Objective summary:')
+        .replace(/\bAssessment:/g, 'Assessment:')
+        .replace(/\bPlan:/g, 'Plan:');
+    case 'one-paragraph':
+    default:
+      return collapsed;
+  }
+}
+
+function buildDraftFormattingHelp(
+  message: string,
+  context?: AssistantApiContext,
+): AssistantResponsePayload | null {
+  const formatRequest = classifyDraftFormatRequest(message);
+  if (!formatRequest) {
+    return null;
+  }
+
+  const currentDraft = context?.currentDraftText?.trim();
+  const noteLabel = context?.noteType || 'note';
+
+  if (!currentDraft) {
+    return null;
+  }
+
+  const formattedDraft = formatDraftForRequest(currentDraft, formatRequest);
+  if (!formattedDraft) {
+    return {
+      message: `I found the draft, but there was not enough visible note text to safely collapse into one paragraph. Open the draft text or paste the section you want reformatted.`,
+      suggestions: [
+        'This is a writing-shape request, not an MSE or clinical-safety re-review.',
+      ],
+      answerMode: 'workflow_guidance',
+      builderFamily: 'workflow',
+    };
+  }
+
+  const visibleDraft = formattedDraft.length > 3200
+    ? `${formattedDraft.slice(0, 3200).replace(/\s+\S*$/, '')}...`
+    : formattedDraft;
+
+  return {
+    message: `Yes. Here is the current ${noteLabel} rewritten in ${formatRequest.label} without adding new facts:\n\n${visibleDraft}`,
+    suggestions: [
+      'Review once for source fidelity before copying forward.',
+      'I treated this as writing shape only, not a new MSE checklist.',
+      'You can ask for another shape: shorter, longer, story flow, or two paragraphs.',
+      ...(formattedDraft.length > visibleDraft.length ? ['The visible draft was long, so this response shows the first portion available to the assistant.'] : []),
+    ],
+    answerMode: 'chart_ready_wording',
+    builderFamily: 'chart-wording',
+  };
+}
+
 function buildWorkflowHelp(stage: AssistantStage, context?: AssistantApiContext): AssistantResponsePayload {
   const noteLine = context?.noteType ? ` for ${context.noteType}` : '';
   const destinationLine = context?.outputDestination && context.outputDestination !== 'Generic'
@@ -3006,6 +3315,52 @@ export async function POST(request: Request) {
     const [sanitizedMessage, sanitizedEffectiveMessage, sanitizedSourceText, sanitizedDraftText] = sanitizedTexts;
     const assistantMessageForRouting = normalizeVisibleClinicalTyposForRouting(atlasConversation.didRewrite ? sanitizedEffectiveMessage : sanitizedMessage);
     const providerId = resolveAssistantProviderId(body.context, authenticatedProviderId);
+    const oneParagraphFormatPayload = buildDraftFormattingHelp(assistantMessageForRouting, {
+      ...body.context,
+      currentDraftText: sanitizedDraftText,
+    });
+    if (oneParagraphFormatPayload) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const rehydratedFormatPayload = rehydrateAssistantPayload(oneParagraphFormatPayload, phiEntities);
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'draft_support',
+          answerMode: rehydratedFormatPayload.answerMode || 'chart_ready_wording',
+          builderFamily: rehydratedFormatPayload.builderFamily || 'chart-wording',
+          routePriority: 'note-format-draft-shape',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...rehydratedFormatPayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: rehydratedFormatPayload.message,
+            warnings: [],
+            knowledgeIntent: 'draft_support',
+            answerMode: rehydratedFormatPayload.answerMode,
+            builderFamily: rehydratedFormatPayload.builderFamily,
+            routePriority: 'note-format-draft-shape',
+          },
+        } : {}),
+      });
+    }
     const directClinicalTermKnowledgePayload = looksLikeDirectClinicalTermDefinitionQuestion(assistantMessageForRouting)
       ? buildGeneralKnowledgeHelp(assistantMessageForRouting, body.context, body.recentMessages)
       : null;

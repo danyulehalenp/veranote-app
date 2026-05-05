@@ -3314,8 +3314,8 @@ export function ReviewWorkspace({
       <section className="workspace-panel workspace-shine rounded-[30px] p-5 shadow-[0_28px_70px_rgba(2,8,18,0.34)]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Review cockpit</div>
-            <h2 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.03em] text-white">Draft note</h2>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Draft</div>
+            <h2 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.03em] text-white">Draft</h2>
             <p className="mt-1 max-w-2xl text-sm text-cyan-50/70">Edit first. Keep only the facts, uncertainty, and timing the source really supports.</p>
           </div>
           <div className="flex flex-wrap gap-2">

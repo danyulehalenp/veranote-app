@@ -959,7 +959,7 @@ export const AssistantPanel = memo(function AssistantPanel({
     [activeReferenceQuery, mode],
   );
   useEffect(() => {
-    setShowFollowupIdeas(latestAssistantSuggestions.length > 0);
+    setShowFollowupIdeas(false);
   }, [latestAssistantMessage?.id, latestAssistantSuggestions.length]);
 
   const isReviewMode = stage === 'review';
@@ -1219,6 +1219,67 @@ export const AssistantPanel = memo(function AssistantPanel({
     ));
   }
 
+  function renderAssistantOptionsBlock() {
+    if (!latestAssistantSuggestions.length && !actions.length) {
+      return null;
+    }
+
+    return (
+      <div className="shrink-0 border-b border-cyan-200/10 bg-[rgba(5,14,25,0.72)] px-2.5 py-2.5">
+        <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(8,20,34,0.62)] px-3 py-2.5 shadow-[0_10px_26px_rgba(4,12,24,0.12)]">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/70">Optional follow-ups</div>
+              <div className="mt-0.5 text-[11px] leading-5 text-cyan-50/58">
+                Hidden by default so the chat stays readable.
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {latestAssistantSuggestions.length ? (
+                <button
+                  type="button"
+                  onClick={() => setShowFollowupIdeas((current) => !current)}
+                  className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                >
+                  {showFollowupIdeas ? 'Hide follow-ups' : `Follow-ups (${latestAssistantSuggestions.length})`}
+                </button>
+              ) : null}
+              {actions.length ? (
+                <button
+                  type="button"
+                  onClick={() => setShowSuggestions((current) => !current)}
+                  className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
+                >
+                  {showSuggestions ? 'Hide actions' : `Actions (${actions.length})`}
+                </button>
+              ) : null}
+            </div>
+          </div>
+          {showFollowupIdeas && latestAssistantSuggestions.length ? (
+            <div className="mt-2 flex max-h-[92px] flex-wrap gap-2 overflow-y-auto pr-1">
+              {latestAssistantSuggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => void sendMessage(suggestion)}
+                  className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.11)] px-3 py-1.5 text-left text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.17)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {showSuggestions && actions.length ? (
+            <div className="mt-3 max-h-[210px] space-y-2 overflow-y-auto pr-1">
+              {renderAvailableActions()}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   if (isMinimized) {
     return (
       <div className="flex h-full min-h-0 flex-col">
@@ -1381,6 +1442,7 @@ export const AssistantPanel = memo(function AssistantPanel({
           data-testid="assistant-conversation-box"
           className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] border border-cyan-200/12 bg-[linear-gradient(180deg,rgba(6,15,27,0.9),rgba(4,12,24,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
         >
+          {renderAssistantOptionsBlock()}
           <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 pr-1">
           <div className="flex min-h-full flex-col gap-3">
             <div className="min-h-[320px] flex-1">
@@ -1919,58 +1981,6 @@ export const AssistantPanel = memo(function AssistantPanel({
         </div>
 
         <div className="shrink-0 border-t border-cyan-200/10 bg-[rgba(5,14,25,0.86)] px-2.5 py-2.5">
-          {latestAssistantSuggestions.length || actions.length ? (
-            <div className="mb-2 rounded-[16px] border border-cyan-200/10 bg-[rgba(8,20,34,0.62)] px-3 py-2.5 shadow-[0_-10px_26px_rgba(4,12,24,0.16)]">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/70">Assistant options</div>
-                  <div className="mt-0.5 text-[11px] leading-5 text-cyan-50/58">
-                    Suggestions and action cards stay outside the chat so the conversation reads normally.
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {latestAssistantSuggestions.length ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowFollowupIdeas((current) => !current)}
-                      className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-                    >
-                      {showFollowupIdeas ? 'Hide follow-ups' : `Follow-ups (${latestAssistantSuggestions.length})`}
-                    </button>
-                  ) : null}
-                  {actions.length ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowSuggestions((current) => !current)}
-                      className="rounded-full border border-cyan-200/12 bg-[rgba(13,30,50,0.74)] px-3 py-1.5 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.12)]"
-                    >
-                      {showSuggestions ? 'Hide actions' : `Actions (${actions.length})`}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-              {showFollowupIdeas && latestAssistantSuggestions.length ? (
-                <div className="mt-2 flex max-h-[92px] flex-wrap gap-2 overflow-y-auto pr-1">
-                  {latestAssistantSuggestions.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      type="button"
-                      disabled={isLoading}
-                      onClick={() => void sendMessage(suggestion)}
-                      className="rounded-full border border-cyan-200/12 bg-[rgba(18,181,208,0.11)] px-3 py-1.5 text-left text-xs font-medium text-cyan-50 transition hover:border-cyan-200/24 hover:bg-[rgba(18,181,208,0.17)] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              {showSuggestions && actions.length ? (
-                <div className="mt-3 max-h-[210px] space-y-2 overflow-y-auto pr-1">
-                  {renderAvailableActions()}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
           <Composer disabled={isLoading} placeholder={composerPlaceholder} onSend={handleComposerSend} compact />
         </div>
       </div>

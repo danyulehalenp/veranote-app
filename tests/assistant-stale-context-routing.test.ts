@@ -165,4 +165,91 @@ describe('assistant stale-context routing', () => {
     expect(payload.answerMode).not.toBe('medication_reference_answer');
     expect(payload.message).not.toContain('aripiprazole is an antipsychotic');
   });
+
+  it('formats the active draft into one paragraph instead of reusing stale MSE checklist context', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'For follow up note, instead of sections, make it into one paragraph.',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Inpatient Psych Follow Up Note',
+          focusedSectionHeading: 'MSE',
+          currentDraftText: [
+            'Subjective:',
+            'Patient reports mood is depressed and sleep remains poor. Patient denies current intent.',
+            '',
+            'Objective:',
+            'Patient was observed withdrawn on the unit.',
+            '',
+            'Assessment:',
+            'Depressive symptoms remain active with ongoing monitoring needs.',
+            '',
+            'Plan:',
+            'Continue current safety monitoring and reassess after collateral is reviewed.',
+          ].join('\n'),
+        },
+        recentMessages: [
+          {
+            role: 'provider',
+            content: 'The source only supports mood depressed, hopelessness, SI, and poor insight. What MSE domains should remain unfilled?',
+          },
+          {
+            role: 'assistant',
+            content: 'Source-supported MSE findings remain limited. Leave missing domains unfilled.',
+            answerMode: 'mse_completion_limits',
+            builderFamily: 'mse',
+          },
+        ],
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.answerMode).toBe('chart_ready_wording');
+    expect(payload.builderFamily).toBe('chart-wording');
+    expect(payload.message).toContain('one-paragraph format');
+    expect(payload.message).toContain('Subjective: Patient reports mood is depressed');
+    expect(payload.message).toContain('Objective: Patient was observed withdrawn');
+    expect(payload.message).toContain('Plan: Continue current safety monitoring');
+    expect(payload.message).not.toContain('Source-supported MSE findings');
+    expect(payload.message).not.toContain('Leave these domains unfilled');
+  });
+
+  it('supports two-paragraph HPI plus MSE/plan draft shape requests', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'Make HPI in first paragraph and MSE and plan in second paragraph.',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports anxiety improved since last visit but sleep remains fragmented.',
+            '',
+            'MSE:',
+            'Mood anxious, affect congruent, thought process linear.',
+            '',
+            'Plan:',
+            'Continue current therapy plan and follow up as scheduled.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.message).toContain('two-paragraph HPI/MSE/Plan format');
+    expect(payload.message).toContain('HPI: Patient reports anxiety improved');
+    expect(payload.message).toContain('\n\nMSE: Mood anxious');
+    expect(payload.message).toContain('Plan: Continue current therapy plan');
+    expect(payload.message).not.toContain('Source-supported MSE findings');
+  });
 });
