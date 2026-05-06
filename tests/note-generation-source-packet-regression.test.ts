@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildSourceInputFromSections } from '@/lib/ai/source-sections';
+import { evaluateClinicianNoteQualitySweep } from '@/lib/eval/note-generation/clinician-note-quality-sweep';
 import {
   runSourcePacketNoteGenerationRegression,
   sourcePacketRegressionCases,
@@ -25,5 +26,20 @@ describe('note generation source-packet regression', () => {
     expect(report.total).toBe(sourcePacketRegressionCases.length);
     expect(report.failed, JSON.stringify(report.cases.filter((item) => !item.passed), null, 2)).toBe(0);
     expect(report.cases.every((item) => item.mode === 'live')).toBe(true);
+
+    const clinicianSweep = evaluateClinicianNoteQualitySweep(report);
+    expect(clinicianSweep.failed, JSON.stringify(clinicianSweep.cases.filter((item) => !item.passed), null, 2)).toBe(0);
+    expect(clinicianSweep.areasCovered).toEqual(expect.arrayContaining([
+      'risk-wording',
+      'source-conflict',
+      'medication-reconciliation',
+      'document-intake',
+      'ehr-formatting',
+      'therapy',
+      'medical-psych-overlap',
+      'social-work',
+      'substance-use',
+      'cpt-provider-add-on',
+    ]));
   }, 900_000);
 });

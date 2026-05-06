@@ -41,6 +41,7 @@ export type SourcePacketRegressionCaseResult = {
   qualityScore: number;
   qualityFindings: string[];
   qualityBlockingFindings: string[];
+  noteLength: number;
   noteExcerpt: string;
   flagCount: number;
 };
@@ -1206,6 +1207,8 @@ export function evaluateSourcePacketRegressionCase(
     `${finding.category}:${finding.message}`
   ));
 
+  const normalizedNote = note.replace(/\s+/g, ' ').trim();
+
   return {
     id: item.id,
     title: item.title,
@@ -1218,7 +1221,8 @@ export function evaluateSourcePacketRegressionCase(
     qualityScore: qualityAudit.score,
     qualityFindings,
     qualityBlockingFindings,
-    noteExcerpt: note.replace(/\s+/g, ' ').trim().slice(0, 900),
+    noteLength: normalizedNote.length,
+    noteExcerpt: normalizedNote.slice(0, 900),
     flagCount,
   };
 }

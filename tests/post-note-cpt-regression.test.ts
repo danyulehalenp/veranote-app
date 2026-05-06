@@ -7,7 +7,7 @@ import {
 
 describe('post-note CPT recommendation regression', () => {
   it('keeps a broad bank of completed-note CPT support scenarios', () => {
-    expect(postNoteCptRegressionCases.length).toBeGreaterThanOrEqual(9);
+    expect(postNoteCptRegressionCases.length).toBeGreaterThanOrEqual(10);
 
     const caseText = postNoteCptRegressionCases.map((item) => [
       item.noteType,
@@ -22,6 +22,7 @@ describe('post-note CPT recommendation regression', () => {
     expect(caseText).toMatch(/Telehealth/i);
     expect(caseText).toMatch(/Interactive complexity/i);
     expect(caseText).toMatch(/Psycotherpay/i);
+    expect(caseText).toMatch(/too thin|doing okay/i);
   });
 
   it('recommends only conservative CPT-support candidate families from completed notes', () => {

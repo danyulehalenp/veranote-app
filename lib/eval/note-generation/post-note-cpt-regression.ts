@@ -182,6 +182,22 @@ export const postNoteCptRegressionCases: PostNoteCptRegressionCase[] = [
     requiredText: [/Interactive complexity/i, /Treat this as a coding-review candidate/i],
     forbiddenText: [/automatically pair/i, /guaranteed/i],
   },
+  {
+    id: 'thin-completed-note-no-family-forcing',
+    title: 'Thin completed note does not force a CPT-support family',
+    noteType: 'Outpatient Psych Follow-Up',
+    completedNoteText: 'Follow-up completed. Patient doing okay.',
+    expectedCandidates: [],
+    forbiddenCandidates: [
+      { family: 'Office / outpatient E/M family' },
+      { family: 'Psychotherapy add-on with E/M family' },
+      { family: 'Psychotherapy-only family' },
+      { family: 'Psychotherapy for crisis family' },
+      { family: 'Interactive complexity add-on review' },
+    ],
+    requiredText: [/too thin for meaningful CPT-support candidates/i, /Encounter family is not clear/i],
+    forbiddenText: [/stronger-documentation-support/i, /bill this code/i, /guaranteed/i],
+  },
 ];
 
 function stringifyAssessment(assessment: PostNoteCptRecommendationAssessment) {

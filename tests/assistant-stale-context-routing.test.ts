@@ -223,6 +223,41 @@ describe('assistant stale-context routing', () => {
     expect(payload.actions?.[0]?.rewriteLabel).toBe('one-paragraph format');
   });
 
+  it('handles the plain provider command make the note into one paragraph', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'make the note into one paragraph',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports mood is improving but anxiety remains elevated at work.',
+            '',
+            'MSE:',
+            'Mood anxious; thought process goal directed.',
+            '',
+            'Plan:',
+            'Continue source-supported follow-up plan and review tolerability next visit.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.answerMode).toBe('chart_ready_wording');
+    expect(payload.message).toContain('one-paragraph format');
+    expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
+    expect(payload.actions?.[0]?.draftText).toContain('HPI: Patient reports mood is improving');
+    expect(payload.actions?.[0]?.draftText).toContain('MSE: Mood anxious');
+    expect(payload.actions?.[0]?.draftText).toContain('Plan: Continue source-supported follow-up plan');
+  });
+
   it('supports two-paragraph HPI plus MSE/plan draft shape requests', async () => {
     const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
       method: 'POST',
@@ -472,6 +507,74 @@ describe('assistant stale-context routing', () => {
     expect(payload.actions?.[0]?.draftText).toContain('Assessment:\nAnxiety symptoms remain partially improved');
     expect(payload.actions?.[0]?.rewriteLabel).toBe('more detailed format');
     expect(payload.message).not.toContain('I do not have a safe Veranote answer');
+  });
+
+  it('preserves risk wording when shortening a draft', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'make it shorter and more concise but keep the risk wording',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Inpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports depression remains present but denies active suicidal intent or plan today.',
+            '',
+            'Risk:',
+            'Passive death-wish language remains documented, and collateral review is still pending.',
+            '',
+            'Plan:',
+            'Continue source-supported safety monitoring and reassess after collateral is reviewed.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.message).toContain('shorter concise format');
+    expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
+    expect(payload.actions?.[0]?.draftText).toMatch(/denies active suicidal intent or plan/i);
+    expect(payload.actions?.[0]?.draftText).toMatch(/passive death-wish/i);
+    expect(payload.actions?.[0]?.draftText).toMatch(/collateral review is still pending/i);
+  });
+
+  it('turns a draft into story flow without adding unsupported facts', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'make it flow like a story but do not add facts',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: [
+            'Subjective:',
+            'Patient reports anxiety is partially improved but still avoids grocery stores.',
+            '',
+            'Objective:',
+            'Affect anxious; speech normal rate.',
+            '',
+            'Plan:',
+            'Continue source-supported follow-up plan.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.message).toContain('narrative story-flow format');
+    expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
+    expect(payload.actions?.[0]?.draftText).toMatch(/anxiety is partially improved/i);
+    expect(payload.actions?.[0]?.draftText).toMatch(/avoids grocery stores/i);
+    expect(payload.actions?.[0]?.draftText).not.toMatch(/father|mother|new medication|dose increased/i);
   });
 
   it('switches focus from draft shaping to a new direct medication question', async () => {

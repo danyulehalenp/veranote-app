@@ -288,6 +288,26 @@ async function runLaptopRailScenario(browser) {
   assertState(await page.getByText(/Dictation can go into any box/i).first().isVisible().catch(() => false), 'source packet did not explain dictation targets across the four boxes', failures);
   assertState(await page.getByText(/consent -> listen -> review transcript -> commit/i).first().isVisible().catch(() => false), 'source packet did not explain ambient consent-to-commit flow', failures);
 
+  const actionCardCount = await page.locator('.workspace-action-card').count();
+  const actionPillCount = await page.locator('.workspace-action-pill').count();
+  const selectCardCount = await page.locator('.workspace-select-card').count();
+  assertState(actionCardCount >= 2, `clickable action cards were not visually marked enough; count=${actionCardCount}`, failures);
+  assertState(actionPillCount >= 2, `clickable workflow pills were not visually marked enough; count=${actionPillCount}`, failures);
+  assertState(selectCardCount >= 4, `dropdown/select cards were not visually marked enough; count=${selectCardCount}`, failures);
+
+  const firstActionCardVisual = await page.locator('.workspace-action-card').first().evaluate((node) => {
+    const style = window.getComputedStyle(node);
+    return {
+      borderColor: style.borderColor,
+      boxShadow: style.boxShadow,
+    };
+  }).catch(() => null);
+  assertState(
+    Boolean(firstActionCardVisual && firstActionCardVisual.borderColor !== 'rgba(0, 0, 0, 0)' && firstActionCardVisual.borderColor !== 'transparent'),
+    `clickable action card did not expose a visible border color: ${JSON.stringify(firstActionCardVisual)}`,
+    failures,
+  );
+
   await page.getByTestId('workspace-quick-find-input').fill('cpt');
   const cptResult = page.getByTestId('workspace-quick-find-result').filter({ hasText: /CPT Support/i });
   assertState(await cptResult.first().isVisible().catch(() => false), 'workspace quick-find did not surface CPT Support for cpt search', failures);
