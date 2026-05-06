@@ -25,6 +25,24 @@ const QA_EMAIL = process.env.LIVE_NOTE_E2E_QA_EMAIL || 'daniel.hale@veranote-bet
 const CASE_ID = process.env.LIVE_NOTE_E2E_CASE_ID || 'typo-heavy-outpatient-followup-preserves-med-adherence-side-effect-nuance';
 const OUTPUT_DIR = process.env.LIVE_NOTE_E2E_OUTPUT_DIR || 'test-results';
 const SHOULD_START_SERVER = process.env.LIVE_NOTE_E2E_START_SERVER !== '0';
+const EXPECTED_GENERATION_MODE = process.env.LIVE_NOTE_E2E_EXPECT_GENERATION_MODE || process.env.LIVE_NOTE_EXPECT_GENERATION_MODE || '';
+const ALLOW_OPENAI_NOT_APPROVED_FALLBACK = process.env.LIVE_NOTE_E2E_ALLOW_APPROVAL_FALLBACK === '1'
+  || process.env.LIVE_NOTE_ALLOW_APPROVAL_FALLBACK === '1';
+
+function getGenerationModeIssue(meta) {
+  const mode = meta?.pathUsed === 'live' ? 'live' : 'fallback';
+  const reason = meta?.reason || 'unknown';
+
+  if (EXPECTED_GENERATION_MODE && mode !== EXPECTED_GENERATION_MODE) {
+    return `expected generation mode ${EXPECTED_GENERATION_MODE} but got ${mode}:${reason}`;
+  }
+
+  if (!ALLOW_OPENAI_NOT_APPROVED_FALLBACK && reason === 'openai_not_approved') {
+    return 'live generation was disabled by approval guard; restart the dev server with VERANOTE_ALLOW_OPENAI=1 or VERANOTE_AI_PROVIDER=openai';
+  }
+
+  return '';
+}
 
 async function readLocalEnvValue(key) {
   if (process.env[key]) {
@@ -697,6 +715,9 @@ async function main() {
     await clickFirstEnabledGenerate(page);
     const generateResponse = await generateResponsePromise;
     const generatePayload = await generateResponse.json();
+    const generationMode = generatePayload.generationMeta?.pathUsed === 'live' ? 'live' : 'fallback';
+    const generationReason = generatePayload.generationMeta?.reason || 'browser-ui';
+    const generationModeIssue = getGenerationModeIssue(generatePayload.generationMeta);
     const draftCreateResponse = await draftCreateResponsePromise;
     const draftCreatePayload = await draftCreateResponse.json().catch(() => ({}));
 
@@ -810,6 +831,9 @@ async function main() {
       checks: {
         sourceEntered: sourceInput.length > 0,
         generateStatus: generateResponse.status(),
+        generationMode,
+        generationReason,
+        generationModeGuard: generationModeIssue || 'none',
         generatedNoteCharacters,
         promptPanelPresent,
         providerPromptInstructionEntered: true,
@@ -842,6 +866,9 @@ async function main() {
       .map(([key]) => key);
     if (report.checks.generateStatus >= 400 || report.checks.draftCreateStatus >= 400 || report.checks.saveDraftStatus >= 400) {
       failedChecks.push('apiStatus');
+    }
+    if (generationModeIssue) {
+      failedChecks.push('generationModeGuard');
     }
 
     await fs.mkdir(OUTPUT_DIR, { recursive: true });

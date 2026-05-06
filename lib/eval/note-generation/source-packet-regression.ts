@@ -1162,7 +1162,7 @@ function loadEvaluationEnv() {
   const localEnvPath = `${runtimePath}/.env.local`;
   try {
     const localEnv = fs.readFileSync(localEnvPath, 'utf8');
-    for (const key of ['OPENAI_API_KEY', 'OPENAI_MODEL']) {
+    for (const key of ['OPENAI_API_KEY', 'OPENAI_MODEL', 'VERANOTE_ALLOW_OPENAI', 'VERANOTE_AI_PROVIDER']) {
       if (process.env[key]) continue;
 
       const match = localEnv.match(new RegExp(`^${key}\\s*=\\s*(.+)$`, 'm'));

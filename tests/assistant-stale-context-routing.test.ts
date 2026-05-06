@@ -514,4 +514,46 @@ describe('assistant stale-context routing', () => {
     expect(payload.message).not.toContain('HPI:');
     expect(payload.actions?.[0]?.type).not.toBe('apply-draft-rewrite');
   });
+
+  it('switches focus from draft shaping to a new interaction question with misspellings', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'can welbutrin be taken with paxel?',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports anxiety is partially improved.',
+            '',
+            'Plan:',
+            'Continue source-supported follow-up plan.',
+          ].join('\n'),
+        },
+        recentMessages: [
+          {
+            role: 'provider',
+            content: 'Make the HPI first paragraph and MSE and plan second paragraph.',
+          },
+          {
+            role: 'assistant',
+            content: 'Here is the current note rewritten with HPI in the first paragraph and MSE/plan in the second paragraph.',
+            answerMode: 'chart_ready_wording',
+          },
+        ],
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.answerMode).toBe('medication_reference_answer');
+    expect(payload.message).toMatch(/bupropion|Wellbutrin/i);
+    expect(payload.message).toMatch(/paroxetine|Paxil|SSRI/i);
+    expect(payload.message).not.toContain('HPI:');
+    expect(payload.message).not.toContain('second paragraph');
+    expect(payload.actions?.[0]?.type).not.toBe('apply-draft-rewrite');
+  });
 });

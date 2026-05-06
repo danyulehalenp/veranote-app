@@ -294,9 +294,17 @@ function removeUnsupportedMedicalStability(note: string, sourceInput: string) {
 function preserveMedicalClearanceUncertainty(note: string, sourceInput: string) {
  const sourceHasUncertainClearance = /\bmed clear\?|medical(?:ly)? clear\?|do not state medically cleared|medical clearance.*(?:pending|unclear|question|not documented)|cbc not (?:visible|visable)|lab sheet not included/i.test(sourceInput);
  if (!sourceHasUncertainClearance) return note;
- if (/\bmedical clearance\b|med clear\?|clearance.{0,80}(?:unclear|question|not established|not documented)|not medically cleared/i.test(note)) return note;
+ const hardenedNote = note
+  .replace(/\bnot medically cleared\b/gi, 'medical clearance is not established from the provided source')
+  .replace(/\bwhether (?:the patient )?(?:is|was )?medically cleared\b/gi, 'whether medical clearance is established')
+  .replace(/\b(?:the patient |patient )?(?:is|was|remains) medically cleared\b/gi, 'medical clearance is not established from the provided source')
+  .replace(/\bcleared for (?:psych|psychiatric admission|psychiatric transfer)\b/gi, 'medical clearance is not established from the provided source');
+ if (/\bmedical clearance\b|med clear\?|clearance.{0,80}(?:unclear|question|not established|not documented)/i.test(hardenedNote)) return hardenedNote;
 
- return `${note.trim()}\n\nMedical Clearance / Source Limitation:\nMedical clearance is not established from the provided source; the transfer note included \"med clear?\" and source documentation is incomplete.`;
+ const sourceLimitation = /\bmed clear\?|medical(?:ly)? clear\?/i.test(sourceInput)
+  ? 'Medical clearance is not established from the provided source; the transfer note includes questioned clearance wording and source documentation is incomplete.'
+  : 'Medical clearance is not established from the provided source; final clearance wording is absent, pending, or not documented in the provided material.';
+ return `${hardenedNote.trim()}\n\nMedical Clearance / Source Limitation:\n${sourceLimitation}`;
 }
 
 function hardenSourceBoundRiskWording(note: string, sourceInput: string) {

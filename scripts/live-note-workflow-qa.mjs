@@ -25,6 +25,23 @@ const CASE_IDS = (process.env.LIVE_NOTE_WORKFLOW_CASE_IDS || '')
   .filter(Boolean);
 const LIMIT = process.env.LIVE_NOTE_WORKFLOW_LIMIT || '3';
 const OUTPUT_DIR = process.env.LIVE_NOTE_WORKFLOW_OUTPUT_DIR || 'test-results';
+const EXPECTED_GENERATION_MODE = process.env.LIVE_NOTE_EXPECT_GENERATION_MODE || '';
+const ALLOW_OPENAI_NOT_APPROVED_FALLBACK = process.env.LIVE_NOTE_ALLOW_APPROVAL_FALLBACK === '1';
+
+function getGenerationModeIssue(meta) {
+  const mode = meta?.pathUsed === 'live' ? 'live' : 'fallback';
+  const reason = meta?.reason || 'unknown';
+
+  if (EXPECTED_GENERATION_MODE && mode !== EXPECTED_GENERATION_MODE) {
+    return `expected generation mode ${EXPECTED_GENERATION_MODE} but got ${mode}:${reason}`;
+  }
+
+  if (!ALLOW_OPENAI_NOT_APPROVED_FALLBACK && reason === 'openai_not_approved') {
+    return 'live generation was disabled by approval guard; restart the dev server with VERANOTE_ALLOW_OPENAI=1 or VERANOTE_AI_PROVIDER=openai';
+  }
+
+  return '';
+}
 
 async function readLocalEnvValue(key) {
   if (process.env[key]) {
@@ -236,11 +253,24 @@ async function main() {
     const payload = await response.json();
     const uiNote = await latestVisibleDraftText(page, payload.note || '');
     const sourceInput = buildSourceInputFromSections(item.sourceSections);
-    const result = evaluateSourcePacketRegressionCase(item, uiNote, payload.generationMeta?.pathUsed === 'live' ? 'live' : 'fallback', payload.generationMeta?.reason || 'browser-ui', Array.isArray(payload.flags) ? payload.flags.length : 0);
+    const generationMode = payload.generationMeta?.pathUsed === 'live' ? 'live' : 'fallback';
+    const generationReason = payload.generationMeta?.reason || 'browser-ui';
+    const generationModeIssue = getGenerationModeIssue(payload.generationMeta);
+    const result = evaluateSourcePacketRegressionCase(
+      item,
+      uiNote,
+      generationMode,
+      generationReason,
+      Array.isArray(payload.flags) ? payload.flags.length : 0,
+    );
 
     results.push({
       ...result,
+      passed: result.passed && !generationModeIssue,
       status: response.status(),
+      generationMode,
+      generationReason,
+      generationModeIssue,
       sourceCharacters: sourceInput.length,
       noteCharacters: uiNote.length,
       browserUrl: page.url(),
@@ -275,6 +305,8 @@ async function main() {
       `## ${item.id}`,
       `- Status: ${item.passed ? 'pass' : 'fail'}`,
       `- Note type: ${item.noteType}`,
+      `- Generation: ${item.generationMode}:${item.generationReason}`,
+      `- Generation guard: ${item.generationModeIssue || 'none'}`,
       `- Missing: ${item.missing.length ? item.missing.join('; ') : 'none'}`,
       `- Forbidden hits: ${item.forbiddenHits.length ? item.forbiddenHits.join('; ') : 'none'}`,
       `- Excerpt: ${item.noteExcerpt}`,

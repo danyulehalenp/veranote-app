@@ -13,7 +13,7 @@ import {
 
 describe('note generation EHR and workflow coverage', () => {
   it('keeps source-packet regression broad enough for psych, therapy, medical, and EHR-ready workflows', () => {
-    expect(sourcePacketRegressionCases.length).toBeGreaterThanOrEqual(20);
+    expect(sourcePacketRegressionCases.length).toBeGreaterThanOrEqual(25);
 
     const noteTypes = Array.from(new Set(sourcePacketRegressionCases.map((item) => item.noteType)));
     expect(noteTypes).toEqual(expect.arrayContaining([
@@ -111,5 +111,31 @@ describe('note generation EHR and workflow coverage', () => {
     ].filter(Boolean).join('\n')))).toBe(true);
 
     expect(sourcePacketRegressionCases.some((item) => item.forbidden.some((rule) => /provider add-on|named prompt|CPT/i.test(rule.label)))).toBe(true);
+  });
+
+  it('keeps scanned document and referral packet cases in the protected source bank', () => {
+    const caseText = sourcePacketRegressionCases.map((item) => [
+      item.id,
+      item.title,
+      item.customInstructions,
+      item.sourceSections.intakeCollateral,
+      item.sourceSections.clinicianNotes,
+      item.sourceSections.patientTranscript,
+      item.sourceSections.objectiveData,
+    ].filter(Boolean).join('\n')).join('\n\n');
+
+    expect(caseText).toMatch(/OCR|scanned|ER referral|reviewed outside document|previous provider/i);
+    expect(sourcePacketRegressionCases.some((item) => /ocr|scanned/i.test([
+      item.id,
+      item.title,
+      item.sourceSections.intakeCollateral,
+      item.sourceSections.objectiveData,
+    ].filter(Boolean).join('\n')))).toBe(true);
+    expect(sourcePacketRegressionCases.some((item) => /ER referral|outside document|reviewed document|previous provider/i.test([
+      item.id,
+      item.title,
+      item.sourceSections.intakeCollateral,
+      item.sourceSections.objectiveData,
+    ].filter(Boolean).join('\n')))).toBe(true);
   });
 });
