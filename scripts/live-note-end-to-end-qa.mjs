@@ -447,6 +447,59 @@ async function askVisibleAssistantTurn(page, prompt) {
   };
 }
 
+async function getLongestTextareaValue(page) {
+  return page.evaluate(() => {
+    return Array.from(document.querySelectorAll('textarea'))
+      .map((textarea) => textarea.value || '')
+      .filter(Boolean)
+      .sort((left, right) => right.length - left.length)[0] || '';
+  });
+}
+
+async function applyAssistantOneParagraphRewrite(page) {
+  const beforeDraft = await getLongestTextareaValue(page);
+  const rewriteResult = await askVisibleAssistantTurn(
+    page,
+    'Make the current draft into one paragraph without adding new facts.',
+  );
+
+  const actionToggle = page.getByRole('button', { name: /^Actions \(\d+\)$/ }).first();
+  await actionToggle.waitFor({ state: 'visible', timeout: 15000 });
+  await actionToggle.click();
+
+  const applyButton = page.getByRole('button', { name: /^Apply to Draft$/ }).first();
+  await applyButton.waitFor({ state: 'visible', timeout: 15000 });
+  await applyButton.click();
+
+  await page.getByText(/applied .* rewrite to Draft/i).waitFor({ state: 'visible', timeout: 15000 });
+  await page.waitForFunction(
+    (priorDraft) => {
+      const nextDraft = Array.from(document.querySelectorAll('textarea'))
+        .map((textarea) => textarea.value || '')
+        .filter(Boolean)
+        .sort((left, right) => right.length - left.length)[0] || '';
+
+      return nextDraft.length > 120
+        && nextDraft !== priorDraft
+        && /\b(patient|hpi|subjective|plan|assessment|mse|mood|safety)\b/i.test(nextDraft);
+    },
+    beforeDraft,
+    { timeout: 20000 },
+  );
+
+  const afterDraft = await getLongestTextareaValue(page);
+
+  return {
+    rewriteAnswerCharacters: rewriteResult.answerCharacters,
+    rewriteAnswerVisible: rewriteResult.visibleInViewport,
+    actionVisible: true,
+    draftChanged: Boolean(beforeDraft && afterDraft && beforeDraft !== afterDraft),
+    beforeDraftCharacters: beforeDraft.length,
+    afterDraftCharacters: afterDraft.length,
+    paragraphBreaksAfter: (afterDraft.match(/\n\s*\n/g) || []).length,
+  };
+}
+
 async function approveAllVisibleSections(page) {
   const buttons = page.getByRole('button', { name: /^Approved$/ });
   const count = await buttons.count();
@@ -760,6 +813,10 @@ async function main() {
     if (!assistantResult.answerCharacters || !assistantResult.visibleInViewport) {
       throw new Error('Assistant did not produce a visible workflow answer.');
     }
+    const assistantRewriteResult = await applyAssistantOneParagraphRewrite(page);
+    if (!assistantRewriteResult.draftChanged || !assistantRewriteResult.rewriteAnswerVisible) {
+      throw new Error('Assistant rewrite action did not visibly rewrite the draft.');
+    }
 
     const copyEnabledBeforeApproval = await getFirstVisibleButtonEnabled(page, 'Copy Final Note');
     const approvedSectionClicks = await approveAllVisibleSections(page);
@@ -844,6 +901,13 @@ async function main() {
         postNoteCptGuardrailVisible,
         assistantAnswerCharacters: assistantResult.answerCharacters,
         assistantAnswerVisible: assistantResult.visibleInViewport,
+        assistantRewriteAnswerCharacters: assistantRewriteResult.rewriteAnswerCharacters,
+        assistantRewriteAnswerVisible: assistantRewriteResult.rewriteAnswerVisible,
+        assistantRewriteActionVisible: assistantRewriteResult.actionVisible,
+        assistantRewriteChangedDraft: assistantRewriteResult.draftChanged,
+        assistantRewriteBeforeDraftCharacters: assistantRewriteResult.beforeDraftCharacters,
+        assistantRewriteAfterDraftCharacters: assistantRewriteResult.afterDraftCharacters,
+        assistantRewriteParagraphBreaksAfter: assistantRewriteResult.paragraphBreaksAfter,
         copyBlockedBeforeApproval: !copyEnabledBeforeApproval,
         approvedSectionClicks,
         copyEnabledAfterApproval,
@@ -861,8 +925,11 @@ async function main() {
         .slice(0, 20),
     };
 
+    const zeroAllowedChecks = new Set([
+      'assistantRewriteParagraphBreaksAfter',
+    ]);
     const failedChecks = Object.entries(report.checks)
-      .filter(([, value]) => value === false || value === 0 || value === null)
+      .filter(([key, value]) => value === false || (value === 0 && !zeroAllowedChecks.has(key)) || value === null)
       .map(([key]) => key);
     if (report.checks.generateStatus >= 400 || report.checks.draftCreateStatus >= 400 || report.checks.saveDraftStatus >= 400) {
       failedChecks.push('apiStatus');

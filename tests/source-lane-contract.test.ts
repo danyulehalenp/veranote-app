@@ -96,6 +96,24 @@ describe('source lane and EHR output contract', () => {
     expect(ambientGuide?.detail).toMatch(/not directly in the final note/i);
   });
 
+  it('keeps dictation and ambient as reviewed source handoffs instead of final-note shortcuts', () => {
+    const dictationGuide = SOURCE_CAPTURE_FLOW_GUIDES.find((guide) => guide.id === 'dictation');
+    const ambientGuide = SOURCE_CAPTURE_FLOW_GUIDES.find((guide) => guide.id === 'ambient');
+
+    expect(DICTATION_SOURCE_TARGET_GUIDE.reviewRule).toMatch(/Review inserted dictation text/i);
+    expect(DICTATION_SOURCE_TARGET_GUIDE.providerSummary).toMatch(/Pre-Visit Data/i);
+    expect(DICTATION_SOURCE_TARGET_GUIDE.providerSummary).toMatch(/Live Visit Notes/i);
+    expect(DICTATION_SOURCE_TARGET_GUIDE.providerSummary).toMatch(/Ambient Transcript/i);
+    expect(DICTATION_SOURCE_TARGET_GUIDE.providerSummary).toMatch(/Provider Add-On/i);
+    expect(dictationGuide?.providerAction).toMatch(/selected source box before generating/i);
+
+    expect(AMBIENT_SOURCE_HANDOFF_CONTRACT.readyMessage).toMatch(/commit to the Ambient Transcript source box/i);
+    expect(AMBIENT_SOURCE_HANDOFF_CONTRACT.blockedMessage).toMatch(/speaker\/source review/i);
+    expect(ambientGuide?.providerAction).toMatch(/Review speaker\/source attribution/i);
+    expect(ambientGuide?.targetLaneIds).toEqual(['patientTranscript']);
+    expect(SOURCE_LANE_CONTRACTS.find((lane) => lane.id === 'patientTranscript')?.finalNoteRule).toMatch(/after provider review/i);
+  });
+
   it('keeps direct EHR writeback as a future connector constraint instead of current behavior', () => {
     expect(FUTURE_EHR_WRITEBACK_CONTRACT.notImplementedYet).toBe(true);
     expect(FUTURE_EHR_WRITEBACK_CONTRACT.currentMode).toBe('copy_paste_export_only');
