@@ -31,6 +31,16 @@ export type SourceLaneContract = {
   futureEhrUse: string;
 };
 
+export type SourceCaptureFlowId = 'manual-source' | 'dictation' | 'ambient' | 'generation';
+
+export type SourceCaptureFlowGuide = {
+  id: SourceCaptureFlowId;
+  label: string;
+  detail: string;
+  providerAction: string;
+  targetLaneIds?: readonly SourceLaneId[];
+};
+
 export type EhrOutputReadiness = {
   destination: OutputDestination;
   noteFocus: OutputNoteFocus;
@@ -102,6 +112,74 @@ export const SOURCE_LANE_CONTRACTS: SourceLaneContract[] = [
     futureEhrUse: 'Maps to destination behavior and section-output rules, not to patient chart facts.',
   },
 ];
+
+export const DEFAULT_DICTATION_SOURCE_LANE: SourceLaneId = 'clinicianNotes';
+
+export const DICTATION_SOURCE_TARGET_GUIDE = {
+  defaultLaneId: DEFAULT_DICTATION_SOURCE_LANE,
+  allowedLaneIds: SOURCE_LANE_ORDER,
+  providerSummary: 'Dictation can target Pre-Visit Data, Live Visit Notes, Ambient Transcript, or Provider Add-On.',
+  reviewRule: 'Review inserted dictation text in the selected source box before generating the draft.',
+} as const;
+
+export const AMBIENT_SOURCE_HANDOFF_CONTRACT = {
+  targetLaneId: 'patientTranscript' as SourceLaneId,
+  targetLaneLabel: 'Ambient Transcript',
+  orderedSteps: [
+    { id: 'consent', label: 'Consent' },
+    { id: 'listen', label: 'Listen' },
+    { id: 'review', label: 'Review transcript' },
+    { id: 'commit', label: 'Commit to Ambient Transcript' },
+    { id: 'generate', label: 'Generate draft from source' },
+  ],
+  requiresProviderReview: true,
+  blocksFinalNoteBypass: true,
+  readyMessage: 'Ambient transcript is ready to commit to the Ambient Transcript source box.',
+  blockedMessage: 'Ambient transcript still needs speaker/source review before it can feed note generation.',
+} as const;
+
+export const SOURCE_CAPTURE_FLOW_GUIDES: readonly SourceCaptureFlowGuide[] = [
+  {
+    id: 'manual-source',
+    label: 'Paste source',
+    detail: 'Paste or upload raw ER notes, referrals, labs, nursing intake, and chart review into Pre-Visit Data first.',
+    providerAction: 'Use Pre-Visit Data for copied source material gathered before the encounter.',
+    targetLaneIds: ['intakeCollateral'],
+  },
+  {
+    id: 'dictation',
+    label: 'Dictation',
+    detail: DICTATION_SOURCE_TARGET_GUIDE.providerSummary,
+    providerAction: DICTATION_SOURCE_TARGET_GUIDE.reviewRule,
+    targetLaneIds: SOURCE_LANE_ORDER,
+  },
+  {
+    id: 'ambient',
+    label: 'Ambient',
+    detail: 'Use consent -> listen -> review transcript -> commit. Ambient lands in Ambient Transcript, not directly in the final note.',
+    providerAction: 'Review speaker/source attribution before committing ambient text to source.',
+    targetLaneIds: [AMBIENT_SOURCE_HANDOFF_CONTRACT.targetLaneId],
+  },
+  {
+    id: 'generation',
+    label: 'Generation',
+    detail: 'Generate Draft from Source only after the four source boxes reflect what Veranote should use.',
+    providerAction: 'Generate after source is clean enough to become chart-ready draft material.',
+  },
+] as const;
+
+export const EHR_COPY_PASTE_FORMATTING_CONTRACT = {
+  currentMode: 'copy_paste_export_only',
+  directWritebackSupported: false,
+  wholeNoteCopySupported: true,
+  fieldLevelCopySupported: true,
+  requiredChecks: [
+    'Destination profiles must keep field-level paste targets section-addressable.',
+    'Destination profiles must not claim direct EHR writeback, silent insertion, or certified integration.',
+    'Formatting may adapt headings, paragraphs, spacing, and field order, but must not change clinical meaning.',
+    'Future EHR connectors must be explicit, provider-confirmed, destination-specific, auditable, and separately validated.',
+  ],
+} as const;
 
 export const FUTURE_EHR_WRITEBACK_CONTRACT = {
   status: 'future_design_constraint',

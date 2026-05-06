@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { buildSourceInputFromSections, describePopulatedSourceSections } from '@/lib/ai/source-sections';
 import {
+  AMBIENT_SOURCE_HANDOFF_CONTRACT,
+  DEFAULT_DICTATION_SOURCE_LANE,
+  DICTATION_SOURCE_TARGET_GUIDE,
+  EHR_COPY_PASTE_FORMATTING_CONTRACT,
   FUTURE_EHR_WRITEBACK_CONTRACT,
+  SOURCE_CAPTURE_FLOW_GUIDES,
   SOURCE_LANE_CONTRACTS,
   SOURCE_LANE_ORDER,
   buildEhrOutputReadiness,
@@ -54,15 +59,49 @@ describe('source lane and EHR output contract', () => {
 
   it('allows dictation in every source lane and ambient listening by default only in the ambient lane', () => {
     expect(SOURCE_LANE_CONTRACTS.every((lane) => lane.acceptsDictation)).toBe(true);
+    expect(DEFAULT_DICTATION_SOURCE_LANE).toBe('clinicianNotes');
+    expect(DICTATION_SOURCE_TARGET_GUIDE.allowedLaneIds).toEqual(SOURCE_LANE_ORDER);
+    expect(DICTATION_SOURCE_TARGET_GUIDE.providerSummary).toMatch(/Pre-Visit Data, Live Visit Notes, Ambient Transcript, or Provider Add-On/i);
     expect(SOURCE_LANE_CONTRACTS.filter((lane) => lane.defaultAmbientTarget).map((lane) => lane.id)).toEqual([
       'patientTranscript',
     ]);
+  });
+
+  it('keeps ambient listening as consent, listen, review, then commit to Ambient Transcript', () => {
+    expect(AMBIENT_SOURCE_HANDOFF_CONTRACT.targetLaneId).toBe('patientTranscript');
+    expect(AMBIENT_SOURCE_HANDOFF_CONTRACT.targetLaneLabel).toBe('Ambient Transcript');
+    expect(AMBIENT_SOURCE_HANDOFF_CONTRACT.requiresProviderReview).toBe(true);
+    expect(AMBIENT_SOURCE_HANDOFF_CONTRACT.blocksFinalNoteBypass).toBe(true);
+    expect(AMBIENT_SOURCE_HANDOFF_CONTRACT.orderedSteps.map((step) => step.label)).toEqual([
+      'Consent',
+      'Listen',
+      'Review transcript',
+      'Commit to Ambient Transcript',
+      'Generate draft from source',
+    ]);
+  });
+
+  it('keeps the visible capture guide aligned to the four source boxes', () => {
+    const dictationGuide = SOURCE_CAPTURE_FLOW_GUIDES.find((guide) => guide.id === 'dictation');
+    const ambientGuide = SOURCE_CAPTURE_FLOW_GUIDES.find((guide) => guide.id === 'ambient');
+
+    expect(SOURCE_CAPTURE_FLOW_GUIDES.map((guide) => guide.id)).toEqual([
+      'manual-source',
+      'dictation',
+      'ambient',
+      'generation',
+    ]);
+    expect(dictationGuide?.targetLaneIds).toEqual(SOURCE_LANE_ORDER);
+    expect(dictationGuide?.detail).toMatch(/Pre-Visit Data, Live Visit Notes, Ambient Transcript, or Provider Add-On/i);
+    expect(ambientGuide?.detail).toMatch(/not directly in the final note/i);
   });
 
   it('keeps direct EHR writeback as a future connector constraint instead of current behavior', () => {
     expect(FUTURE_EHR_WRITEBACK_CONTRACT.notImplementedYet).toBe(true);
     expect(FUTURE_EHR_WRITEBACK_CONTRACT.currentMode).toBe('copy_paste_export_only');
     expect(FUTURE_EHR_WRITEBACK_CONTRACT.notAllowedNow).toContain('Silent auto-insertion into an external EHR.');
+    expect(EHR_COPY_PASTE_FORMATTING_CONTRACT.directWritebackSupported).toBe(false);
+    expect(EHR_COPY_PASTE_FORMATTING_CONTRACT.requiredChecks.join(' ')).toMatch(/section-addressable/i);
   });
 
   it('keeps named EHR destinations section-addressable for future connectors', () => {

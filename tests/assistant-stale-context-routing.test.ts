@@ -433,4 +433,85 @@ describe('assistant stale-context routing', () => {
     expect(payload.actions?.[0]?.draftText).toContain('Plan:\nContinue source-supported monitoring');
     expect(payload.actions?.[0]?.rewriteLabel).toBe('concise sectioned format');
   });
+
+  it('keeps all available section detail when provider asks for a longer draft', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'Make this draft longer and include more details.',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports anxiety is 30% improved but continues to avoid grocery stores alone.',
+            'Sleep improved from 4 hours to 6 hours nightly.',
+            '',
+            'MSE:',
+            'Mood anxious, affect congruent, thought process linear.',
+            '',
+            'Assessment:',
+            'Anxiety symptoms remain partially improved with persistent functional avoidance.',
+            '',
+            'Plan:',
+            'Continue source-supported follow-up plan and review medication tolerability next visit.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.message).toContain('more detailed format');
+    expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
+    expect(payload.actions?.[0]?.draftText).toContain('HPI:\nPatient reports anxiety is 30% improved');
+    expect(payload.actions?.[0]?.draftText).toContain('Sleep improved from 4 hours to 6 hours nightly.');
+    expect(payload.actions?.[0]?.draftText).toContain('Assessment:\nAnxiety symptoms remain partially improved');
+    expect(payload.actions?.[0]?.rewriteLabel).toBe('more detailed format');
+    expect(payload.message).not.toContain('I do not have a safe Veranote answer');
+  });
+
+  it('switches focus from draft shaping to a new direct medication question', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'What is Lamictal used for?',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports anxiety is partially improved.',
+            '',
+            'Plan:',
+            'Continue source-supported follow-up plan.',
+          ].join('\n'),
+        },
+        recentMessages: [
+          {
+            role: 'provider',
+            content: 'Make this draft longer and include more details.',
+          },
+          {
+            role: 'assistant',
+            content: 'Yes. Here is the current note rewritten in more detailed format without adding new facts.',
+            answerMode: 'chart_ready_wording',
+          },
+        ],
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.answerMode).toBe('medication_reference_answer');
+    expect(payload.message).toContain('lamotrigine');
+    expect(payload.message).not.toContain('more detailed format');
+    expect(payload.message).not.toContain('HPI:');
+    expect(payload.actions?.[0]?.type).not.toBe('apply-draft-rewrite');
+  });
 });

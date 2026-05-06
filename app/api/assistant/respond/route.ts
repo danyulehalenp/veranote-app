@@ -1331,6 +1331,25 @@ function formatDraftWithConciseHeadings(draftText: string) {
     .trim();
 }
 
+function formatDraftWithExpandedDetails(draftText: string) {
+  const sections = splitDraftIntoNamedSections(draftText);
+  if (!sections.length) {
+    return collapseDraftToOneParagraph(draftText);
+  }
+
+  return sections
+    .map((section) => {
+      const text = section.text
+        .replace(/\s+/g, ' ')
+        .replace(/\b(no|not)\s+documented\b/gi, 'not documented')
+        .trim();
+      return `${section.heading}:\n${text}`;
+    })
+    .join('\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function formatDraftForRequest(draftText: string, request: DraftFormatRequest) {
   const collapsed = collapseDraftToOneParagraph(draftText);
 
@@ -1344,11 +1363,7 @@ function formatDraftForRequest(draftText: string, request: DraftFormatRequest) {
     case 'shorter':
       return collapsed;
     case 'longer':
-      return splitDraftIntoNamedSections(draftText)
-        .map((section) => `${section.heading}: ${section.text}`)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim() || collapsed;
+      return formatDraftWithExpandedDetails(draftText);
     case 'narrative':
       return collapsed
         .replace(/\bSubjective:/g, 'Subjective summary:')

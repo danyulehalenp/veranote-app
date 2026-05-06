@@ -38,6 +38,7 @@ import {
   encodeBlobToBase64,
   getPreferredRecorderMimeType,
 } from '@/lib/dictation/browser-recorder';
+import { AMBIENT_SOURCE_HANDOFF_CONTRACT } from '@/lib/note/source-lane-contract';
 
 type AmbientSessionPayload = {
   sessionId: string;
@@ -227,6 +228,7 @@ export function AmbientEncounterWorkspace({
   const onSessionSummaryChangeRef = useRef(onSessionSummaryChange);
   const onSessionPersistenceChangeRef = useRef(onSessionPersistenceChange);
   const chromeStorageKey = useMemo(() => getAmbientWorkspaceChromeStorageKey(providerIdentityId), [providerIdentityId]);
+  const ambientHandoffStepLabel = AMBIENT_SOURCE_HANDOFF_CONTRACT.orderedSteps.map((step) => step.label).join(' -> ');
 
   useEffect(() => {
     onSessionSummaryChangeRef.current = onSessionSummaryChange;
@@ -1060,7 +1062,7 @@ export function AmbientEncounterWorkspace({
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Ambient handoff to source capture</div>
                 <div className="mt-1 text-base font-semibold text-white">Move reviewed transcript into the shared note pipeline</div>
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-cyan-50/74">
-                  Ambient still feeds the same source-to-draft flow as manual entry and dictation. This handoff keeps transcript-derived content reviewable without letting it bypass the note workspace.
+                  {ambientHandoffStepLabel}. This handoff keeps transcript-derived content reviewable without letting it bypass the note workspace.
                 </p>
               </div>
               <div className="grid gap-2 sm:grid-cols-3">
@@ -1085,8 +1087,8 @@ export function AmbientEncounterWorkspace({
                 : 'border-amber-300/18 bg-[rgba(245,158,11,0.12)] text-amber-50'
             }`}>
               {transcriptReadyForSource
-                ? 'Ambient transcript is ready to feed the patient conversation source lane.'
-                : 'Ambient transcript still has unresolved speaker review. Keep it in transcript mode until attribution is clear enough to trust.'}
+                ? AMBIENT_SOURCE_HANDOFF_CONTRACT.readyMessage
+                : AMBIENT_SOURCE_HANDOFF_CONTRACT.blockedMessage}
             </div>
 
             <div className="mt-4 flex flex-wrap gap-3">
@@ -1096,7 +1098,7 @@ export function AmbientEncounterWorkspace({
                 disabled={!transcriptReadyForSource}
                 className="aurora-primary-button rounded-xl px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Load into transcript source
+                Load into Ambient Transcript source
               </button>
               <button
                 type="button"
@@ -1104,7 +1106,7 @@ export function AmbientEncounterWorkspace({
                 disabled={!transcriptReadyForSource}
                 className="aurora-secondary-button rounded-xl px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Append to transcript source
+                Append to Ambient Transcript source
               </button>
               <button
                 type="button"

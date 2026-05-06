@@ -1,5 +1,9 @@
 import { spawnSync } from 'node:child_process';
 
+const liveGenerationEnv = {
+  VERANOTE_ALLOW_OPENAI: process.env.VERANOTE_ALLOW_OPENAI || '1',
+};
+
 const steps = [
   {
     label: 'Prompt and source-packet note generation regression',
@@ -19,6 +23,7 @@ const steps = [
       'tests/document-source-intake.test.ts',
       'tests/document-source-intake-regression.test.ts',
     ],
+    env: liveGenerationEnv,
   },
   {
     label: 'Focused note-builder regression set',
@@ -36,6 +41,7 @@ const steps = [
       'tests/note-builder-outpatient-followup-regression.test.ts',
       'tests/note-builder-progress-note-regression.test.ts',
     ],
+    env: liveGenerationEnv,
   },
   {
     label: 'Production build',
@@ -53,7 +59,10 @@ for (const step of steps) {
   const result = spawnSync(step.command, step.args, {
     cwd: process.cwd(),
     stdio: 'inherit',
-    env: process.env,
+    env: {
+      ...process.env,
+      ...(step.env || {}),
+    },
   });
 
   if (result.status !== 0) {

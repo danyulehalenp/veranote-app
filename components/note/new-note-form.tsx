@@ -37,6 +37,10 @@ import { mergePresetCatalog, findPresetForNoteType, type NotePreset } from '@/li
 import { countWords, parseDraftSections } from '@/lib/note/review-sections';
 import { buildEncounterSupportSummary, createEncounterSupportDefaults, getEncounterSupportConfig, normalizeEncounterSupport } from '@/lib/note/encounter-support';
 import { planSections, SECTION_LABELS, type NoteSectionKey, type OutputScope } from '@/lib/note/section-profiles';
+import {
+  DEFAULT_DICTATION_SOURCE_LANE,
+  SOURCE_CAPTURE_FLOW_GUIDES,
+} from '@/lib/note/source-lane-contract';
 import { ASSISTANT_ACTION_EVENT, publishAssistantContext } from '@/lib/veranote/assistant-context';
 import { assistantMemoryService } from '@/lib/veranote/assistant-memory-service';
 import { applyAssistantPersonaDefaults, listAssistantAvatarOptions, resolveAssistantPersona } from '@/lib/veranote/assistant-persona';
@@ -1212,7 +1216,7 @@ export function NewNoteForm() {
   );
   const dictationTargetLabel = dictationTargetSection
     ? `Dictation target: ${DICTATION_TARGET_LABELS[dictationTargetSection]}`
-    : 'Dictation target: choose clinician notes, intake, or patient conversation';
+    : 'Dictation target: choose Pre-Visit Data, Live Visit Notes, Ambient Transcript, or Provider Add-On';
   const dictationTargetShortLabel = dictationTargetSection
     ? DICTATION_TARGET_LABELS[dictationTargetSection]
     : 'source';
@@ -2304,23 +2308,7 @@ export function NewNoteForm() {
     : dictationTargetSteps[0];
   const sourceCompletionCount = populatedSectionLabels.length;
   const sourceCompletionPercent = Math.round((sourceCompletionCount / sourceEntrySteps.length) * 100);
-  const captureFlowGuides = useMemo(
-    () => [
-      {
-        label: 'Dictation',
-        detail: 'Turn dictation on, choose any of the four source boxes as the target, then review the inserted text before generating.',
-      },
-      {
-        label: 'Ambient',
-        detail: 'Use consent -> listen -> review transcript -> commit. The reviewed transcript lands in Ambient Transcript, not straight into the final note.',
-      },
-      {
-        label: 'Generation',
-        detail: 'Generate Draft from Source only after the boxes reflect what you want Veranote to use.',
-      },
-    ],
-    [],
-  );
+  const captureFlowGuides = SOURCE_CAPTURE_FLOW_GUIDES;
   const sourceModeCards = useMemo(
     () => ([
       {
@@ -3208,7 +3196,7 @@ export function NewNoteForm() {
 
     if (mode === 'dictation') {
       setDictationTargetManuallySelected(false);
-      setActiveSourceTab('clinicianNotes');
+      setActiveSourceTab(DEFAULT_DICTATION_SOURCE_LANE);
     }
 
     if (mode === 'objective') {
@@ -3248,8 +3236,8 @@ export function NewNoteForm() {
     setSourceWorkspaceMode('manual');
     setEvalBanner(
       mode === 'append'
-        ? 'Appended the reviewed ambient transcript to the patient conversation source.'
-        : 'Loaded the reviewed ambient transcript into the patient conversation source.',
+        ? 'Appended the reviewed ambient transcript to the Ambient Transcript source box.'
+        : 'Loaded the reviewed ambient transcript into the Ambient Transcript source box.',
     );
   }
 
@@ -5870,6 +5858,8 @@ export function NewNoteForm() {
                           <button
                             key={step.key}
                             type="button"
+                            aria-pressed={isTarget}
+                            title={`Dictate into ${step.label}`}
                             onClick={() => {
                               setDictationTargetManuallySelected(true);
                               setActiveSourceTab(step.key);

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { buildSourceInputFromSections } from '@/lib/ai/source-sections';
 import { generateNote } from '@/lib/ai/generate-note';
 import { buildReviewedDocumentSourceBlock } from '@/lib/document-intake/source-document-intake';
+import { auditGeneratedNoteQuality } from '@/lib/eval/note-generation/note-quality-audit';
 import type { SourceSections } from '@/types/session';
 
 type RequiredPattern = {
@@ -37,6 +38,9 @@ export type SourcePacketRegressionCaseResult = {
   reason: string;
   missing: string[];
   forbiddenHits: string[];
+  qualityScore: number;
+  qualityFindings: string[];
+  qualityBlockingFindings: string[];
   noteExcerpt: string;
   flagCount: number;
 };
@@ -795,7 +799,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'naloxone/Narcan need visible', pattern: /naloxone|Narcan|old kit|expired/i },
     ],
     forbidden: [
-      { label: 'dose change invented', pattern: /increase buprenorphine|decrease buprenorphine|adjust buprenorphine|change buprenorphine|buprenorphine[^.\n]{0,80}dose (?:increased|decreased|adjusted|changed)|dose adjusted|continue current buprenorphine|continue buprenorphine\/naloxone/i },
+      { label: 'dose change invented', pattern: /\b(?:increase|decrease|adjust|change)\s+(?:the\s+)?buprenorphine(?:\/naloxone)?\b|\bbuprenorphine(?:\/naloxone)?[^.\n]{0,80}\bdose\b[^.\n]{0,60}\b(?:increased|decreased|adjusted|changed)\b|\bcontinue current buprenorphine\b|\bcontinue buprenorphine\/naloxone\b/i },
       { label: 'confirmed fentanyl relapse overclaim', pattern: /confirmed fentanyl relapse|patient relapsed on fentanyl/i },
       { label: 'stigmatizing dishonesty language', pattern: /lying|dishonest|drug-seeking/i },
     ],
@@ -1189,15 +1193,31 @@ export function evaluateSourcePacketRegressionCase(
     forbiddenHits.push('provider add-on instruction echoed as clinical note content');
   }
 
+  const qualityAudit = auditGeneratedNoteQuality({
+    note,
+    noteType: item.noteType,
+    ehr: item.ehr,
+    sourceSections: item.sourceSections,
+  });
+  const qualityFindings = qualityAudit.findings.map((finding) => (
+    `${finding.severity}:${finding.category}:${finding.message}`
+  ));
+  const qualityBlockingFindings = qualityAudit.blockingFindings.map((finding) => (
+    `${finding.category}:${finding.message}`
+  ));
+
   return {
     id: item.id,
     title: item.title,
     noteType: item.noteType,
-    passed: missing.length === 0 && forbiddenHits.length === 0,
+    passed: missing.length === 0 && forbiddenHits.length === 0 && qualityAudit.passed,
     mode,
     reason,
     missing,
     forbiddenHits,
+    qualityScore: qualityAudit.score,
+    qualityFindings,
+    qualityBlockingFindings,
     noteExcerpt: note.replace(/\s+/g, ' ').trim().slice(0, 900),
     flagCount,
   };

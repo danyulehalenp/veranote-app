@@ -52,9 +52,9 @@ export type GenerateNoteWithMetaResult = GenerateNoteResult & {
  warning?: string;
  generationMeta: {
  pathUsed: 'live' | 'fallback';
- provider: 'openai' | 'none';
+ provider: 'openai' | 'ollama' | 'none';
  model: string | null;
- reason: 'live' | 'missing_api_key' | 'runtime_error';
+ reason: 'live' | 'missing_api_key' | 'openai_not_approved' | 'runtime_error';
  };
 };
 
@@ -134,6 +134,41 @@ function asMessage(error: unknown) {
  }
 
  return 'Live generation was unavailable, so the app used the local fallback draft.';
+}
+
+function getRequestedProvider() {
+ const explicit = (process.env.VERANOTE_AI_PROVIDER || process.env.AI_PROVIDER || '').trim().toLowerCase();
+ if (explicit === 'ollama' || explicit === 'local') return 'ollama';
+ if (explicit === 'openai') return 'openai';
+ if (explicit === 'mock' || explicit === 'fallback' || explicit === 'none') return 'none';
+ if (process.env.VERANOTE_ALLOW_OPENAI === '1') return 'openai';
+ return 'none';
+}
+
+function buildFallbackResult(
+ input: GenerateNoteInput,
+ model: string | null,
+ reason: GenerateNoteWithMetaResult['generationMeta']['reason'],
+ warning: string,
+ provider: GenerateNoteWithMetaResult['generationMeta']['provider'] = 'none',
+): GenerateNoteWithMetaResult {
+ const fallback = generateMockNote(input.sourceInput, input.noteType, input.flagMissingInfo);
+ const fallbackNote = finalizeGeneratedNote(fallback.note, input);
+ return {
+ ...fallback,
+ note: fallbackNote,
+ flags: mergeFlags(input, fallback.flags),
+ claims: stubClaims,
+ copilotSuggestions: buildSuggestions(input),
+ mode: 'fallback',
+ warning,
+ generationMeta: {
+ pathUsed: 'fallback',
+ provider,
+ model,
+ reason,
+ },
+ };
 }
 
 function mergeFlags(input: GenerateNoteInput, flags: string[]) {
@@ -265,10 +300,12 @@ function preserveMedicalClearanceUncertainty(note: string, sourceInput: string) 
 }
 
 function hardenSourceBoundRiskWording(note: string, sourceInput: string) {
- const hasRiskNuance = /(passive death|wish .*not wake|wish .*wouldn[’']?t wake|passive si|suicid|self-harm|do not summarize as low[-\s]?risk)/i.test(sourceInput);
+ const hasRiskNuance = /(\bSI\b|\bHI\b|SI\/HI|suicidal ideation|homicidal ideation|denies? (?:current )?(?:SI|HI|SI\/HI)|passive death|wish .*not wake|wish .*wouldn[’']?t wake|passive si|suicid|self-harm|do not summarize as low[-\s]?risk)/i.test(sourceInput);
  if (!hasRiskNuance) return note;
 
  return note
+  .replace(/\bsafety risk is low\s+(?:as|because)\s+([^.\n]+)\./gi, 'Safety: $1; overall risk level is not established from this source alone.')
+  .replace(/\brisk is low\s+(?:as|because)\s+([^.\n]+)\./gi, 'risk level is not established from this source alone; $1.')
   .replace(/\blow[-\s]?risk\b/gi, 'risk not fully established from the provided source')
   .replace(/\brisk\s+is\s+low\b/gi, 'risk is not fully established from the provided source')
   .replace(/\bno\s+acute\s+safety\s+concerns?\b/gi, 'acute safety risk is not fully established from the provided source')
@@ -337,6 +374,7 @@ function removeProviderAddOnInstructionEcho(note: string, sourceInput = '') {
   .replace(/(^|[.!?]\s+|\n)[^.!?\n]*\b(?:specif(?:y|ies|ied)|instructs?|instructed|requested|asks?|asked)\s+to\s+(?:preserve|keep|avoid|not|use|include)[^.!?\n]*(?:[.!?]\s*)?/gi, '$1')
   .replace(/(^|[.!?]\s+|\n)[^.!?\n]*\bwithout\s+stating\s+no\s+safety\s+concerns\b[^.!?\n]*(?:[.!?]\s*)?/gi, '$1')
   .replace(/\s*,?\s*(?:and\s+)?provider add[-\s]?on(?:\s+instructions?)?/gi, '')
+  .replace(/\s*,?\s*(?:and\s+)?provider instructions?(?:\s+as\s+provided\s+in\s+source\s+input)?/gi, '')
   .replace(/\bprovider add[-\s]?on(?:\s+instructions?)?\b/gi, 'provider guidance')
   .replace(/(?:^|\n)\s*provider instructions?\s+(?:specif(?:y|ies)|instructs|says|notes?|states)[^\n.]*(?:\.\s*)?/gim, '\n')
   .replace(/(?:^|\n)\s*provider guidance\s*:\s*[\s\S]*?(?=\n\n[A-Z][^\n]{1,90}:|$)/gim, '')
@@ -378,27 +416,24 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
 }
 
 export async function generateNote(input: GenerateNoteInput): Promise<GenerateNoteWithMetaResult> {
- const apiKey = process.env.OPENAI_API_KEY;
- const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+ const requestedProvider = getRequestedProvider();
+ const openAiModel = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+ const ollamaModel = process.env.OLLAMA_MODEL || 'qwen3:8b';
+ const model = requestedProvider === 'ollama' ? ollamaModel : openAiModel;
 
- if (!apiKey) {
- const fallback = generateMockNote(input.sourceInput, input.noteType, input.flagMissingInfo);
- const fallbackNote = finalizeGeneratedNote(fallback.note, input);
- return {
- ...fallback,
- note: fallbackNote,
- flags: mergeFlags(input, fallback.flags),
- claims: stubClaims,
- copilotSuggestions: buildSuggestions(input),
- mode: 'fallback',
- warning: 'No OpenAI API key found, so the app used the local fallback draft.',
- generationMeta: {
- pathUsed: 'fallback',
- provider: 'none',
- model: model || null,
- reason: 'missing_api_key',
- },
- };
+ if (requestedProvider === 'none') {
+ return buildFallbackResult(
+ input,
+ null,
+ process.env.OPENAI_API_KEY ? 'openai_not_approved' : 'missing_api_key',
+ process.env.OPENAI_API_KEY
+ ? 'OpenAI key is present, but OpenAI note generation is disabled unless VERANOTE_ALLOW_OPENAI=1 or VERANOTE_AI_PROVIDER=openai is set.'
+ : 'No approved live AI provider was configured, so the app used the local fallback draft.',
+ );
+ }
+
+ if (requestedProvider === 'openai' && !process.env.OPENAI_API_KEY) {
+ return buildFallbackResult(input, openAiModel, 'missing_api_key', 'OpenAI was requested, but no OpenAI API key was found.');
  }
 
  try {
@@ -463,7 +498,12 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
  diagnosisProfileLines: buildDiagnosisProfilePromptLines(input.diagnosisProfile),
  });
 
- const client = new OpenAI({ apiKey });
+ const client = requestedProvider === 'ollama'
+ ? new OpenAI({
+ apiKey: process.env.OLLAMA_API_KEY || 'ollama',
+ baseURL: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434/v1',
+ })
+ : new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
  const response = await client.responses.create({
  model,
@@ -537,29 +577,12 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
  mode: 'live',
  generationMeta: {
  pathUsed: 'live',
- provider: 'openai',
+ provider: requestedProvider,
  model,
  reason: 'live',
  },
  };
  } catch (error) {
- const fallback = generateMockNote(input.sourceInput, input.noteType, input.flagMissingInfo);
- const fallbackNote = finalizeGeneratedNote(fallback.note, input);
-
- return {
- ...fallback,
- note: fallbackNote,
- flags: mergeFlags(input, fallback.flags),
- claims: stubClaims,
- copilotSuggestions: buildSuggestions(input),
- mode: 'fallback',
- warning: asMessage(error),
- generationMeta: {
- pathUsed: 'fallback',
- provider: 'openai',
- model,
- reason: 'runtime_error',
- },
- };
+ return buildFallbackResult(input, model, 'runtime_error', asMessage(error), requestedProvider);
  }
 }

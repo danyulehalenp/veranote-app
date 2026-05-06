@@ -205,7 +205,7 @@ const sectionPatterns: Record<string, RegExp[]> = {
 	  mentalStatusExam: [/mental status/i, /\bmse\b/i, /observations/i],
 	  riskAssessment: [/risk assessment/i, /risk assessment at discharge/i, /safety \/ risk/i, /safety and risk/i, /risk rationale/i],
 	  assessment: [/\nassessment\b/i, /^assessment\b/i, /assessment \/ medical problems/i, /assessment \/ medical impression/i, /assessment \/ clinical formulation/i, /assessment \/ clinical impression/i, /assessment \/ diagnostic impression/i, /clinical formulation/i, /diagnostic impression/i],
-	  plan: [/\nplan\b/i, /^plan\b/i, /plan \/ recommendations/i, /recommendations \/ plan/i, /plan \/ monitoring/i, /plan \/ monitoring \/ reassessment/i, /plan \/ follow-up \/ verification/i, /plan \/ safety \/ monitoring/i, /plan \/ proposed discharge/i, /proposed discharge/i, /monitoring \/ disposition/i, /reassessment/i, /next steps/i],
+	  plan: [/\nplan\b/i, /^plan\b/i, /plan \/ recommendations/i, /recommendations \/ plan/i, /plan \/ monitoring/i, /plan \/ monitoring \/ reassessment/i, /plan \/ follow-up \/ verification/i, /plan \/ safety \/ monitoring/i, /plan \/ proposed discharge/i, /plan \/ continued hospitalization/i, /continued hospitalization/i, /proposed discharge/i, /monitoring \/ disposition/i, /reassessment/i, /next steps/i],
 	  intervalHistory: [/interval history/i, /interval update/i, /patient report/i],
 	  symptoms: [/symptoms/i, /symptom review/i, /functional status/i],
 	  medicationResponse: [/medication response/i, /response to medication/i, /medication.*(benefit|effect|response|help)/i, /(benefit|effect|response).*medication/i],
