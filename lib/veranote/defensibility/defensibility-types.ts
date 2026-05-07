@@ -47,9 +47,16 @@ export type CptRecommendationCandidate = {
   cautions: string[];
 };
 
+export type CptDocumentationReadiness = {
+  status: 'too-thin' | 'needs-review' | 'review-candidate';
+  presentElements: string[];
+  missingElements: string[];
+};
+
 export type PostNoteCptRecommendationAssessment = {
   summary: string;
   candidates: CptRecommendationCandidate[];
+  documentationReadiness: CptDocumentationReadiness;
   timeSignals: string[];
   missingGlobalElements: string[];
   guardrails: string[];

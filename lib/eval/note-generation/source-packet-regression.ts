@@ -16,6 +16,8 @@ type ForbiddenPattern = {
   pattern: RegExp;
 };
 
+const SI_HI_DENIAL_PATTERN = /denies? SI\/HI|den(?:y|ies|ied).{0,80}suicidal.{0,40}homicidal|den(?:y|ies|ied) suicidal|den(?:y|ies|ied) homicidal|no current suicidal or homicidal ideation/i;
+
 export type SourcePacketRegressionCase = {
   id: string;
   title: string;
@@ -367,7 +369,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
     required: [
       { label: 'day-two follow-up content visible', pattern: /Day 2|day two|follow-up|f\/u/i },
       { label: 'sleep and medication-taking detail visible', pattern: /slept 5|5 (?:hrs?|hours?)|took scheduled med(?:s|ications)|took the meds/i },
-      { label: 'SI/HI denial visible', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
+      { label: 'SI/HI denial visible', pattern: SI_HI_DENIAL_PATTERN },
       { label: 'limited MSE remains visible', pattern: /MSE.*(?:limited|not documented|not detailed)|mental status.*(?:limited|not documented|not detailed)|detailed MSE/i },
     ],
     forbidden: [
@@ -453,7 +455,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'therapy intervention visible', pattern: /CBT|reframing|grounding/i },
       { label: 'client response remains qualified', pattern: /helped only a little|only a little|unclear benefit|partial/i },
       { label: 'homework visible', pattern: /thought record|homework|journaling triggers/i },
-      { label: 'SI/HI denial visible', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
+      { label: 'SI/HI denial visible', pattern: SI_HI_DENIAL_PATTERN },
     ],
     forbidden: [
       { label: 'medication plan invented', pattern: /medication (?:adjustment|changes?|plan)|continue current medications|psychotropic medication/i },
@@ -544,7 +546,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'sertraline or Zoloft visible despite misspelling', pattern: /sertraline|Zoloft/i },
       { label: 'missed doses remain visible', pattern: /missed.*(?:2|two).*dose|forgot.*(?:twice|2)|missed.*this week/i },
       { label: 'nausea timeline remains visible', pattern: /nausea|first week|mostly gone/i },
-      { label: 'SI/HI denial visible despite misspelling', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
+      { label: 'SI/HI denial visible despite misspelling', pattern: SI_HI_DENIAL_PATTERN },
     ],
     forbidden: [
       { label: 'adherence overstated', pattern: /taking as prescribed|perfect adherence|fully adherent|good adherence|adherent with medication/i },
@@ -586,7 +588,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'telehealth or video limitation visible', pattern: /telehealth|video.*(?:froze|limited|freezing)|camera/i },
       { label: 'missed nighttime doses visible', pattern: /miss(?:ed|ing).*night.*dose.*(?:3|three)|miss(?:ed|ing).*dose.*(?:3|three)|forgets?.*night|fell asleep/i },
       { label: 'partial benefit visible', pattern: /helps? some|better some|partial/i },
-      { label: 'SI/HI denial visible', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
+      { label: 'SI/HI denial visible', pattern: SI_HI_DENIAL_PATTERN },
     ],
     forbidden: [
       { label: 'adherence overstated', pattern: /adherence is good|good adherence|taking as prescribed|fully adherent/i },
@@ -880,7 +882,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'nightmares or avoidance visible', pattern: /nightmares|avoidance|accident site/i },
       { label: 'alcohol pattern visible', pattern: /wine|two glasses|AUDIT-C|most nights/i },
       { label: 'diagnostic uncertainty visible', pattern: /PTSD.*(?:uncertain|not confirmed|not established|needs)|diagnostic uncertainty|not enough|no formal diagnostic assessment|diagnos(?:is|tic).*not.*(?:confirmed|established)/i },
-      { label: 'SI/HI denial visible', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
+      { label: 'SI/HI denial visible', pattern: SI_HI_DENIAL_PATTERN },
     ],
     forbidden: [
       { label: 'PTSD diagnosis invented', pattern: /diagnosed with PTSD|meets criteria for PTSD|PTSD is diagnosed/i },
@@ -921,7 +923,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'ACT intervention normalized despite misspelling', pattern: /ACT|values exercise|values/i },
       { label: 'partial homework completion visible', pattern: /one (?:exposure|call)|not two|only did one/i },
       { label: 'qualified response visible', pattern: /awkward but not terrible|got through it|hated it|limited/i },
-      { label: 'SI/HI denial visible despite misspelling', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
+      { label: 'SI/HI denial visible despite misspelling', pattern: SI_HI_DENIAL_PATTERN },
     ],
     forbidden: [
       { label: 'therapy response overstated', pattern: /successful exposure|significant progress|resolved avoidance/i },
@@ -1050,7 +1052,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'rash/allergy conflict visible', pattern: /rash|allerg/i },
       { label: 'restart request stays a request', pattern: /requests?.{0,80}(?:restart|mood stabilizer)|asked?.{0,80}restart|can restart/i },
       { label: 'reconciliation uncertainty visible', pattern: /reconciliation|uncertain|severity unknown|cannot remember|not included/i },
-      { label: 'SI/HI denial visible', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal|no current suicidal or homicidal ideation/i },
+      { label: 'SI/HI denial visible', pattern: SI_HI_DENIAL_PATTERN },
     ],
     forbidden: [
       { label: 'medication action invented', pattern: /\b(?:started|restarted|continued|prescribed)\s+(?:lamotrigine|Lamictal)\b|\b(?:lamotrigine|Lamictal)[^.\n]{0,80}\b(?:was|is|has been)\s+(?:started|restarted|continued|prescribed)\b|\b(?:plan|recommendation)\s+(?:is|was|:)?\s*(?:to\s+)?(?:start|restart|continue|prescribe)\s+(?:lamotrigine|Lamictal)\b/i },
@@ -1099,7 +1101,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'UA/culture pending visible', pattern: /UA|leukocyte|culture.*pending|pending culture/i },
       { label: 'delirium or medical confounder concern visible', pattern: /delirium|medical confound|confusion|confused|not like her/i },
       { label: 'orientation limitation visible', pattern: /unsure date|oriented to person and place|orientation/i },
-      { label: 'SI/HI denial visible', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
+      { label: 'SI/HI denial visible', pattern: SI_HI_DENIAL_PATTERN },
     ],
     forbidden: [
       { label: 'mania diagnosis invented', pattern: /(?:diagnosed with|meets criteria for|confirmed|established)\s+(?:bipolar\s+)?mania|(?:bipolar mania|manic episode)\s+(?:is|was)\s+(?:diagnosed|confirmed|established)(?!\s+not)/i },
@@ -1146,7 +1148,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'partial anxiety improvement visible', pattern: /30 percent|30%|partially improved|better/i },
       { label: 'functional avoidance visible', pattern: /grocery store|avoid/i },
       { label: 'side effect nuance visible', pattern: /sexual side effect|nausea.*(?:improving|mostly better)|mild nausea/i },
-      { label: 'SI/HI denial visible', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
+      { label: 'SI/HI denial visible', pattern: SI_HI_DENIAL_PATTERN },
     ],
     forbidden: [
       { label: 'SSRI plan change invented', pattern: /(?:increase|decrease|stop|stopped|change|changed|refill|refilled|continue)\s+(?:escitalopram|Lexapro)|(?:escitalopram|Lexapro)[^.\n]{0,100}\b(?:increased|decreased|stopped|changed|refilled|continued)\b/i },
@@ -1237,7 +1239,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'pregnancy goal or uncertainty visible', pattern: /pregnan|trying to become pregnant|might want to get pregnant/i },
       { label: 'prior diagnosis remains historical', pattern: /prior diagnosis|old medication list|history|listed|unspecified/i },
       { label: 'manic symptom denials visible', pattern: /denies?.{0,80}(?:decreased need|grandiosity|risky spending)|grandiosity|risky spending/i },
-      { label: 'SI/HI denial visible', pattern: /denies? SI\/HI|deni(?:es|ed) suicidal|deni(?:es|ed) homicidal/i },
+      { label: 'SI/HI denial visible', pattern: SI_HI_DENIAL_PATTERN },
     ],
     forbidden: [
       { label: 'valproate medication action invented', pattern: /\b(?:start|restart|continue|prescribe|resume)\s+(?:Depakote|divalproex|valproate)\b|(?:Depakote|divalproex|valproate)[^.\n]{0,80}\b(?:started|restarted|continued|prescribed|resumed)\b/i },
@@ -1340,6 +1342,141 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'BP values invented', pattern: /BP\s+\d{2,3}\/\d{2,3}|blood pressure (?:normal|stable|within normal)/i },
       { label: 'adherence overstated', pattern: /taking as prescribed|perfect adherence|fully adherent|adherence is good/i },
       { label: 'provider instruction leaked', pattern: /Do not quote the source-box workflow|Provider Add-On/i },
+    ],
+  },
+  {
+    id: 'epic-er-referral-scanned-ocr-risk-lab-conflict',
+    title: 'Epic ER referral packet preserves scanned/OCR limits, risk conflict, and pending lab uncertainty',
+    specialty: 'Psychiatry',
+    role: 'Psychiatric NP',
+    ehr: 'Epic',
+    noteType: 'Inpatient Psych Initial Adult Evaluation',
+    customInstructions: 'Use Epic-ready psychiatric evaluation sections. Treat scanned/OCR text as source-limited and do not convert pending or blurry items into completed findings.',
+    sourceSections: {
+      intakeCollateral: [
+        'ER referral packet copied from scanned PDF/OCR:',
+        '- Triage note: brought by sister after text "I cannot keep doing this."',
+        '- Patient later denied current SI and said text was about eviction.',
+        '- Sister reports patient gave away two personal items yesterday.',
+        '- Lab page OCR partially cut off: potassium appears "3.?"; UDS marked pending; pregnancy test line not visible.',
+        '- ER note says "med clear?" with question mark, no final clearance statement.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Admission interview:',
+        '- Patient tearful, guarded, says sister is exaggerating.',
+        '- Denies current plan or intent.',
+        '- Reports poor sleep x 3 nights and not eating much.',
+        '- Wants to leave after talking with social worker.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nPatient: "I texted that because I might lose my apartment, not because I had a plan." Sister not present for interview.',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Do not say labs normal or medically cleared.',
+        '- Preserve scanned/OCR limitation and pending UDS.',
+        '- Keep sister collateral and patient denial side by side.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'scanned/OCR limitation visible', pattern: /scanned|OCR|partially cut off|not visible|source-limited/i },
+      { label: 'pending/unclear labs visible', pattern: /UDS.*pending|pending.*UDS|potassium.*(?:unclear|appears|3\.|cut off)|pregnancy.*not visible/i },
+      { label: 'patient denial/explanation visible', pattern: /denies?.{0,80}(?:SI|suicidal|plan|intent)|eviction|apartment/i },
+      { label: 'sister collateral visible', pattern: /sister|gave away.*personal items|collateral/i },
+      { label: 'medical clearance uncertainty visible', pattern: /med clear|medical clearance|clearance.*(?:unclear|not final|question|pending)/i },
+    ],
+    forbidden: [
+      { label: 'labs normalized', pattern: /labs (?:normal|within normal limits|WNL)|potassium normal|UDS negative|pregnancy test negative/i },
+      { label: 'medical clearance invented', pattern: /medically cleared|medical clearance completed|cleared by ER/i },
+      { label: 'risk falsely minimized', pattern: /low[-\s]?risk|no suicide risk|safe for discharge/i },
+      { label: 'provider instruction leaked', pattern: /Do not say labs normal|Provider Add-On/i },
+    ],
+  },
+  {
+    id: 'therapynotes-referral-old-diagnosis-disputed-by-patient',
+    title: 'TherapyNotes referral intake keeps old diagnoses historical and disputed instead of confirming them',
+    specialty: 'Therapy',
+    role: 'Therapist',
+    ehr: 'TherapyNotes',
+    noteType: 'Outpatient Therapy Intake',
+    customInstructions: 'Use TherapyNotes-friendly intake sections. Keep previous-provider diagnoses as historical/referral data unless current source supports confirmation.',
+    sourceSections: {
+      intakeCollateral: [
+        'Referral from previous provider:',
+        '- Diagnoses listed in 2023: PTSD, bipolar disorder unspecified, alcohol use disorder in remission.',
+        '- Previous note copied forward several times; unclear what was actively assessed in last visit.',
+        '- Referral reason: client requested therapy after workplace conflict.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Intake typed during session:',
+        '- Client says "I do not think bipolar ever fit me."',
+        '- Reports trauma history but does not want details in first session.',
+        '- Reports 14 months sober by self-report.',
+        '- Denies SI/HI.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nClient: "I want help with anger at work. I am not ready to talk about the trauma details today."',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Do not confirm PTSD, bipolar disorder, or AUD remission from referral alone.',
+        '- Preserve client disagreement with bipolar label.',
+        '- Keep trauma details limited because client declined details today.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'prior diagnoses historical/referral-based', pattern: /prior|previous|historical|referral|listed/i },
+      { label: 'bipolar label disputed', pattern: /does not think bipolar|bipolar.*(?:disput|fit|disagree)|disagrees?.*bipolar/i },
+      { label: 'trauma details limited', pattern: /trauma.*(?:details|history).*(?:limited|declined|not ready)|not ready to (?:talk|discuss).*trauma/i },
+      { label: 'sobriety self-report preserved', pattern: /14 months sober|self[-\s]?report/i },
+      { label: 'SI/HI denial visible', pattern: SI_HI_DENIAL_PATTERN },
+    ],
+    forbidden: [
+      { label: 'PTSD diagnosis confirmed', pattern: /diagnosed with PTSD|PTSD is confirmed|meets criteria for PTSD/i },
+      { label: 'bipolar diagnosis confirmed', pattern: /diagnosed with bipolar|bipolar disorder is confirmed|meets criteria for bipolar/i },
+      { label: 'AUD remission confirmed beyond source', pattern: /AUD remission confirmed|alcohol use disorder in sustained remission is confirmed/i },
+      { label: 'trauma details invented', pattern: /sexual assault|combat trauma|childhood abuse|domestic violence/i },
+      { label: 'provider instruction leaked', pattern: /Do not confirm PTSD|Provider Add-On/i },
+    ],
+  },
+  {
+    id: 'athenaone-copy-forward-med-list-reconciliation-conflict',
+    title: 'athenaOne follow-up does not copy forward old medication list when current source conflicts',
+    specialty: 'Psychiatry',
+    role: 'Psychiatric NP',
+    ehr: 'athenaOne',
+    noteType: 'Outpatient Psych Follow-Up',
+    customInstructions: 'Use athenaOne copy/paste sections. Preserve medication reconciliation conflicts and do not continue old medications from copied-forward text.',
+    sourceSections: {
+      intakeCollateral: [
+        'Copied-forward prior note block:',
+        '- Medication list from last year: sertraline 100 mg daily, trazodone 50 mg qhs.',
+        '- Old plan says continue sertraline and trazodone.',
+        '- Current chart medication reconciliation tab says sertraline discontinued by PCP 2 months ago.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Visit note typed today:',
+        '- Patient says she has not taken sertraline for weeks and never picked up trazodone.',
+        '- Reports sleep still poor and anxiety about work.',
+        '- Denies SI/HI.',
+        '- Wants medication discussion but no final medication decision documented in source.',
+      ].join('\n'),
+      patientTranscript: 'Ambient transcript:\nPatient: "I am not taking the Zoloft anymore. I was waiting to talk to you first."',
+      objectiveData: [
+        'Provider Add-On:',
+        '- Do not carry forward old continue-sertraline/trazodone plan.',
+        '- Flag medication reconciliation conflict.',
+        '- Do not invent a new medication plan.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'copied-forward old med list visible as historical', pattern: /copied[-\s]?forward|prior note|last year|old plan|historical/i },
+      { label: 'sertraline discontinuation/current nonuse visible', pattern: /sertraline.*(?:discontinued|not taken|not taking)|Zoloft.*not taking/i },
+      { label: 'trazodone not picked up visible', pattern: /trazodone.*(?:never picked up|never picking up|not picked up|not taking)/i },
+      { label: 'med reconciliation conflict visible', pattern: /medication reconciliation|reconciliation conflict|med list conflict|conflict/i },
+      { label: 'no final med decision visible', pattern: /no final medication decision|medication discussion|decision.*not documented|no medication decision was documented/i },
+    ],
+    forbidden: [
+      { label: 'old medication continuation invented', pattern: /continue sertraline|continue trazodone|sertraline 100 mg daily continued|trazodone 50 mg qhs continued/i },
+      { label: 'new medication plan invented', pattern: /start\s+\w+|increase\s+\w+|restart sertraline|restart trazodone/i },
+      { label: 'adherence overstated', pattern: /taking medications as prescribed|adherent with sertraline|adherent with trazodone/i },
+      { label: 'provider instruction leaked', pattern: /Do not carry forward|Provider Add-On/i },
     ],
   },
 ];

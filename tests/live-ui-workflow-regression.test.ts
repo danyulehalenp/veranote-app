@@ -102,12 +102,12 @@ const flows: UiFlowDefinition[] = [
       {
         prompt: 'one paragraph make it chart ready',
         expectedAnswerMode: 'chart_ready_wording',
-        requiredPhrases: ['chart-ready wording:', 'higher-acuity risk facts remain documented'],
+        requiredPhrases: ['one-paragraph format', 'without adding new facts'],
       },
       {
         prompt: 'shorter but keep what matters',
         expectedAnswerMode: 'chart_ready_wording',
-        requiredPhrases: ['chart-ready wording:', 'goodbye texts'],
+        requiredPhrases: ['shorter concise format', 'without adding new facts'],
       },
     ],
   },

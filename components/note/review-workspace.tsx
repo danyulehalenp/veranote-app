@@ -959,6 +959,23 @@ function PostNoteCptSupportPanel(props: {
         </div>
       </div>
 
+      <div
+        data-testid="post-note-cpt-readiness"
+        className={isEmbedded
+          ? 'mt-3 rounded-[14px] border border-amber-200/16 bg-[rgba(255,255,255,0.08)] px-3 py-3 text-xs leading-5 text-amber-50/78'
+          : 'mt-3 rounded-lg border border-amber-100 bg-white px-3 py-3 text-xs leading-5 text-amber-900'}
+      >
+        <div className="font-semibold uppercase tracking-wide">
+          Documentation readiness: {assessment.documentationReadiness.status.replace(/-/g, ' ')}
+        </div>
+        <div className="mt-1">
+          Present: {(assessment.documentationReadiness.presentElements.slice(0, 4).join(' ') || 'No strong support signals visible yet.')}
+        </div>
+        <div className="mt-1">
+          Missing: {(assessment.documentationReadiness.missingElements.slice(0, 3).join(' ') || 'No major missing support elements detected by this helper.')}
+        </div>
+      </div>
+
       <p data-testid="post-note-cpt-guardrail" className={guardrailClassName}>
         Not final billing advice. Do not add facts just to support a code; verify current CPT, payer, facility, telehealth, and state-specific requirements before billing.
       </p>

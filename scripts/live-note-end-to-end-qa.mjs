@@ -794,6 +794,13 @@ async function main() {
     if (!postNoteCptGuardrailVisible || !/not final billing advice|do not add facts/i.test(postNoteCptGuardrailText)) {
       throw new Error('Post-note CPT support guardrail did not render with conservative billing language.');
     }
+    const postNoteCptReadinessVisible = await waitForVisible(page.getByTestId('post-note-cpt-readiness'), 5000);
+    const postNoteCptReadinessText = postNoteCptReadinessVisible
+      ? await page.getByTestId('post-note-cpt-readiness').first().innerText()
+      : '';
+    if (!postNoteCptReadinessVisible || !/Documentation readiness|Present:|Missing:/i.test(postNoteCptReadinessText)) {
+      throw new Error('Post-note CPT documentation-readiness summary did not render.');
+    }
     const postNoteCptCandidateVisible = await waitForVisible(page.getByTestId('post-note-cpt-candidate-card').first(), 5000);
     const postNoteCptCandidateText = postNoteCptCandidateVisible
       ? await page.getByTestId('post-note-cpt-candidate-card').first().innerText()
@@ -899,6 +906,7 @@ async function main() {
         postNoteCptPanelVisible,
         postNoteCptPanelCharacters: postNoteCptPanelText.length,
         postNoteCptGuardrailVisible,
+        postNoteCptReadinessVisible,
         assistantAnswerCharacters: assistantResult.answerCharacters,
         assistantAnswerVisible: assistantResult.visibleInViewport,
         assistantRewriteAnswerCharacters: assistantRewriteResult.rewriteAnswerCharacters,

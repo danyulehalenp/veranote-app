@@ -1012,28 +1012,41 @@ type DraftFormatRequest = {
   label: string;
 };
 
-function classifyDraftFormatRequest(message: string): DraftFormatRequest | null {
-  const normalized = normalizeMessageForClinicalRouting(message)
+function normalizeDraftFormatMessage(message: string) {
+  return normalizeMessageForClinicalRouting(message)
     .replace(/\bparagraf\b/g, 'paragraph')
     .replace(/\bparagrph\b/g, 'paragraph')
     .replace(/\bparagaph\b/g, 'paragraph')
     .replace(/\bparagragh\b/g, 'paragraph')
+    .replace(/\bparagrapgh\b/g, 'paragraph')
+    .replace(/\bparagrap\b/g, 'paragraph')
     .replace(/\bparagrah\b/g, 'paragraph')
     .replace(/\bpargraph\b/g, 'paragraph')
+    .replace(/\bparagrpah\b/g, 'paragraph')
     .replace(/\bsectons\b/g, 'sections')
     .replace(/\bsectionz\b/g, 'sections')
     .replace(/\bshoter\b/g, 'shorter')
     .replace(/\bshortter\b/g, 'shorter')
+    .replace(/\bcondence\b/g, 'condense')
+    .replace(/\bcondenced\b/g, 'condensed')
+    .replace(/\bcondnsed\b/g, 'condensed')
     .replace(/\bconcice\b/g, 'concise')
     .replace(/\bconcisse\b/g, 'concise')
     .replace(/\bconscise\b/g, 'concise')
     .replace(/\bbreif\b/g, 'brief')
+    .replace(/\blenghten\b/g, 'lengthen')
+    .replace(/\blenght\b/g, 'length')
     .replace(/\bdetial\b/g, 'detail')
     .replace(/\bdetials\b/g, 'details')
     .replace(/\bnarative\b/g, 'narrative')
     .replace(/\bnarritive\b/g, 'narrative')
+    .replace(/\bnarrativ\b/g, 'narrative')
     .replace(/\bassesment\b/g, 'assessment')
     .replace(/\bsummery\b/g, 'summary');
+}
+
+function classifyDraftFormatRequest(message: string): DraftFormatRequest | null {
+  const normalized = normalizeDraftFormatMessage(message);
 
   const hasDraftAnchor = /\b(note|draft|follow[-\s]?up|progress note|hpi|mse|plan|this|it)\b/.test(normalized);
   const hasRewriteVerb = /\b(make|turn|convert|change|format|rewrite|put|collapse|flow|split|organize|reorganize|shape)\b/.test(normalized);
@@ -1054,6 +1067,8 @@ function classifyDraftFormatRequest(message: string): DraftFormatRequest | null 
 
   const asksForParagraph = /\b(one|single|1)\s+paragraph\b/.test(normalized)
     || /\bparagraph form\b/.test(normalized)
+    || /\bparagraph style\b/.test(normalized)
+    || /\bin paragraph\b/.test(normalized)
     || /\bno sections?\b/.test(normalized)
     || /\binstead of sections?\b/.test(normalized);
   if (asksForParagraph) {
@@ -1063,7 +1078,7 @@ function classifyDraftFormatRequest(message: string): DraftFormatRequest | null 
     };
   }
 
-  if (/\b(shorter|more concise|concise|tighten|tighter|less wordy|brief)\b/.test(normalized)) {
+  if (/\b(shorter|more concise|concise|tighten|tighter|less wordy|brief|condense|condensed)\b/.test(normalized)) {
     if (/\b(keep|leave|preserve)\b.*\b(headings?|sections?)\b|\b(headings?|sections?)\b.*\b(keep|leave|preserve)\b/.test(normalized)) {
       return {
         kind: 'concise-headings',
@@ -1077,7 +1092,7 @@ function classifyDraftFormatRequest(message: string): DraftFormatRequest | null 
     };
   }
 
-  if (/\b(longer|more detail|more details|include more detail|include more details|more complete)\b/.test(normalized)) {
+  if (/\b(longer|lengthen|more detail|more details|include more detail|include more details|more complete)\b/.test(normalized)) {
     return {
       kind: 'longer',
       label: 'more detailed format',
@@ -1113,6 +1128,89 @@ function classifyDraftFormatRequest(message: string): DraftFormatRequest | null 
   }
 
   return null;
+}
+
+function classifyContextualDraftFormatFollowup(message: string, context?: AssistantApiContext): DraftFormatRequest | null {
+  if (!context?.currentDraftText?.trim()) {
+    return null;
+  }
+
+  const normalized = normalizeDraftFormatMessage(message);
+  const likelyReferenceQuestion = /\b(what is|what are|what does|how does|can .{0,40}\b(take|be taken|use|be used)|approved|fda|interaction|contraindication|criteria|diagnos|dose|lab|level|lithium|wellbutrin|bupropion|paxil|paroxetine|lamictal|lamotrigine|schizoaffective|bipolar|psychosis|ssri|snri|antipsychotic)\b/.test(normalized);
+  if (likelyReferenceQuestion) {
+    return null;
+  }
+
+  if (/\bhpi\b.*\b(first|1st)\s+paragraph\b.*\b(mse|mental status|plan)\b.*\b(second|2nd)\s+paragraph\b/.test(normalized)
+    || /\b(first|1st)\s+paragraph\b.*\bhpi\b.*\b(second|2nd)\s+paragraph\b.*\b(mse|mental status|plan)\b/.test(normalized)
+    || /\bhpi\b.*\bparagraph\b.*\bmse\b.*\bplan\b/.test(normalized)) {
+    return {
+      kind: 'two-paragraph-hpi-mse-plan',
+      label: 'two-paragraph HPI/MSE/Plan format',
+    };
+  }
+
+  if (/\b(one|single|1)\s+paragraph\b|\bparagraph form\b|\bparagraph style\b|\bin paragraph\b|\bno sections?\b|\binstead of sections?\b/.test(normalized)) {
+    return {
+      kind: 'one-paragraph',
+      label: 'one-paragraph format',
+    };
+  }
+
+  const namedNoteBuilderTarget = /\b(discharge summary|admission note|admit note|progress note|follow[-\s]?up note|hpi|assessment|risk wording|safety wording|plan paragraph)\b/.test(normalized);
+  const clinicalContentAnchor = /\b(voices?|hallucinations?|ah|vh|command|si|suicid|hi|homicid|risk|goodbye texts?|unsafe|psychosis|mania|manic|meth|withdrawal|intoxication|meds?|refus)\b/.test(normalized);
+  const terseRewriteOnly = normalized.split(/\s+/).filter(Boolean).length <= 4 && !namedNoteBuilderTarget;
+  if (/\b(shorter|more concise|concise|tighten|tighter|less wordy|brief|condense|condensed)\b/.test(normalized)
+    && !clinicalContentAnchor
+    && (/\b(keep|matters?|preserve|dont lose|don't lose|leave|still include|maintain|same facts?|what matters)\b/.test(normalized) || terseRewriteOnly)) {
+    return {
+      kind: 'shorter',
+      label: 'shorter concise format',
+    };
+  }
+
+  if (/\b(longer|lengthen|more detail|more details|include more detail|include more details|more complete)\b/.test(normalized)) {
+    return {
+      kind: 'longer',
+      label: 'more detailed format',
+    };
+  }
+
+  if (/\b(flow like a story|like a story|story form|narrative|narrative form|flow better|make it flow|story-like|storylike)\b/.test(normalized)) {
+    return {
+      kind: 'narrative',
+      label: 'narrative story-flow format',
+    };
+  }
+
+  if (/\b(chronological|chronologic|timeline|in order|order it happened|sequence)\b/.test(normalized)) {
+    return {
+      kind: 'chronological',
+      label: 'chronological story-flow format',
+    };
+  }
+
+  if (/\bsoap\b|\bsubjective\b.*\bobjective\b.*\bassessment\b.*\bplan\b/.test(normalized)) {
+    return {
+      kind: 'soap',
+      label: 'SOAP format',
+    };
+  }
+
+  if (/\b(ehr[-\s]?ready|copy[-\s]?paste|copy into|paste into|wellsky|tebra|epic|cerner|athena|athenaone|eclinicalworks|advancedmd|drchrono|simplepractice|therapy ?notes|export format|field ready)\b/.test(normalized)) {
+    return {
+      kind: 'ehr-ready',
+      label: 'EHR-ready copy/paste format',
+    };
+  }
+
+  return null;
+}
+
+function shouldSuppressDraftFormatContextFallback(message: string) {
+  const normalized = normalizeDraftFormatMessage(message);
+  return /\b(what is|what are|what does|how does|can .{0,40}\b(take|be taken|use|be used)|approved|fda|interaction|contraindication|criteria|diagnos|dose|lab|level|lithium|wellbutrin|bupropion|paxil|paroxetine|lamictal|lamotrigine|schizoaffective|bipolar|psychosis|ssri|snri|antipsychotic)\b/.test(normalized)
+    || /\b(voices?|hallucinations?|ah|vh|command|si|suicid|hi|homicid|risk|goodbye texts?|unsafe|psychosis|mania|manic|meth|withdrawal|intoxication|meds?|refus)\b/.test(normalized);
 }
 
 function normalizeDraftHeading(value: string) {
@@ -1395,7 +1493,8 @@ function buildDraftFormattingHelp(
   message: string,
   context?: AssistantApiContext,
 ): AssistantResponsePayload | null {
-  const formatRequest = classifyDraftFormatRequest(message);
+  const formatRequest = classifyDraftFormatRequest(message)
+    || classifyContextualDraftFormatFollowup(message, context);
   if (!formatRequest) {
     return null;
   }
@@ -1424,11 +1523,12 @@ function buildDraftFormattingHelp(
     : formattedDraft;
 
   return {
-    message: `Yes. Here is the current ${noteLabel} rewritten in ${formatRequest.label} without adding new facts:\n\n${visibleDraft}`,
+    message: `Chart-ready wording: here is the current ${noteLabel} rewritten in ${formatRequest.label} without adding new facts:\n\n${visibleDraft}`,
     suggestions: [
       'Review once for source fidelity before copying forward.',
       'I treated this as writing shape only, not a new MSE checklist.',
       'You can ask for another shape: shorter, longer, story flow, SOAP, chronological, or two paragraphs.',
+      ...(formatRequest.kind === 'one-paragraph' ? ['One paragraph output is source-bound and does not add new facts.'] : []),
       ...(formattedDraft.length > visibleDraft.length ? ['The visible draft was long, so this response shows the first portion available to the assistant.'] : []),
     ],
     actions: [
@@ -3461,12 +3561,18 @@ export async function POST(request: Request) {
       ignoreStaleClinicalContext ? '' : body.context?.currentDraftText || '',
     ]);
     const [sanitizedMessage, sanitizedEffectiveMessage, sanitizedSourceText, sanitizedDraftText] = sanitizedTexts;
+    const rawAssistantMessageForRouting = normalizeVisibleClinicalTyposForRouting(sanitizedMessage);
     const assistantMessageForRouting = normalizeVisibleClinicalTyposForRouting(atlasConversation.didRewrite ? sanitizedEffectiveMessage : sanitizedMessage);
     const providerId = resolveAssistantProviderId(body.context, authenticatedProviderId);
-    const oneParagraphFormatPayload = buildDraftFormattingHelp(assistantMessageForRouting, {
+    const draftFormatContext = {
       ...body.context,
       currentDraftText: sanitizedDraftText,
-    });
+    };
+    const rawDraftFormatPayload = buildDraftFormattingHelp(rawAssistantMessageForRouting, draftFormatContext);
+    const oneParagraphFormatPayload = rawDraftFormatPayload
+      || (shouldSuppressDraftFormatContextFallback(rawAssistantMessageForRouting)
+        ? null
+        : buildDraftFormattingHelp(assistantMessageForRouting, draftFormatContext));
     if (oneParagraphFormatPayload) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
       const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';

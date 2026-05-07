@@ -286,6 +286,7 @@ function removeUnsupportedMedicalStability(note: string, sourceInput: string) {
  if (/\bmedically stable|medical stability\b/i.test(sourceInput)) return note;
 
  return note
+  .replace(/\bnot medically stable\b/gi, 'medical stability is not established from the provided source')
   .replace(/\bthe patient (?:remains|is|was) medically stable\b/gi, 'Medical stability is not established from the provided source')
   .replace(/\bpatient (?:remains|is|was) medically stable\b/gi, 'Medical stability is not established from the provided source')
   .replace(/\b(?:remains|is|was) medically stable\b/gi, 'Medical stability is not established from the provided source');
@@ -305,6 +306,31 @@ function preserveMedicalClearanceUncertainty(note: string, sourceInput: string) 
   ? 'Medical clearance is not established from the provided source; the transfer note includes questioned clearance wording and source documentation is incomplete.'
   : 'Medical clearance is not established from the provided source; final clearance wording is absent, pending, or not documented in the provided material.';
  return `${hardenedNote.trim()}\n\nMedical Clearance / Source Limitation:\n${sourceLimitation}`;
+}
+
+function preservePendingOrUnclearLabSourceLimits(note: string, sourceInput: string) {
+ const labLimits: string[] = [];
+
+ if (/\bUDS\b.{0,80}\bpending\b|\bpending\b.{0,80}\bUDS\b/i.test(sourceInput)
+  && !/\bUDS\b.{0,80}\bpending\b|\bpending\b.{0,80}\bUDS\b/i.test(note)) {
+  labLimits.push('UDS was marked pending in the source.');
+ }
+
+ if (/\bpotassium\b.{0,80}(?:appears|unclear|cut off|3\.\?)/i.test(sourceInput)
+  && !/\bpotassium\b.{0,80}(?:appears|unclear|cut off|3\.|not fully visible)/i.test(note)) {
+  labLimits.push('Potassium value was partially cut off/unclear in the scanned or OCR lab source.');
+ }
+
+ if (/\bpregnancy(?: test)?\b.{0,80}(?:not visible|line not visible|cut off|unclear)/i.test(sourceInput)
+  && !/\bpregnancy(?: test)?\b.{0,80}(?:not visible|line not visible|cut off|unclear|not documented)/i.test(note)) {
+  labLimits.push('Pregnancy test line was not visible in the available source.');
+ }
+
+ if (!labLimits.length) {
+  return note;
+ }
+
+ return `${note.trim()}\n\nDiagnostics / Source Limitation:\n${labLimits.join(' ')}`;
 }
 
 function hardenSourceBoundRiskWording(note: string, sourceInput: string) {
@@ -347,6 +373,20 @@ function preservePsychosisObservationConflict(note: string, sourceInput: string)
 function removeUnsupportedMedicationActionPlan(note: string, sourceInput: string) {
  let cleaned = note;
 
+ const sourceHasCopiedForwardMedicationConflict = /\bcopied[-\s]?forward\b[\s\S]{0,600}\b(?:continue|continued)\b[\s\S]{0,120}\b(?:sertraline|trazodone)\b/i.test(sourceInput)
+  && /\b(?:sertraline|zoloft)\b[\s\S]{0,160}\b(?:discontinued|not taken|not taking|has not taken)\b|\btrazodone\b[\s\S]{0,120}\b(?:never picked up|not picked up|not taking)\b/i.test(sourceInput);
+ if (sourceHasCopiedForwardMedicationConflict) {
+  cleaned = cleaned
+   .replace(/\b(?:continue|continued|maintain|restart)\s+sertraline[^.\n]*(?:\.\s*)?/gi, 'Prior sertraline continuation appears only in copied-forward or historical source material; current source documents discontinuation/nonuse and no final medication decision is documented. ')
+   .replace(/\b(?:continue|continued|maintain|restart)\s+trazodone[^.\n]*(?:\.\s*)?/gi, 'Prior trazodone continuation appears only in copied-forward or historical source material; current source documents that trazodone was not picked up and no final medication decision is documented. ')
+   .replace(/\bsertraline 100 mg daily continued[^.\n]*(?:\.\s*)?/gi, 'Sertraline 100 mg daily appears in copied-forward or historical source material; current source documents discontinuation/nonuse and no final medication decision is documented. ')
+   .replace(/\btrazodone 50 mg qhs continued[^.\n]*(?:\.\s*)?/gi, 'Trazodone 50 mg qhs appears in copied-forward or historical source material; current source documents that trazodone was not picked up and no final medication decision is documented. ');
+
+  if (!/\b(no final medication decision|medication discussion|decision.*not documented|no medication decision was documented)\b/i.test(cleaned)) {
+   cleaned = `${cleaned.trim()}\n\nMedication Reconciliation / Source Limitation:\nCopied-forward prior medication text conflicts with current reconciliation and patient report. No final medication decision is documented in the provided source.`;
+  }
+ }
+
  const sourceSupportsBuprenorphineContinuation = /\b(?:continue|continued|dose unchanged|remain(?:ed)? on|no dose change)\b.{0,80}\bbuprenorphine|\bbuprenorphine\b.{0,80}\b(?:continue|continued|dose unchanged|no dose change)\b/i.test(sourceInput);
  if (!sourceSupportsBuprenorphineContinuation) {
   cleaned = cleaned
@@ -354,7 +394,9 @@ function removeUnsupportedMedicationActionPlan(note: string, sourceInput: string
    .replace(/\bContinue buprenorphine\/naloxone[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
    .replace(/\bDo not change buprenorphine(?:\/naloxone)? dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
    .replace(/\bNo changes? to (?:the )?buprenorphine(?:\/naloxone)? dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
-   .replace(/\bNo buprenorphine dose change is documented[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ');
+   .replace(/\bNo buprenorphine dose changes? (?:are|is) documented(?: or recommended)?[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+   .replace(/\bNo dose changes? (?:are|were|is) documented(?: or recommended)?[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+   .replace(/\b(?:The patient )?did not report any changes? to (?:their )?medication regimen[^.\n]*(?:\.\s*)?/gi, 'No current buprenorphine/naloxone dosing decision is documented in the provided source. ');
  }
 
  const sourceDocumentsNaloxoneProvision = /\b(?:naloxone|narcan)\b.{0,80}\b(?:provided|given|dispensed|prescribed|sent)\b|\b(?:provided|given|dispensed|prescribed|sent)\b.{0,80}\b(?:naloxone|narcan)\b/i.test(sourceInput);
@@ -415,7 +457,8 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withSleepPreserved = preserveDocumentedSleepDetail(withRiskHardened, input.noteType, input.sourceInput);
  const withoutUnsupportedMedicalStability = removeUnsupportedMedicalStability(withSleepPreserved, input.sourceInput);
  const withMedicalClearancePreserved = preserveMedicalClearanceUncertainty(withoutUnsupportedMedicalStability, input.sourceInput);
- const withSourceBoundRisk = hardenSourceBoundRiskWording(withMedicalClearancePreserved, input.sourceInput);
+ const withLabLimitsPreserved = preservePendingOrUnclearLabSourceLimits(withMedicalClearancePreserved, input.sourceInput);
+ const withSourceBoundRisk = hardenSourceBoundRiskWording(withLabLimitsPreserved, input.sourceInput);
  const withDiagnosticUncertainty = preserveDiagnosticUncertainty(withSourceBoundRisk, input.sourceInput);
  const withPsychosisConflictPreserved = preservePsychosisObservationConflict(withDiagnosticUncertainty, input.sourceInput);
  const withoutUnsupportedMedicationAction = removeUnsupportedMedicationActionPlan(withPsychosisConflictPreserved, input.sourceInput);

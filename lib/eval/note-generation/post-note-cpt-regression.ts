@@ -59,7 +59,7 @@ export const postNoteCptRegressionCases: PostNoteCptRegressionCase[] = [
       { family: 'Psychotherapy add-on with E/M family' },
       { family: 'Psychotherapy-only family' },
     ],
-    requiredText: [/possible CPT-support candidate/i, /not definitive billing recommendations/i],
+    requiredText: [/possible CPT-support candidate/i, /not definitive billing recommendations/i, /Total encounter time is visible/i],
     forbiddenText: [/bill this code/i, /guaranteed/i, /meets criteria for/i],
   },
   {
@@ -154,6 +154,29 @@ export const postNoteCptRegressionCases: PostNoteCptRegressionCase[] = [
     ],
     requiredText: [/Telehealth consent is not clearly documented/i, /Patient location is not clearly documented/i],
     forbiddenText: [/modifier is confirmed/i, /place-of-service confirmed/i],
+  },
+  {
+    id: 'telehealth-med-followup-with-consent-location-still-review-only',
+    title: 'Telehealth follow-up with consent and location shows readiness signals without final modifier certainty',
+    noteType: 'Outpatient Psych Telehealth Follow-Up',
+    completedNoteText: [
+      'Telehealth medication follow-up completed by video.',
+      'Patient location documented as home in Louisiana; telehealth consent reviewed.',
+      'Medication adherence, side effects, and treatment options reviewed.',
+      'Total time: 28 minutes.',
+    ].join(' '),
+    encounterSupport: {
+      totalMinutes: '28',
+      telehealthModality: 'audio-video',
+      telehealthConsent: true,
+      patientLocation: 'Home in Louisiana',
+    },
+    expectedCandidates: [
+      { family: 'Office / outpatient E/M family', strength: 'stronger-documentation-support', candidateCode: '99212-99215' },
+      { family: 'Telehealth billing/modifier review', strength: 'possible-review' },
+    ],
+    requiredText: [/Telehealth consent support is visible/i, /Patient location support is visible/i, /does not select the final CPT level/i],
+    forbiddenText: [/modifier is confirmed/i, /place-of-service confirmed/i, /bill this code/i],
   },
   {
     id: 'misspelled-therapy-without-minutes',

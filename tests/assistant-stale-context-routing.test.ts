@@ -258,6 +258,58 @@ describe('assistant stale-context routing', () => {
     expect(payload.actions?.[0]?.draftText).toContain('Plan: Continue source-supported follow-up plan');
   });
 
+  it('handles follow-up-note paragraph requests that say instead of sections', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'for follow up note, instead of sections, make it into one paragraph',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports anxiety remains present but is less severe than last visit.',
+            '',
+            'MSE:',
+            'Mood anxious; thought process linear.',
+            '',
+            'Assessment:',
+            'Symptoms remain partially improved.',
+            '',
+            'Plan:',
+            'Continue source-supported treatment plan and follow up as scheduled.',
+          ].join('\n'),
+        },
+        recentMessages: [
+          {
+            role: 'provider',
+            content: 'What MSE pieces are missing?',
+          },
+          {
+            role: 'assistant',
+            content: 'Source-supported MSE findings remain limited. Leave missing domains unfilled.',
+            answerMode: 'mse_completion_limits',
+            builderFamily: 'mse',
+          },
+        ],
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.answerMode).toBe('chart_ready_wording');
+    expect(payload.message).toContain('one-paragraph format');
+    expect(payload.message).toContain('HPI: Patient reports anxiety remains present');
+    expect(payload.message).toContain('MSE: Mood anxious');
+    expect(payload.message).toContain('Plan: Continue source-supported treatment plan');
+    expect(payload.message).not.toContain('Source-supported MSE findings');
+    expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
+    expect(payload.actions?.[0]?.draftText).not.toContain('\n\nMSE:');
+  });
+
   it('supports two-paragraph HPI plus MSE/plan draft shape requests', async () => {
     const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
       method: 'POST',
@@ -658,5 +710,85 @@ describe('assistant stale-context routing', () => {
     expect(payload.message).not.toContain('HPI:');
     expect(payload.message).not.toContain('second paragraph');
     expect(payload.actions?.[0]?.type).not.toBe('apply-draft-rewrite');
+  });
+
+  it('switches focus from draft shaping to a new diagnostic criteria question and then elaborates', async () => {
+    const diagnosticResponse = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'what is schizoaffective disorder criteria?',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports anxiety is partially improved.',
+            '',
+            'Plan:',
+            'Continue source-supported follow-up plan.',
+          ].join('\n'),
+        },
+        recentMessages: [
+          {
+            role: 'provider',
+            content: 'Make this draft into one paragraph.',
+          },
+          {
+            role: 'assistant',
+            content: 'Yes. Here is the current note rewritten in one-paragraph format without adding new facts.',
+            answerMode: 'chart_ready_wording',
+            builderFamily: 'chart-wording',
+          },
+        ],
+      }),
+    }));
+
+    const diagnosticPayload = await diagnosticResponse.json();
+    expect(diagnosticPayload.answerMode).toBe('direct_reference_answer');
+    expect(diagnosticPayload.message).toMatch(/schizoaffective/i);
+    expect(diagnosticPayload.message).toMatch(/psychosis/i);
+    expect(diagnosticPayload.message).toMatch(/mood/i);
+    expect(diagnosticPayload.message).not.toContain('one-paragraph format');
+    expect(diagnosticPayload.message).not.toContain('HPI:');
+    expect(diagnosticPayload.actions?.[0]?.type).not.toBe('apply-draft-rewrite');
+
+    const elaborationResponse = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'can you elaborate on this?',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: 'HPI:\nPatient reports anxiety is partially improved.',
+        },
+        recentMessages: [
+          {
+            role: 'provider',
+            content: 'what is schizoaffective disorder criteria?',
+          },
+          {
+            role: 'assistant',
+            content: diagnosticPayload.message,
+            answerMode: diagnosticPayload.answerMode,
+          },
+        ],
+      }),
+    }));
+
+    const elaborationPayload = await elaborationResponse.json();
+    expect(elaborationPayload.answerMode).toBe('direct_reference_answer');
+    expect(elaborationPayload.eval?.routePriority).toBe('atlas-conversation:diagnostic_reference');
+    expect(elaborationPayload.eval?.conversation?.followupIntent).toBe('elaborate');
+    expect(elaborationPayload.message).toMatch(/schizoaffective/i);
+    expect(elaborationPayload.message).toMatch(/psychosis/i);
+    expect(elaborationPayload.message).toMatch(/mood/i);
+    expect(elaborationPayload.message).not.toContain("I don't have a safe Veranote answer");
+    expect(elaborationPayload.message).not.toContain('one-paragraph format');
   });
 });

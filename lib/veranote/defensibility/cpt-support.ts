@@ -175,6 +175,11 @@ export function evaluatePostNoteCptRecommendations(
     return {
       summary: 'No completed note text is available for CPT support review.',
       candidates: [],
+      documentationReadiness: {
+        status: 'too-thin',
+        presentElements: [],
+        missingElements: ['Completed note text is required before Veranote can produce coding-support candidates.'],
+      },
       timeSignals: [],
       missingGlobalElements: ['Completed note text is required before Veranote can produce coding-support candidates.'],
       guardrails: [
@@ -345,13 +350,53 @@ export function evaluatePostNoteCptRecommendations(
     ? `Veranote found ${candidates.length} possible CPT-support candidate family${candidates.length === 1 ? '' : 'ies'} to review after note completion.`
     : 'The completed note is too thin for meaningful CPT-support candidates.';
 
+  const presentReadinessElements = [
+    completedNoteText ? 'Completed note text is available.' : '',
+    evaluationWork ? 'Evaluation/intake structure is visible.' : '',
+    medicationManagement ? 'Medication-management or prescribing work is visible.' : '',
+    psychotherapyContent ? 'Distinct psychotherapy or therapy content is visible.' : '',
+    psychotherapyTimeDocumented ? 'Separate psychotherapy time is visible.' : '',
+    totalTimeDocumented ? 'Total encounter time is visible.' : '',
+    crisisWork ? 'Crisis or acute-risk content is visible.' : '',
+    communicationComplexity ? 'Interactive complexity or communication-barrier context is visible.' : '',
+    telehealthContext ? 'Telehealth context is visible.' : '',
+    encounterSupport?.telehealthConsent || /consent/i.test(completedNoteText) ? 'Telehealth consent support is visible.' : '',
+    compact(encounterSupport?.patientLocation) || /patient location/i.test(completedNoteText) ? 'Patient location support is visible.' : '',
+  ].filter(Boolean);
+
+  const readinessMissingElements = [
+    ...(!totalTimeDocumented ? ['Total encounter time is not clearly documented if time-based review is intended.'] : []),
+    ...(psychotherapyContent && !psychotherapyTimeDocumented ? ['Separate psychotherapy minutes are not clearly documented.'] : []),
+    ...(crisisWork && !timeSignals.some((item) => /crisis/i.test(item)) && !compact(encounterSupport?.crisisStartTime) && !compact(encounterSupport?.crisisEndTime)
+      ? ['Crisis timing is not clearly documented if crisis psychotherapy family review is intended.']
+      : []),
+    ...(telehealthContext && !encounterSupport?.telehealthConsent && !/consent/i.test(completedNoteText) ? ['Telehealth consent is not clearly documented.'] : []),
+    ...(telehealthContext && !compact(encounterSupport?.patientLocation) && !/patient location/i.test(completedNoteText) ? ['Patient location is not clearly documented.'] : []),
+    ...(!medicationManagement && !psychotherapyContent && !evaluationWork && !crisisWork
+      ? ['Encounter family is not clear from the completed note text.']
+      : []),
+    'Specific level/code still requires coder/provider review against current CPT, payer, facility, telehealth, and state rules.',
+  ];
+
+  const documentationReadiness = {
+    status: !candidates.length
+      ? 'too-thin' as const
+      : candidates.some((candidate) => candidate.strength === 'stronger-documentation-support') && readinessMissingElements.length <= 3
+        ? 'review-candidate' as const
+        : 'needs-review' as const,
+    presentElements: presentReadinessElements,
+    missingElements: readinessMissingElements,
+  };
+
   return {
     summary,
     candidates,
+    documentationReadiness,
     timeSignals,
     missingGlobalElements,
     guardrails: [
       'These are possible CPT-support candidates, not definitive billing recommendations.',
+      'Veranote can surface documentation support and missing elements, but it does not select the final CPT level.',
       'Never add or rewrite clinical facts just to support a code.',
       'Verify against current CPT, payer, facility, telehealth, and state-specific requirements before billing.',
       'If documentation is thin or contradictory, show the gap rather than forcing a code family.',
