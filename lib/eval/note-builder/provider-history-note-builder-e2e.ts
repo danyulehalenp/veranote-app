@@ -125,7 +125,7 @@ function loadEvaluationEnv() {
   if (!fs.existsSync(localEnvPath)) return;
 
   const localEnv = fs.readFileSync(localEnvPath, 'utf8');
-  for (const key of ['OPENAI_API_KEY', 'OPENAI_MODEL']) {
+  for (const key of ['OPENAI_API_KEY', 'OPENAI_MODEL', 'VERANOTE_ALLOW_OPENAI', 'VERANOTE_AI_PROVIDER']) {
     if (process.env[key]) continue;
 
     const match = localEnv.match(new RegExp(`^${key}\\s*=\\s*(.+)$`, 'm'));
@@ -133,6 +133,18 @@ function loadEvaluationEnv() {
       process.env[key] = unquoteEnvValue(match[1]);
     }
   }
+}
+
+function shouldRetryLiveGeneration(meta: { pathUsed?: string; reason?: string }) {
+  const liveGenerationEnabled = process.env.VERANOTE_ALLOW_OPENAI === '1'
+    || process.env.VERANOTE_AI_PROVIDER === 'openai';
+
+  return Boolean(
+    process.env.OPENAI_API_KEY
+    && liveGenerationEnabled
+    && meta.pathUsed !== 'live'
+    && meta.reason === 'runtime_error',
+  );
 }
 
 export function selectFirst25Cases(bank: BankCase[]) {
@@ -583,21 +595,27 @@ export async function runProviderHistoryNoteBuilderE2e(options: {
 
   for (const item of selected) {
     const appNoteType = appNoteTypeFor(item.noteType);
-    const result = await generateNote({
+    const generationInput = {
       specialty: /medical/i.test(item.noteType) ? 'Psychiatry / Medical' : 'Psychiatry',
       noteType: appNoteType,
       outputStyle: 'Standard',
       format: 'Labeled Sections',
       keepCloserToSource: true,
       flagMissingInfo: true,
-      outputScope: 'full-note',
+      outputScope: 'full-note' as const,
       customInstructions: [
         `Evaluation note-builder source case: ${item.noteType}.`,
         `Expected sections: ${item.expectedSections.join(', ')}.`,
         'Use only the synthetic source input. Preserve uncertainty, source labels, risk contradictions, and missing data.',
       ].join('\n'),
       sourceInput: item.syntheticRawInput,
-    });
+    };
+    let result = await generateNote(generationInput);
+
+    if (shouldRetryLiveGeneration(result.generationMeta)) {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      result = await generateNote(generationInput);
+    }
 
     cases.push(assessCase(
       item,

@@ -4511,9 +4511,9 @@ export function NewNoteForm() {
   const workspaceQuickFindItems = useMemo<WorkspaceQuickFindItem[]>(() => [
     {
       id: 'paste-source',
-      label: 'Paste Source',
-      helper: 'Jump to Pre-Visit Data / Paste Source Here.',
-      keywords: ['source', 'paste', 'previsit', 'pre-visit', 'intake', 'labs', 'nursing', 'collateral', 'raw data'],
+      label: 'Paste Source Here',
+      helper: 'Jump to box 1: Pre-Visit Data / Paste Source Here.',
+      keywords: ['source', 'paste', 'paste source', 'paste source here', 'previsit', 'pre-visit', 'intake', 'labs', 'nursing', 'collateral', 'raw data'],
       action: handlePasteSourceJump,
     },
     {
@@ -4561,7 +4561,14 @@ export function NewNoteForm() {
       helper: 'Find post-note coding-support candidates after a draft exists.',
       keywords: ['cpt', 'billing', 'code', 'coding', '90833', '99214', 'claim'],
       action: () => {
-        scrollToDraftControls();
+        setWorkflowStage('compose');
+        setActiveComposeLane(hasGeneratedDraft ? 'finish' : 'source');
+        window.scrollTo({ top: 0, behavior: 'auto' });
+        [80, 220, 420].forEach((delay) => {
+          window.setTimeout(() => {
+            window.scrollTo({ top: 0, behavior: 'auto' });
+          }, delay);
+        });
         setEvalBanner(
           hasGeneratedDraft
             ? 'CPT support appears in Review Draft after generation. Treat candidates as coding-support only.'
@@ -4580,7 +4587,7 @@ export function NewNoteForm() {
       id: 'ehr-preferences',
       label: 'EHR / Output Preferences',
       helper: 'Change EHR target, field formatting, and copy/paste destination rules.',
-      keywords: ['ehr', 'wellsky', 'tebra', 'simplepractice', 'output', 'preferences', 'copy paste', 'destination'],
+      keywords: ['ehr', 'wellsky', 'tebra', 'simplepractice', 'output', 'preferences', 'copy paste', 'destination', 'export', 'finish', 'copy'],
       action: scrollToOutputPreferences,
     },
     {
@@ -4816,7 +4823,7 @@ export function NewNoteForm() {
 	                runWorkspaceQuickFind(workspaceQuickFindResults[0]);
 	              }
 	            }}
-	            placeholder="Try CPT, prompt, EHR, ambient..."
+	            placeholder="Try paste, dictation, ambient, CPT..."
 	            aria-label="Find in workspace"
 	          />
 	          {workspaceFindFocused || workspaceFindQuery.trim() ? (
@@ -4838,12 +4845,12 @@ export function NewNoteForm() {
 	                ))
 	              ) : (
 	                <div className="workspace-rail-search-empty">
-	                  No match yet. Try CPT, prompt, MSE, EHR, ambient, export, or saved.
+	                  No match yet. Try paste, dictation, ambient, CPT, prompt, EHR, export, or saved.
 	                </div>
 	              )}
 	            </div>
 	          ) : (
-	            <div className="workspace-rail-search-hint">Search obscure actions fast: CPT, prompt, MSE, export.</div>
+	            <div className="workspace-rail-search-hint">Search obscure actions fast: paste, dictation, ambient, CPT, prompt, EHR, export.</div>
 	          )}
 	        </div>
 
@@ -4853,7 +4860,7 @@ export function NewNoteForm() {
 	            onClick={handlePasteSourceJump}
 	            className="workspace-rail-primary"
 	          >
-	            Paste Source
+	            Paste Source Here
 	          </button>
 	          <button
 	            type="button"
@@ -5751,7 +5758,7 @@ export function NewNoteForm() {
                       <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Source packet</div>
                       <div className="mt-1 text-sm font-semibold text-white">Fill any of the four fields Veranote should use for this note</div>
                       <p className="mt-1 max-w-2xl text-xs leading-5 text-cyan-50/70">
-                        Paste copied ER notes, referral notes, labs, nursing intake, chart review, or outside records into Pre-Visit Data first. Dictation can go into any box; ambient listening is reviewed before it commits into Ambient Transcript.
+                        Box 1 is Paste Source Here: paste copied ER notes, referral notes, labs, nursing intake, chart review, or outside records into Pre-Visit Data first. Dictation can go into any box; ambient listening is reviewed before it commits into Ambient Transcript.
                       </p>
                     </div>
                     <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">

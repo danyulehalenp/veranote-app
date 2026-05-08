@@ -286,6 +286,20 @@ async function selectFirstVisible(page, selector, value) {
   ].join('\n'));
 }
 
+async function readFirstVisibleSelectValue(page, selector) {
+  const controls = page.locator(selector);
+  const count = await controls.count();
+
+  for (let index = 0; index < count; index += 1) {
+    const control = controls.nth(index);
+    if (await control.isVisible()) {
+      return control.inputValue();
+    }
+  }
+
+  return '';
+}
+
 async function fillSourceField(page, fieldId, value) {
   const textarea = page.locator(`#${fieldId} textarea`);
   await textarea.waitFor({ state: 'visible', timeout: 15000 });
@@ -312,6 +326,7 @@ function evaluateEhrCopyReadiness(note) {
     { label: 'html tags', pattern: /<\/?[a-z][^>]*>/i },
     { label: 'undefined/null artifact', pattern: /\b(?:undefined|null|NaN)\b/i },
     { label: 'provider add-on leaked as heading', pattern: /Provider Add-On/i },
+    { label: 'source lane label leaked', pattern: /\b(?:Pre-Visit Data|Live Visit Notes|Ambient Transcript|Provider Add-On)\s*:/i },
     { label: 'nonclinical QA marker leaked', pattern: /Nonclinical QA marker|E2E-|MATRIX-/i },
     { label: 'object serialization artifact', pattern: /\[object Object\]/i },
     { label: 'markdown code fence', pattern: /```/ },
@@ -322,10 +337,18 @@ function evaluateEhrCopyReadiness(note) {
   const forbiddenHits = forbidden
     .filter((item) => item.pattern.test(note))
     .map((item) => item.label);
+  const lines = note.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const veryLongLineCount = lines.filter((line) => line.length > 1800).length;
+  const hasChartLikeStructure = /\b(?:HPI|History of Present Illness|Subjective|Objective|Mental Status|MSE|Assessment|Plan|Interventions?|Response|Progress|Discharge|Reason for Admission|Session focused|therapist|client|homework|CBT)\b/i.test(note);
 
   return {
-    passed: note.trim().length > 200 && forbiddenHits.length === 0,
+    passed: note.trim().length > 200
+      && forbiddenHits.length === 0
+      && veryLongLineCount === 0
+      && hasChartLikeStructure,
     forbiddenHits,
+    veryLongLineCount,
+    hasChartLikeStructure,
   };
 }
 
@@ -343,6 +366,7 @@ async function runCase(page, item, helpers) {
   await selectFirstVisible(page, 'select[aria-label="Select provider role"]', item.role || 'Psychiatric NP');
   await selectFirstVisible(page, 'select[aria-label="Select EHR destination"]', ehr);
   await selectFirstVisible(page, 'select[aria-label="Select note type"]', item.noteType);
+  const selectedEhrValue = await readFirstVisibleSelectValue(page, 'select[aria-label="Select EHR destination"]');
 
   const dictationToggleVisible = await waitForVisible(page.getByText(/Dictation (On|Off)/).first(), 1500);
   const ambientToggleVisible = await waitForVisible(page.getByText(/Ambient (On|Off)/).first(), 1500);
@@ -361,6 +385,14 @@ async function runCase(page, item, helpers) {
   const payload = await response.json();
   const note = typeof payload.note === 'string' ? payload.note : '';
   await page.getByRole('button', { name: 'Back to Compose' }).waitFor({ state: 'visible', timeout: 30000 });
+  const reviewUiReadiness = {
+    backToComposeVisible: await page.getByRole('button', { name: 'Back to Compose' }).first().isVisible().catch(() => false),
+    finishLaneVisible: await page.getByText(/Finish review/i).first().isVisible().catch(() => false),
+    copyFinalNoteVisible: await page.getByRole('button', { name: /Copy Final Note/i }).first().isVisible().catch(() => false),
+    exportTextVisible: await page.getByRole('button', { name: /Export \.txt/i }).first().isVisible().catch(() => false),
+    cptSupportVisible: await page.getByTestId('post-note-cpt-support-panel').first().isVisible().catch(() => false),
+    finishPathMentioned: await page.getByText(/Copy or export|Finish|Export layer/i).first().isVisible().catch(() => false),
+  };
 
   const generationMode = payload.generationMeta?.pathUsed === 'live' ? 'live' : 'fallback';
   const generationReason = payload.generationMeta?.reason || 'browser-ui';
@@ -383,6 +415,8 @@ async function runCase(page, item, helpers) {
     role: item.role,
     runId,
     status: response.status(),
+    selectedEhrValue,
+    selectedEhrMatched: selectedEhrValue === ehr,
     sourceCharacters: sourceInput.length,
     noteCharacters: note.length,
     sourceFields: {
@@ -408,11 +442,17 @@ async function runCase(page, item, helpers) {
       guardIssue: generationModeIssue,
     },
     ehrCopyReadiness,
+    reviewUiReadiness,
     passed: response.ok
       && regressionResult.passed
       && ehrCopyReadiness.passed
       && dictationToggleVisible
       && ambientToggleVisible
+      && selectedEhrValue === ehr
+      && reviewUiReadiness.backToComposeVisible
+      && reviewUiReadiness.copyFinalNoteVisible
+      && reviewUiReadiness.cptSupportVisible
+      && reviewUiReadiness.finishPathMentioned
       && !generationModeIssue,
   };
 }
@@ -505,15 +545,21 @@ async function main() {
         `- Status: ${item.passed ? 'pass' : 'fail'}`,
         `- Note type: ${item.noteType}`,
         `- EHR: ${item.ehr}`,
+        `- Selected EHR value: ${item.selectedEhrValue} (${item.selectedEhrMatched ? 'matched' : 'mismatch'})`,
         `- Note characters: ${item.noteCharacters}`,
         `- Generation: ${item.generation.mode}:${item.generation.reason}`,
         `- Generation guard: ${item.generation.guardIssue || 'none'}`,
         `- Dictation control visible: ${item.captureReadiness.dictationToggleVisible}`,
         `- Ambient control visible: ${item.captureReadiness.ambientToggleVisible}`,
         `- Ambient field accepted text: ${item.captureReadiness.ambientFieldAcceptedText}`,
+        `- Review UI: back=${item.reviewUiReadiness.backToComposeVisible}, finish=${item.reviewUiReadiness.finishLaneVisible}, copy=${item.reviewUiReadiness.copyFinalNoteVisible}, export=${item.reviewUiReadiness.exportTextVisible}, cpt=${item.reviewUiReadiness.cptSupportVisible}, finishPath=${item.reviewUiReadiness.finishPathMentioned}`,
         `- Missing required concepts: ${item.regression.missing.length ? item.regression.missing.join('; ') : 'none'}`,
         `- Forbidden hits: ${item.regression.forbiddenHits.length ? item.regression.forbiddenHits.join('; ') : 'none'}`,
-        `- EHR copy issues: ${item.ehrCopyReadiness.forbiddenHits.length ? item.ehrCopyReadiness.forbiddenHits.join('; ') : 'none'}`,
+        `- EHR copy issues: ${[
+          ...item.ehrCopyReadiness.forbiddenHits,
+          item.ehrCopyReadiness.veryLongLineCount ? `${item.ehrCopyReadiness.veryLongLineCount} very long line(s)` : '',
+          item.ehrCopyReadiness.hasChartLikeStructure ? '' : 'missing chart-like structure',
+        ].filter(Boolean).join('; ') || 'none'}`,
       ].join('\n')),
       '',
     ].join('\n\n'));

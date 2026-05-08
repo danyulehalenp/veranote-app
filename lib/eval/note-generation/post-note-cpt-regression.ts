@@ -179,6 +179,103 @@ export const postNoteCptRegressionCases: PostNoteCptRegressionCase[] = [
     forbiddenText: [/modifier is confirmed/i, /place-of-service confirmed/i, /bill this code/i],
   },
   {
+    id: 'outpatient-med-management-mdm-without-time',
+    title: 'Medication follow-up with side effect and lab review can show MDM support without choosing E/M level',
+    noteType: 'Outpatient Psych Follow-Up',
+    completedNoteText: [
+      'Medication follow-up for worsening anxiety and insomnia.',
+      'Patient reports nausea after dose increase.',
+      'Recent CMP and TSH results reviewed; medication risks, benefits, and alternatives discussed.',
+      'Medical decision-making support is visible, but exact level selection is not part of this helper.',
+      'Dose adjustment options reviewed, but total time was not documented.',
+    ].join(' '),
+    expectedCandidates: [
+      { family: 'Office / outpatient E/M family', strength: 'stronger-documentation-support', candidateCode: '99212-99215' },
+    ],
+    forbiddenCandidates: [
+      { family: 'Psychotherapy add-on with E/M family' },
+      { family: 'Psychotherapy-only family' },
+    ],
+    requiredText: [/Medical decision-making cues are visible/i, /does not select the final CPT level/i, /If using time, total time must be documented clearly/i],
+    forbiddenText: [/bill this code/i, /99214 is supported/i, /guaranteed/i],
+  },
+  {
+    id: 'med-management-education-not-psychotherapy-addon',
+    title: 'Medication education alone does not create psychotherapy add-on support',
+    noteType: 'Outpatient Psych Follow-Up',
+    completedNoteText: [
+      'Medication adherence, side effects, sleep, and treatment options reviewed.',
+      'Patient education provided about dosing schedule, possible adverse effects, and when to call the clinic.',
+      'No distinct psychotherapy intervention or separate psychotherapy time documented.',
+      'Total time: 24 minutes.',
+    ].join(' '),
+    expectedCandidates: [
+      { family: 'Office / outpatient E/M family', strength: 'stronger-documentation-support', candidateCode: '99212-99215' },
+    ],
+    forbiddenCandidates: [
+      { family: 'Psychotherapy add-on with E/M family' },
+      { family: 'Psychotherapy-only family' },
+    ],
+    requiredText: [/Medication-management or prescribing work appears documented/i, /not definitive billing recommendations/i],
+    forbiddenText: [/Psychotherapy add-on/i, /90833/i, /bill this code/i],
+  },
+  {
+    id: 'psychotherapy-addon-content-missing-separate-time',
+    title: 'Psychotherapy add-on remains possible-review when intervention content exists but separate time is missing',
+    noteType: 'Outpatient Psych Follow-Up',
+    completedNoteText: [
+      'Medication adherence, side effects, and dose options reviewed.',
+      'CBT-oriented intervention focused on identifying avoidance thoughts and building a graded exposure plan.',
+      'No separate psychotherapy minutes documented.',
+    ].join(' '),
+    expectedCandidates: [
+      { family: 'Office / outpatient E/M family', candidateCode: '99212-99215' },
+      { family: 'Psychotherapy add-on with E/M family', strength: 'possible-review', candidateCode: '90833' },
+    ],
+    requiredText: [/Psychotherapy time is not clearly documented yet/i, /Separate psychotherapy minutes are needed/i],
+    forbiddenText: [/bill this code/i, /guaranteed/i],
+  },
+  {
+    id: 'crisis-structured-start-end-review-only',
+    title: 'Structured crisis start/end times support review candidate without final crisis code certainty',
+    noteType: 'Psychiatric Crisis Note',
+    completedNoteText: [
+      'Crisis intervention addressed suicidal ideation, de-escalation, safety planning, and means-safety counseling.',
+      'Patient was reassessed before disposition planning.',
+    ].join(' '),
+    encounterSupport: {
+      crisisStartTime: '14:05',
+      crisisEndTime: '15:10',
+    },
+    expectedCandidates: [
+      { family: 'Psychotherapy for crisis family', strength: 'possible-review', candidateCode: '90839' },
+    ],
+    requiredText: [/Crisis timing documented in structured support/i, /Crisis timing appears visible/i, /Treat this as a coding-review candidate/i],
+    forbiddenText: [/must bill 90839/i, /90840 is required/i, /guaranteed/i],
+  },
+  {
+    id: 'audio-only-telehealth-missing-location-stays-review-gap',
+    title: 'Audio-only telehealth documentation preserves missing location and payer-specific review gap',
+    noteType: 'Outpatient Psych Telehealth Follow-Up',
+    completedNoteText: [
+      'Audio-only telehealth medication follow-up completed.',
+      'Telehealth consent reviewed.',
+      'Medication tolerability, adherence, and refill needs reviewed.',
+      'Total time: 18 minutes.',
+    ].join(' '),
+    encounterSupport: {
+      totalMinutes: '18',
+      telehealthModality: 'audio-only',
+      telehealthConsent: true,
+    },
+    expectedCandidates: [
+      { family: 'Office / outpatient E/M family', strength: 'stronger-documentation-support', candidateCode: '99212-99215' },
+      { family: 'Telehealth billing/modifier review', strength: 'possible-review' },
+    ],
+    requiredText: [/Telehealth consent support is visible/i, /Patient location is not clearly documented/i, /payer-specific modifier/i],
+    forbiddenText: [/place-of-service confirmed/i, /modifier is confirmed/i, /bill this code/i],
+  },
+  {
     id: 'misspelled-therapy-without-minutes',
     title: 'Misspelled psychotherapy content is detected while minutes remain required',
     noteType: 'Therapy Progress Note',

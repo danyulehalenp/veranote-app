@@ -273,6 +273,19 @@ function assertState(condition, message, failures) {
   }
 }
 
+async function clickQuickFindResult(page, query, labelPattern, failures, failureMessage) {
+  await page.getByTestId('workspace-quick-find-input').fill(query);
+  const result = page.getByTestId('workspace-quick-find-result').filter({ hasText: labelPattern });
+  const isVisible = await result.first().isVisible().catch(() => false);
+  assertState(isVisible, failureMessage, failures);
+  if (!isVisible) {
+    return false;
+  }
+  await result.first().click();
+  await page.waitForTimeout(700);
+  return true;
+}
+
 async function runLaptopRailScenario(browser) {
   const context = await createContext(browser, { viewport: { width: 900, height: 800 } });
   const page = await context.newPage();
@@ -308,13 +321,27 @@ async function runLaptopRailScenario(browser) {
     failures,
   );
 
-  await page.getByTestId('workspace-quick-find-input').fill('cpt');
-  const cptResult = page.getByTestId('workspace-quick-find-result').filter({ hasText: /CPT Support/i });
-  assertState(await cptResult.first().isVisible().catch(() => false), 'workspace quick-find did not surface CPT Support for cpt search', failures);
-  await cptResult.first().click();
-  await page.waitForTimeout(700);
+  await clickQuickFindResult(page, 'paste source', /Paste Source Here/i, failures, 'workspace quick-find did not surface Paste Source Here for paste source search');
+  assertState(await page.locator('#source-field-intakeCollateral textarea').first().isVisible().catch(() => false), 'Paste Source Here quick-find did not reveal the Pre-Visit Data source box', failures);
+
+  await clickQuickFindResult(page, 'dictation', /Dictation/i, failures, 'workspace quick-find did not surface Dictation for dictation search');
+  assertState(await page.locator('.workspace-left-rail').getByRole('button', { name: /Dictation On/i }).first().isVisible().catch(() => false), 'Dictation quick-find did not switch the rail to Dictation On', failures);
+  assertState(await page.getByText(/Dictation source mode/i).first().isVisible().catch(() => false), 'Dictation quick-find did not reveal the dictation source mode panel', failures);
+
+  await clickQuickFindResult(page, 'ambient', /Ambient Listening/i, failures, 'workspace quick-find did not surface Ambient Listening for ambient search');
+  assertState(await page.locator('.workspace-left-rail').getByRole('button', { name: /Ambient On/i }).first().isVisible().catch(() => false), 'Ambient quick-find did not switch the rail to Ambient On', failures);
+  assertState(await page.getByText(/consent -> listen -> review transcript -> commit/i).first().isVisible().catch(() => false), 'Ambient quick-find did not keep the consent-to-commit workflow visible', failures);
+
+  await clickQuickFindResult(page, 'prompt', /My Note Prompt/i, failures, 'workspace quick-find did not surface My Note Prompt for prompt search');
+  assertState(await page.getByTestId('my-note-prompt-panel').isVisible().catch(() => false), 'My Note Prompt quick-find did not reveal the named prompt panel', failures);
+
+  await clickQuickFindResult(page, 'ehr export', /EHR \/ Output Preferences/i, failures, 'workspace quick-find did not surface EHR / Output Preferences for ehr export search');
+  assertState(await page.locator('#output-preferences-panel').first().isVisible().catch(() => false), 'EHR / Output Preferences quick-find did not reveal output preferences', failures);
+
+  await clickQuickFindResult(page, 'cpt', /CPT Support/i, failures, 'workspace quick-find did not surface CPT Support for cpt search');
   const afterQuickFind = await captureWorkspaceState(page);
-  assertState(/Review Draft/i.test(afterQuickFind.active), `CPT quick-find did not jump to review lane; active=${afterQuickFind.active}`, failures);
+  const cptGuidanceVisible = await page.getByText(/CPT support appears/i).first().isVisible().catch(() => false);
+  assertState(cptGuidanceVisible, 'CPT quick-find did not explain where CPT support appears in the workflow', failures);
   assertState(afterQuickFind.scrollY <= 180, `CPT quick-find scrolled too far down; scrollY=${afterQuickFind.scrollY}`, failures);
 
   await page.locator('.workspace-left-rail').getByRole('button', { name: /Review Draft/i }).first().click();

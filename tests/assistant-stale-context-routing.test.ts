@@ -791,4 +791,112 @@ describe('assistant stale-context routing', () => {
     expect(elaborationPayload.message).not.toContain("I don't have a safe Veranote answer");
     expect(elaborationPayload.message).not.toContain('one-paragraph format');
   });
+
+  it('polishes casual draft wording into professional chart tone without adding facts', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'Make this sound more professional and less casual.',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Inpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Pt says mood is kinda better but still wants dc.',
+            '',
+            'Safety:',
+            'Denies si/hi today.',
+            '',
+            'Plan:',
+            'Meds were discussed but final change not documented.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.message).toContain('professional chart tone');
+    expect(payload.actions?.[0]?.draftText).toContain('Patient says mood is somewhat better');
+    expect(payload.actions?.[0]?.draftText).toContain('still wants discharge');
+    expect(payload.actions?.[0]?.draftText).toContain('Denies suicidal ideation/homicidal ideation today.');
+    expect(payload.actions?.[0]?.draftText).not.toContain('stable for discharge');
+    expect(payload.actions?.[0]?.rewriteLabel).toBe('professional chart tone');
+  });
+
+  it('supports conservative source-bound rewrite requests that remove unsupported certainty', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'Make this more conservative and remove unsupported statements.',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Inpatient Psych Discharge Summary',
+          currentDraftText: [
+            'Hospital Course:',
+            'Pt improved and is stable for discharge.',
+            '',
+            'Risk:',
+            'Denies si and is low risk.',
+            '',
+            'Plan:',
+            'Follow-up not confirmed.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.message).toContain('source-bound conservative format');
+    expect(payload.actions?.[0]?.draftText).toContain('discharge readiness not established');
+    expect(payload.actions?.[0]?.draftText).toContain('risk level not established');
+    expect(payload.actions?.[0]?.draftText).toContain('Follow-up not confirmed.');
+    expect(payload.actions?.[0]?.draftText).not.toContain('stable for discharge');
+    expect(payload.actions?.[0]?.draftText).not.toContain('low risk');
+  });
+
+  it('switches from draft-shaping context to a new misspelled medication interaction question', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'can welbutrin be taken with paxel?',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports anxiety remains present.',
+            '',
+            'Plan:',
+            'Continue source-supported follow-up plan.',
+          ].join('\n'),
+        },
+        recentMessages: [
+          { role: 'provider', content: 'make this draft shorter' },
+          {
+            role: 'assistant',
+            content: 'Chart-ready wording: here is the current note rewritten in shorter concise format.',
+            answerMode: 'chart_ready_wording',
+          },
+        ],
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.answerMode).toBe('medication_reference_answer');
+    expect(payload.message).toMatch(/bupropion|Wellbutrin/i);
+    expect(payload.message).toMatch(/Paxil|paroxetine/i);
+    expect(payload.message).not.toContain('shorter concise format');
+    expect(payload.actions?.[0]?.type).not.toBe('apply-draft-rewrite');
+  });
 });

@@ -1005,6 +1005,8 @@ type DraftFormatKind =
   | 'soap'
   | 'concise-headings'
   | 'two-paragraph-hpi-mse-plan'
+  | 'professional'
+  | 'source-bound'
   | 'ehr-ready';
 
 type DraftFormatRequest = {
@@ -1099,6 +1101,23 @@ function classifyDraftFormatRequest(message: string): DraftFormatRequest | null 
     };
   }
 
+  if (/\b(more professional|professional|polished|cleaner|less casual|clinical tone|chart tone|sound better|more formal)\b/.test(normalized)) {
+    return {
+      kind: 'professional',
+      label: 'professional chart tone',
+    };
+  }
+
+  if (
+    /\b(remove unsupported|unsupported statements?|closer to source|source[-\s]?bound|less certain|more conservative|do not add facts|don't add facts)\b/.test(normalized)
+    && !/\b(flow like a story|like a story|story form|narrative|narrative form|flow better|make it flow|story-like|storylike|chronological|timeline|soap|ehr[-\s]?ready|copy[-\s]?paste)\b/.test(normalized)
+  ) {
+    return {
+      kind: 'source-bound',
+      label: 'source-bound conservative format',
+    };
+  }
+
   if (/\b(flow like a story|like a story|story form|narrative|narrative form|flow better|make it flow|story-like|storylike)\b/.test(normalized)) {
     return {
       kind: 'narrative',
@@ -1173,6 +1192,23 @@ function classifyContextualDraftFormatFollowup(message: string, context?: Assist
     return {
       kind: 'longer',
       label: 'more detailed format',
+    };
+  }
+
+  if (/\b(more professional|professional|polished|cleaner|less casual|clinical tone|chart tone|sound better|more formal)\b/.test(normalized)) {
+    return {
+      kind: 'professional',
+      label: 'professional chart tone',
+    };
+  }
+
+  if (
+    /\b(remove unsupported|unsupported statements?|closer to source|source[-\s]?bound|less certain|more conservative|do not add facts|don't add facts)\b/.test(normalized)
+    && !/\b(flow like a story|like a story|story form|narrative|narrative form|flow better|make it flow|story-like|storylike|chronological|timeline|soap|ehr[-\s]?ready|copy[-\s]?paste)\b/.test(normalized)
+  ) {
+    return {
+      kind: 'source-bound',
+      label: 'source-bound conservative format',
     };
   }
 
@@ -1448,6 +1484,48 @@ function formatDraftWithExpandedDetails(draftText: string) {
     .trim();
 }
 
+function cleanDraftClinicalAbbreviations(text: string) {
+  return text
+    .replace(/\bpt\b/gi, 'Patient')
+    .replace(/\bdc\b/gi, 'discharge')
+    .replace(/\bsi\b/gi, 'suicidal ideation')
+    .replace(/\bhi\b/gi, 'homicidal ideation')
+    .replace(/\bah\b/gi, 'auditory hallucinations')
+    .replace(/\bvh\b/gi, 'visual hallucinations')
+    .replace(/\bmeds\b/gi, 'medications')
+    .replace(/\bkinda\b/gi, 'somewhat')
+    .replace(/\bsorta\b/gi, 'somewhat')
+    .replace(/\bidk\b/gi, 'unclear')
+    .replace(/\bmaybe\b/gi, 'possibly')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function formatDraftWithProfessionalTone(draftText: string) {
+  const sections = splitDraftIntoNamedSections(draftText);
+  if (!sections.length) {
+    return cleanDraftClinicalAbbreviations(collapseDraftToOneParagraph(draftText));
+  }
+
+  return sections
+    .map((section) => `${section.heading}:\n${cleanDraftClinicalAbbreviations(section.text)}`)
+    .join('\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function formatDraftConservatively(draftText: string) {
+  return formatDraftWithProfessionalTone(draftText)
+    .replace(/\bresolved\b/gi, 'improved or resolved only if supported by source')
+    .replace(/\bstable for discharge\b/gi, 'discharge readiness not established from the visible draft')
+    .replace(/\bsafe for discharge\b/gi, 'discharge safety not established from the visible draft')
+    .replace(/\blow[-\s]?risk\b/gi, 'risk level not established from the visible draft')
+    .replace(/\bno safety concerns?\b/gi, 'no safety concerns documented only if supported by source')
+    .replace(/\s+/g, ' ')
+    .replace(/([.:])\s+(HPI|MSE|Plan|Assessment|Subjective|Objective|Safety|Risk):/g, '$1\n\n$2:')
+    .trim();
+}
+
 function formatDraftForRequest(draftText: string, request: DraftFormatRequest) {
   const collapsed = collapseDraftToOneParagraph(draftText);
 
@@ -1462,6 +1540,10 @@ function formatDraftForRequest(draftText: string, request: DraftFormatRequest) {
       return collapsed;
     case 'longer':
       return formatDraftWithExpandedDetails(draftText);
+    case 'professional':
+      return formatDraftWithProfessionalTone(draftText);
+    case 'source-bound':
+      return formatDraftConservatively(draftText);
     case 'narrative':
       return collapsed
         .replace(/\bSubjective:/g, 'Subjective summary:')

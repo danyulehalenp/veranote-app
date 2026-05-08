@@ -289,11 +289,12 @@ function removeUnsupportedMedicalStability(note: string, sourceInput: string) {
   .replace(/\bnot medically stable\b/gi, 'medical stability is not established from the provided source')
   .replace(/\bthe patient (?:remains|is|was) medically stable\b/gi, 'Medical stability is not established from the provided source')
   .replace(/\bpatient (?:remains|is|was) medically stable\b/gi, 'Medical stability is not established from the provided source')
-  .replace(/\b(?:remains|is|was) medically stable\b/gi, 'Medical stability is not established from the provided source');
+  .replace(/\b(?:remains|is|was|appears|seems|presents as) medically stable\b/gi, 'Medical stability is not established from the provided source')
+  .replace(/\bmedically stable\b/gi, 'medical stability is not established from the provided source');
 }
 
 function preserveMedicalClearanceUncertainty(note: string, sourceInput: string) {
- const sourceHasUncertainClearance = /\bmed clear\?|medical(?:ly)? clear\?|do not state medically cleared|medical clearance.*(?:pending|unclear|question|not documented)|cbc not (?:visible|visable)|lab sheet not included/i.test(sourceInput);
+ const sourceHasUncertainClearance = /\bmed clear\?|medical(?:ly)? clear\?|do not (?:state|say) medically cleared|medical clearance.*(?:pending|unclear|question|not documented)|cbc not (?:visible|visable)|lab sheet not included/i.test(sourceInput);
  if (!sourceHasUncertainClearance) return note;
  const hardenedNote = note
   .replace(/\bnot medically cleared\b/gi, 'medical clearance is not established from the provided source')
@@ -306,6 +307,19 @@ function preserveMedicalClearanceUncertainty(note: string, sourceInput: string) 
   ? 'Medical clearance is not established from the provided source; the transfer note includes questioned clearance wording and source documentation is incomplete.'
   : 'Medical clearance is not established from the provided source; final clearance wording is absent, pending, or not documented in the provided material.';
  return `${hardenedNote.trim()}\n\nMedical Clearance / Source Limitation:\n${sourceLimitation}`;
+}
+
+function preserveRestraintSourceStatus(note: string, sourceInput: string) {
+ const sourceHasNoRestraintFlowsheet = /\bno restraint flowsheet\b|\brestraint flowsheet.*(?:not found|not visible|absent)\b/i.test(sourceInput);
+ if (!sourceHasNoRestraintFlowsheet) return note;
+
+ return note
+  .replace(/\bno restraints? (?:were )?used\b/gi, 'no restraint flowsheet was found in the provided source')
+  .replace(/\bthere (?:was|were) no restraints? used\b/gi, 'no restraint flowsheet was found in the provided source')
+  .replace(/\brestraints? (?:were )?not used\b/gi, 'no restraint flowsheet was found in the provided source')
+  .replace(/\brestraint use (?:was|is) not documented\b/gi, 'no restraint flowsheet was found in the provided source')
+  .replace(/\brestraints? (?:were )?used\b/gi, 'restraint use is not documented in the provided source; no restraint flowsheet was found')
+  .replace(/\bplaced in restraints\b/gi, 'restraint use is not documented in the provided source; no restraint flowsheet was found');
 }
 
 function preservePendingOrUnclearLabSourceLimits(note: string, sourceInput: string) {
@@ -331,6 +345,16 @@ function preservePendingOrUnclearLabSourceLimits(note: string, sourceInput: stri
  }
 
  return `${note.trim()}\n\nDiagnostics / Source Limitation:\n${labLimits.join(' ')}`;
+}
+
+function preservePendingMatDoseDecision(note: string, sourceInput: string) {
+ const needsMatDecisionLimit = /\bbridge prescription\b|requests? bridge|miss(?:ed|ing) three days|UDS.*pending|pending.*UDS|do not state bridge|do not state dose unchanged|completed prescribing decision/i.test(sourceInput)
+  && /\bbuprenorphine|naloxone|Suboxone|MAT\b/i.test(sourceInput);
+
+ if (!needsMatDecisionLimit) return note;
+ if (/no (?:current |final )?(?:dosing|medication|prescribing) decision|not documented.*(?:dose|prescription|bridge)/i.test(note)) return note;
+
+ return `${note.trim()}\n\nMedication Decision / Source Limitation:\nNo final dosing decision or prescribing decision is documented in the provided source; the bridge request, missed doses, prior source-listed dose, and pending UDS should remain source limitations rather than completed medication actions.`;
 }
 
 function hardenSourceBoundRiskWording(note: string, sourceInput: string) {
@@ -458,10 +482,12 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withoutUnsupportedMedicalStability = removeUnsupportedMedicalStability(withSleepPreserved, input.sourceInput);
  const withMedicalClearancePreserved = preserveMedicalClearanceUncertainty(withoutUnsupportedMedicalStability, input.sourceInput);
  const withLabLimitsPreserved = preservePendingOrUnclearLabSourceLimits(withMedicalClearancePreserved, input.sourceInput);
- const withSourceBoundRisk = hardenSourceBoundRiskWording(withLabLimitsPreserved, input.sourceInput);
+ const withMatDoseDecisionLimit = preservePendingMatDoseDecision(withLabLimitsPreserved, input.sourceInput);
+ const withSourceBoundRisk = hardenSourceBoundRiskWording(withMatDoseDecisionLimit, input.sourceInput);
  const withDiagnosticUncertainty = preserveDiagnosticUncertainty(withSourceBoundRisk, input.sourceInput);
  const withPsychosisConflictPreserved = preservePsychosisObservationConflict(withDiagnosticUncertainty, input.sourceInput);
- const withoutUnsupportedMedicationAction = removeUnsupportedMedicationActionPlan(withPsychosisConflictPreserved, input.sourceInput);
+ const withRestraintSourceStatus = preserveRestraintSourceStatus(withPsychosisConflictPreserved, input.sourceInput);
+ const withoutUnsupportedMedicationAction = removeUnsupportedMedicationActionPlan(withRestraintSourceStatus, input.sourceInput);
 
  return removeProviderAddOnInstructionEcho(withoutUnsupportedMedicationAction, input.sourceInput);
 }

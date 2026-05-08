@@ -8,7 +8,7 @@ import { evaluatePostNoteCptRecommendations } from '@/lib/veranote/defensibility
 
 describe('post-note CPT recommendation regression', () => {
   it('keeps a broad bank of completed-note CPT support scenarios', () => {
-    expect(postNoteCptRegressionCases.length).toBeGreaterThanOrEqual(10);
+    expect(postNoteCptRegressionCases.length).toBeGreaterThanOrEqual(15);
 
     const caseText = postNoteCptRegressionCases.map((item) => [
       item.noteType,
@@ -25,6 +25,9 @@ describe('post-note CPT recommendation regression', () => {
     expect(caseText).toMatch(/Psycotherpay/i);
     expect(caseText).toMatch(/telehealth consent/i);
     expect(caseText).toMatch(/Patient location/i);
+    expect(caseText).toMatch(/Medical decision-making/i);
+    expect(caseText).toMatch(/Audio-only telehealth/i);
+    expect(caseText).toMatch(/Patient education/i);
     expect(caseText).toMatch(/too thin|doing okay/i);
   });
 

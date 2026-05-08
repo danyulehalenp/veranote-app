@@ -24,6 +24,18 @@ function normalize(value: string | undefined) {
 }
 
 function hasPsychotherapyContent(text: string) {
+  const concretePsychotherapyContent = hasMatch(text, [
+    /\b(cbt|dbt|motivational interviewing|cognitive restructuring|behavioral activation|exposure work|graded exposure|skills training|therapeutic intervention)\b/,
+    /\b(processed|reframed|coping skills|grounding|homework|avoidance thoughts|grief triggers|behavioral experiment)\b/,
+  ]);
+
+  if (
+    !concretePsychotherapyContent
+    && /\b(no|not|without)\b.{0,50}\b(distinct|separate|specific)?\s*(psychotherapy|therapy|therapeutic intervention)\b/i.test(text)
+  ) {
+    return false;
+  }
+
   return hasMatch(text, [
     /\b(psychotherapy|psycotherapy|psychotherpy|psychotherpay|therapy|therpay|supportive therapy|cbt|dbt|motivational interviewing|processed|reframed|coping skills)\b/,
     /\b(cognitive restructuring|behavioral activation|exposure work|skills training|therapeutic intervention)\b/,
@@ -34,6 +46,15 @@ function hasMedicationManagement(text: string) {
   return hasMatch(text, [
     /\b(medication|medications|meds|med mgmt|med management|refill|increase|decrease|continue|side effect|adherence|prescrib|dose adjustment)\b/,
     /\b(started|stopped|titrated|continued)\s+\w+/,
+  ]);
+}
+
+function hasMdmSupport(text: string) {
+  return hasMatch(text, [
+    /\b(dose adjustment|medication change|changed medication|titration|titrated|increase|decrease|start|stop|restart|hold|side effects?|adverse effects?|tolerability)\b/,
+    /\b(labs?|ekg|ecg|a1c|lipids|cbc|cmp|renal|hepatic|thyroid|monitoring|reviewed|ordered|result)\b.{0,80}\b(reviewed|ordered|pending|abnormal|elevated|low|high)\b/,
+    /\b(worsen(?:ed|ing)?|exacerbation|unstable|acute risk|suicid|homicid|psychosis|mania|withdrawal|toxicity|substance use)\b/,
+    /\b(risk|benefit|benefits|alternatives?|medical decision|decision-making|decision making|complexity)\b/,
   ]);
 }
 
@@ -161,6 +182,7 @@ export function evaluatePostNoteCptRecommendations(
 
   const psychotherapyContent = hasPsychotherapyContent(normalizedNote);
   const medicationManagement = hasMedicationManagement(normalizedNote);
+  const mdmSupport = hasMdmSupport(normalizedNote);
   const crisisWork = hasCrisisWork(normalizedNote) || /crisis/i.test(noteType);
   const evaluationWork = hasEvaluationWork(normalizedNote, noteType);
   const communicationComplexity = hasCommunicationComplexity(normalizedNote)
@@ -214,18 +236,21 @@ export function evaluatePostNoteCptRecommendations(
     addCandidate(candidates, {
       family: 'Office / outpatient E/M family',
       candidateCodes: ['99202-99205', '99212-99215'],
-      strength: totalTimeDocumented || /risk|side effect|lab|monitor|dose|change|worsen|unstable/i.test(completedNoteText)
+      strength: totalTimeDocumented || mdmSupport
         ? 'stronger-documentation-support'
         : 'possible-review',
       why: [
         'Medication-management or prescribing work appears documented.',
         totalTimeDocumented
           ? 'Time or encounter-duration support is visible for coding review.'
-          : 'No clear time signal is visible, so medical decision-making support would need review.',
+          : mdmSupport
+            ? 'Medical decision-making cues are visible, but the exact E/M level still needs coding review.'
+            : 'No clear time or medical decision-making support is visible, so E/M level confidence should stay low.',
       ],
       missingElements: [
         'Current E/M level still depends on current time or MDM rules and payer-specific requirements.',
         ...(!totalTimeDocumented ? ['If using time, total time must be documented clearly.'] : []),
+        ...(!mdmSupport ? ['If using MDM, problem status, data reviewed, and treatment-risk detail should be visible rather than inferred.'] : []),
       ],
       cautions: [
         'Do not select a specific E/M level from this helper alone.',
@@ -354,6 +379,7 @@ export function evaluatePostNoteCptRecommendations(
     completedNoteText ? 'Completed note text is available.' : '',
     evaluationWork ? 'Evaluation/intake structure is visible.' : '',
     medicationManagement ? 'Medication-management or prescribing work is visible.' : '',
+    mdmSupport ? 'Medical decision-making support cues are visible.' : '',
     psychotherapyContent ? 'Distinct psychotherapy or therapy content is visible.' : '',
     psychotherapyTimeDocumented ? 'Separate psychotherapy time is visible.' : '',
     totalTimeDocumented ? 'Total encounter time is visible.' : '',
@@ -366,6 +392,7 @@ export function evaluatePostNoteCptRecommendations(
 
   const readinessMissingElements = [
     ...(!totalTimeDocumented ? ['Total encounter time is not clearly documented if time-based review is intended.'] : []),
+    ...(medicationManagement && !mdmSupport ? ['Medical decision-making support is not clearly documented if MDM-based review is intended.'] : []),
     ...(psychotherapyContent && !psychotherapyTimeDocumented ? ['Separate psychotherapy minutes are not clearly documented.'] : []),
     ...(crisisWork && !timeSignals.some((item) => /crisis/i.test(item)) && !compact(encounterSupport?.crisisStartTime) && !compact(encounterSupport?.crisisEndTime)
       ? ['Crisis timing is not clearly documented if crisis psychotherapy family review is intended.']
@@ -398,6 +425,7 @@ export function evaluatePostNoteCptRecommendations(
       'These are possible CPT-support candidates, not definitive billing recommendations.',
       'Veranote can surface documentation support and missing elements, but it does not select the final CPT level.',
       'Never add or rewrite clinical facts just to support a code.',
+      'Do not infer a CPT level from diagnosis, note type, template choice, or destination EHR alone.',
       'Verify against current CPT, payer, facility, telehealth, and state-specific requirements before billing.',
       'If documentation is thin or contradictory, show the gap rather than forcing a code family.',
     ],
