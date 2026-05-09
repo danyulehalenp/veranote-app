@@ -362,6 +362,10 @@ function isRecoverableTopicTurn(turn: AssistantThreadTurn) {
     return false;
   }
 
+  if (isLowInformationProviderFragment(turn.content, routeHint)) {
+    return false;
+  }
+
   const followupIntent = classifyFollowupIntent(turn.content);
   if (followupIntent === 'none') {
     return true;
@@ -371,6 +375,25 @@ function isRecoverableTopicTurn(turn: AssistantThreadTurn) {
   // "What about Lamictal rash?" after a diagnostic answer should become the
   // active medication topic for the next "can you elaborate?" turn.
   return extractClinicalTopicAnchors(turn.content).length > 0;
+}
+
+function isLowInformationProviderFragment(message: string, routeHint: AtlasConversationRouteHint) {
+  if (routeHint !== 'medication_reference') {
+    return false;
+  }
+
+  const normalized = normalizeText(message);
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (extractClinicalTopicAnchors(normalized).length > 0 || words.length > 12) {
+    return false;
+  }
+
+  if (/[?]\s*$/.test(normalized) || /^(what|how|when|can|should|is|are|does|do|need|quick|short|pls|resident asked|from bullets|dictated rough|messy source|for note)\b/.test(normalized)) {
+    return false;
+  }
+
+  return words.length <= 5
+    || /\b(keep it usable|no lecture|bullets fine|same facts only|1 paragraph ok|1 para ok|avoid dosing|include|make practical|what to ask|chart wording|safer wording|framework only|variables needed|monitoring|relapse monitoring|general risks|monitor relapse|last dose timing|exact regimen|ignore|skip|stop it today|give exact|provider is waiting|can u|also|actually|not patient-specific|not prescribing)\b/.test(normalized);
 }
 
 function findActiveTopic(recentMessages?: AssistantThreadTurn[]): AtlasConversationTopic | null {
@@ -400,11 +423,16 @@ function shouldRewriteFollowup(
   message: string,
   currentRouteHint: AtlasConversationRouteHint,
 ) {
-  if (intent === 'none' || !topic) {
+  if (!topic) {
     return false;
   }
 
-  if (shouldSwitchToNewTopic(intent, topic, message, currentRouteHint)) {
+  const shortSameTopicFragment = intent === 'none' && isShortSameTopicClinicalFragment(topic, message, currentRouteHint);
+  if (intent === 'none' && !shortSameTopicFragment) {
+    return false;
+  }
+
+  if (shouldSwitchToNewTopic(shortSameTopicFragment ? 'clarify' : intent, topic, message, currentRouteHint)) {
     return false;
   }
 
@@ -417,6 +445,44 @@ function shouldRewriteFollowup(
     || topic.routeHint === 'documentation_safety'
     || topic.routeHint === 'local_policy'
     || (topic.routeHint === 'workflow_help' && workflowFieldFollowup);
+}
+
+function isShortSameTopicClinicalFragment(
+  topic: AtlasConversationTopic,
+  message: string,
+  currentRouteHint: AtlasConversationRouteHint,
+) {
+  if (currentRouteHint !== 'unknown' && currentRouteHint !== topic.routeHint) {
+    return false;
+  }
+
+  const normalized = normalizeText(message);
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (!normalized || words.length > 12 || normalized.length > 110) {
+    return false;
+  }
+
+  if (extractClinicalTopicAnchors(normalized).length > 0) {
+    return false;
+  }
+
+  if (topic.routeHint === 'medication_reference') {
+    if (/\b(note|draft|hpi|mse|plan|sections?)\b.*\b(rewrite|format|paragraph|section|shorter|longer)\b|\b(rewrite|format|paragraph|section|shorter|longer)\b.*\b(note|draft|hpi|mse|plan|sections?)\b/.test(normalized)) {
+      return false;
+    }
+
+    return /[a-z]/.test(normalized);
+  }
+
+  if (topic.routeHint === 'diagnostic_reference' || topic.routeHint === 'diagnostic_safety') {
+    return /\b(timeline|distinction|difference|criteria|apply|charting|safer wording|missing|rule[-\s]?out|confounders?|compare)\b/.test(normalized);
+  }
+
+  if (topic.routeHint === 'documentation_safety') {
+    return /\b(safer wording|chart[-\s]?ready|source[-\s]?bound|less certain|preserve conflict|missing|rewrite|wording)\b/.test(normalized);
+  }
+
+  return false;
 }
 
 function buildEffectiveMessage(message: string, intent: AtlasConversationFollowupIntent, topic: AtlasConversationTopic) {
@@ -465,7 +531,7 @@ export function orchestrateAtlasConversation(input: AtlasConversationInput): Atl
   const activeTopic = findActiveTopic(input.recentMessages);
   const currentRouteHint = classifyRouteHintFromText(originalMessage);
   const didRewrite = shouldRewriteFollowup(followupIntent, activeTopic, originalMessage, currentRouteHint);
-  const routeHint = activeTopic && followupIntent !== 'none' && (didRewrite || currentRouteHint === 'unknown')
+  const routeHint = activeTopic && (didRewrite || (followupIntent !== 'none' && currentRouteHint === 'unknown'))
     ? activeTopic.routeHint
     : currentRouteHint;
   const effectiveMessage = didRewrite && activeTopic
@@ -555,6 +621,24 @@ export function buildAtlasConversationFallbackPayload(
       answerMode: 'medication_reference_answer',
       builderFamily: 'medication-boundary',
     };
+  }
+
+  if (
+    conversation.routeHint === 'medication_reference'
+    && /\blithium\b/.test(combined)
+    && /\b(level|1\.[5-9]|confused|confusion|toxicity|toxic)\b/.test(combined)
+  ) {
+    if (/\bwhy\b.*\burgent\b|\bwhy urgent\b/.test(original)) {
+      return {
+        message: 'This is urgent because lithium plus a high-risk level and confusion can represent lithium toxicity rather than routine monitoring. Confusion is a neurologic red flag; verify level timing/trough, renal function, hydration/sodium status, interacting medications, and use the local urgent protocol, poison control, pharmacy, or emergency pathway as appropriate.',
+        suggestions: [
+          'Keep lithium level and confusion visible in the note or handoff.',
+          'Do not turn this into routine outpatient monitoring language.',
+        ],
+        answerMode: 'medication_reference_answer',
+        builderFamily: 'medication-boundary',
+      };
+    }
   }
 
   if (conversation.routeHint === 'diagnostic_safety' && /\bbipolar|mania|hypomania\b/.test(combined)) {

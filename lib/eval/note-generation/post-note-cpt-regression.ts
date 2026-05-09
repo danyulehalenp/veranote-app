@@ -318,6 +318,44 @@ export const postNoteCptRegressionCases: PostNoteCptRegressionCase[] = [
     requiredText: [/too thin for meaningful CPT-support candidates/i, /Encounter family is not clear/i],
     forbiddenText: [/stronger-documentation-support/i, /bill this code/i, /guaranteed/i],
   },
+  {
+    id: 'provider-cpt-preference-alone-no-family-forcing',
+    title: 'Provider CPT preference alone does not force a CPT-support family',
+    noteType: 'Outpatient Psych Follow-Up',
+    completedNoteText: [
+      'Provider Add-On: CPT preference 99214 if supported.',
+      'Destination: WellSky.',
+      'No completed clinical note text, time, MDM, psychotherapy, or medication-management detail is visible in this review payload.',
+    ].join(' '),
+    expectedCandidates: [],
+    forbiddenCandidates: [
+      { family: 'Office / outpatient E/M family' },
+      { family: 'Psychotherapy add-on with E/M family' },
+      { family: 'Psychotherapy-only family' },
+      { family: 'Psychotherapy for crisis family' },
+    ],
+    requiredText: [/too thin for meaningful CPT-support candidates/i, /Encounter family is not clear/i, /Final selection requires current CPT/i],
+    forbiddenText: [/99214 is supported/i, /bill this code/i, /guaranteed/i, /meets criteria for/i],
+  },
+  {
+    id: 'diagnosis-and-ehr-destination-alone-no-family-forcing',
+    title: 'Diagnosis label and EHR destination alone do not create billing support',
+    noteType: 'Outpatient Psych Follow-Up',
+    completedNoteText: [
+      'Diagnosis listed: major depressive disorder, recurrent.',
+      'EHR destination: Tebra/Kareo.',
+      'No encounter time, psychotherapy intervention, medication-management work, risk complexity, or medical decision-making details are documented.',
+    ].join(' '),
+    expectedCandidates: [],
+    forbiddenCandidates: [
+      { family: 'Office / outpatient E/M family' },
+      { family: 'Psychotherapy add-on with E/M family' },
+      { family: 'Psychotherapy-only family' },
+      { family: 'Psychotherapy for crisis family' },
+    ],
+    requiredText: [/too thin for meaningful CPT-support candidates/i, /Encounter family is not clear/i],
+    forbiddenText: [/diagnosis.*supports.*CPT/i, /bill this code/i, /guaranteed/i, /meets criteria for/i],
+  },
 ];
 
 function stringifyAssessment(assessment: PostNoteCptRecommendationAssessment) {

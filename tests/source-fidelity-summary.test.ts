@@ -133,4 +133,34 @@ describe('source fidelity summary', () => {
     expect(summary.reviewItems.find((item) => item.id === 'section-evidence-missing')?.reviewStatus).toBe('reviewed');
     expect(summary.reviewItems.find((item) => item.id === 'source-conflict-0')?.reviewStatus).toBe('dismissed');
   });
+
+  it('keeps needs-revision source-fidelity items open for clinician follow-up', () => {
+    const evidenceMap: SectionEvidenceMap = {
+      plan: {
+        sectionAnchor: 'plan',
+        sectionHeading: 'Plan',
+        sectionTerms: ['discharge'],
+        links: [],
+      },
+    };
+
+    const summary = buildSourceFidelitySummary({
+      sections: [{ anchor: 'plan', heading: 'Plan' }],
+      evidenceMap,
+      confirmedEvidenceBySection: {},
+      totalSourceBlocks: 2,
+      highRiskWarningLabels: ['Unsupported stable for discharge wording'],
+      reviewState: {
+        'risk-warning-0': {
+          id: 'risk-warning-0',
+          status: 'needs-revision',
+          updatedAt: '2026-05-09T12:00:00.000Z',
+        },
+      },
+    });
+
+    expect(summary.openReviewItems).toBeGreaterThan(0);
+    expect(summary.reviewItems.find((item) => item.id === 'risk-warning-0')?.reviewStatus).toBe('needs-revision');
+    expect(summary.statusLabel).toMatch(/source safety item/i);
+  });
 });

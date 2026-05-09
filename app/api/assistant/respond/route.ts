@@ -1016,6 +1016,13 @@ type DraftFormatRequest = {
 
 function normalizeDraftFormatMessage(message: string) {
   return normalizeMessageForClinicalRouting(message)
+    .replace(/\bfrist\b/g, 'first')
+    .replace(/\bfrst\b/g, 'first')
+    .replace(/\bsecnd\b/g, 'second')
+    .replace(/\bseconed\b/g, 'second')
+    .replace(/\bscnd\b/g, 'second')
+    .replace(/\bpara\b/g, 'paragraph')
+    .replace(/\bparas\b/g, 'paragraphs')
     .replace(/\bparagraf\b/g, 'paragraph')
     .replace(/\bparagrph\b/g, 'paragraph')
     .replace(/\bparagaph\b/g, 'paragraph')
@@ -1035,7 +1042,9 @@ function normalizeDraftFormatMessage(message: string) {
     .replace(/\bconcice\b/g, 'concise')
     .replace(/\bconcisse\b/g, 'concise')
     .replace(/\bconscise\b/g, 'concise')
+    .replace(/\bheaders\b/g, 'headings')
     .replace(/\bbreif\b/g, 'brief')
+    .replace(/\bbriefer\b/g, 'brief')
     .replace(/\blenghten\b/g, 'lengthen')
     .replace(/\blenght\b/g, 'length')
     .replace(/\bdetial\b/g, 'detail')
@@ -1043,7 +1052,9 @@ function normalizeDraftFormatMessage(message: string) {
     .replace(/\bnarative\b/g, 'narrative')
     .replace(/\bnarritive\b/g, 'narrative')
     .replace(/\bnarrativ\b/g, 'narrative')
+    .replace(/\bstroy\b/g, 'story')
     .replace(/\bassesment\b/g, 'assessment')
+    .replace(/\bpln\b/g, 'plan')
     .replace(/\bsummery\b/g, 'summary');
 }
 
@@ -1169,7 +1180,12 @@ function classifyContextualDraftFormatFollowup(message: string, context?: Assist
     };
   }
 
+  const visibleDraftAnchor = /\b(note|draft|follow[-\s]?up note|progress note|this|it|sections?|hpi|mse|plan)\b/.test(normalized);
   if (/\b(one|single|1)\s+paragraph\b|\bparagraph form\b|\bparagraph style\b|\bin paragraph\b|\bno sections?\b|\binstead of sections?\b/.test(normalized)) {
+    if (!visibleDraftAnchor) {
+      return null;
+    }
+
     return {
       kind: 'one-paragraph',
       label: 'one-paragraph format',
@@ -3651,8 +3667,14 @@ export async function POST(request: Request) {
       currentDraftText: sanitizedDraftText,
     };
     const rawDraftFormatPayload = buildDraftFormattingHelp(rawAssistantMessageForRouting, draftFormatContext);
+    const conversationRewriteShouldStayReference = atlasConversation.didRewrite
+      && !rawDraftFormatPayload
+      && (
+        atlasConversation.routeHint === 'diagnostic_reference'
+        || atlasConversation.routeHint === 'medication_reference'
+      );
     const oneParagraphFormatPayload = rawDraftFormatPayload
-      || (shouldSuppressDraftFormatContextFallback(rawAssistantMessageForRouting)
+      || (conversationRewriteShouldStayReference || shouldSuppressDraftFormatContextFallback(rawAssistantMessageForRouting)
         ? null
         : buildDraftFormattingHelp(assistantMessageForRouting, draftFormatContext));
     if (oneParagraphFormatPayload) {
@@ -3802,7 +3824,6 @@ export async function POST(request: Request) {
             || buildAtlasConversationFallbackPayload(atlasConversation)
           : atlasConversation.didRewrite && atlasConversation.routeHint === 'medication_reference'
             ? buildAtlasConversationFallbackPayload(atlasConversation)
-              || buildPsychMedicationReferenceHelp(assistantMessageForRouting, body.recentMessages)
             : atlasConversation.didRewrite && (
               atlasConversation.routeHint === 'local_policy'
               || atlasConversation.routeHint === 'workflow_help'
@@ -3816,7 +3837,12 @@ export async function POST(request: Request) {
     ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
       const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
-      const conversationPayload = applyAtlasConversationTone(conversationContinuationPayload, atlasConversation);
+      const tonedConversationPayload = applyAtlasConversationTone(conversationContinuationPayload, atlasConversation);
+      const conversationPayload = atlasConversation.routeHint === 'medication_reference'
+        && tonedConversationPayload.answerMode === 'medication_reference_answer'
+        && !tonedConversationPayload.builderFamily
+        ? { ...tonedConversationPayload, builderFamily: 'medication-boundary' as const }
+        : tonedConversationPayload;
 
       finishRequest(true);
       logEvent({
@@ -3862,7 +3888,7 @@ export async function POST(request: Request) {
       currentDraftText: sanitizedDraftText,
       context: body.context,
       recentMessages: body.recentMessages,
-    });
+    }) || (atlasConversation.didRewrite && atlasConversation.routeHint === 'medication_reference');
     const atlasBlueprintRoute = buildAtlasBlueprintResponse({
       message: assistantMessageForRouting,
       sourceText: sanitizedSourceText,
@@ -3918,6 +3944,7 @@ export async function POST(request: Request) {
       });
     }
     const clinicalOverride = classifyClinicalTaskOverride(assistantMessageForRouting);
+    const priorClinicalState = extractPriorClinicalState(body.recentMessages);
     const routeBoundaryDocumentationPayload = buildBoundaryDocumentationHelp(assistantMessageForRouting);
     if (
       routeBoundaryDocumentationPayload
@@ -3926,6 +3953,22 @@ export async function POST(request: Request) {
     ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
       const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const shouldPreserveWarningBoundary = (
+        priorClinicalState?.answerMode === 'warning_language'
+        || (
+          /\b(denies hi|reported threats?|collateral says threats?|collateral reports threats?|threats?)\b/i.test(assistantMessageForRouting)
+          && /\b(stimulant|restart stimulant|adhd|focus|target|access)\b/i.test(assistantMessageForRouting)
+        )
+      );
+      const continuityBoundaryPayload = shouldPreserveWarningBoundary
+        && routeBoundaryDocumentationPayload.answerMode === 'chart_ready_wording'
+        ? {
+            ...routeBoundaryDocumentationPayload,
+            message: `${routeBoundaryDocumentationPayload.message} Stimulant caution: mania/psychosis screen and substance/cardiac risk remain necessary before routine stimulant framing. Reported threats and target/access gaps should remain explicit.`,
+            answerMode: 'warning_language' as const,
+            builderFamily: routeBoundaryDocumentationPayload.builderFamily || 'contradiction' as const,
+          }
+        : routeBoundaryDocumentationPayload;
 
       finishRequest(true);
       logEvent({
@@ -3940,7 +3983,7 @@ export async function POST(request: Request) {
           stage,
           mode,
           knowledgeIntent: 'draft_support',
-          answerMode: routeBoundaryDocumentationPayload.answerMode || 'chart_ready_wording',
+          answerMode: continuityBoundaryPayload.answerMode || 'chart_ready_wording',
           routePriority: 'route-boundary-documentation',
         },
       });
@@ -3949,14 +3992,15 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({
-        ...routeBoundaryDocumentationPayload,
+        ...continuityBoundaryPayload,
         modeMeta: buildAssistantModeMeta(mode, stage),
         ...(evalMode ? {
           eval: {
-            rawOutput: routeBoundaryDocumentationPayload.message,
+            rawOutput: continuityBoundaryPayload.message,
             warnings: [],
             knowledgeIntent: 'draft_support',
-            answerMode: routeBoundaryDocumentationPayload.answerMode,
+            answerMode: continuityBoundaryPayload.answerMode,
+            builderFamily: continuityBoundaryPayload.builderFamily,
             routePriority: 'route-boundary-documentation',
           },
         } : {}),
@@ -4129,10 +4173,10 @@ export async function POST(request: Request) {
       });
     }
     const followupDirective = classifyClinicalFollowupDirective(rawMessage);
-    const priorClinicalState = extractPriorClinicalState(body.recentMessages);
     const knowledgeIntent = body.mode === 'reference-lookup'
       ? 'reference_help'
-      : clinicalOverride?.forcedIntent || classifyKnowledgeIntent(assistantMessageForRouting);
+      : clinicalOverride?.forcedIntent
+        || (atlasConversation.didRewrite && atlasConversation.routeHint === 'medication_reference' ? 'medication_help' : classifyKnowledgeIntent(assistantMessageForRouting));
     const pipeline = await runAssistantPipeline({
       message: assistantMessageForRouting,
       sourceText: sanitizedSourceText,
@@ -4444,7 +4488,17 @@ export async function POST(request: Request) {
       contradictions: contradictionAnalysis,
     });
     const memoryAwarePayload = applyProviderMemoryToPayload(fidelitySafePayload, providerMemory);
-    const finalPayload = rehydrateAssistantPayload(memoryAwarePayload, phiEntities);
+    const rehydratedFinalPayload = rehydrateAssistantPayload(memoryAwarePayload, phiEntities);
+    const shouldPreserveMedicationReferenceState = (
+      atlasConversation.didRewrite && atlasConversation.routeHint === 'medication_reference'
+    ) || priorClinicalState?.answerMode === 'medication_reference_answer';
+    const finalPayload = shouldPreserveMedicationReferenceState
+      ? {
+          ...rehydratedFinalPayload,
+          answerMode: rehydratedFinalPayload.answerMode || 'medication_reference_answer' as const,
+          builderFamily: rehydratedFinalPayload.builderFamily || 'medication-boundary' as const,
+        }
+      : rehydratedFinalPayload;
 
     await recordRelationshipSignalIfNeeded(message.toLowerCase(), context, authenticatedProviderId);
 
@@ -4534,6 +4588,7 @@ export async function POST(request: Request) {
           ],
           knowledgeIntent,
           answerMode: finalPayload.answerMode,
+          routePriority: atlasConversation.didRewrite ? `atlas-conversation:${atlasConversation.routeHint}` : undefined,
           providerMemoryCount: providerMemory.length,
           medicalNecessitySignalCount: medicalNecessity.signals.filter((item) => item.strength !== 'missing').length,
           levelOfCareSuggested: levelOfCare.suggestedLevel,

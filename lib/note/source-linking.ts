@@ -95,6 +95,18 @@ function blockPriority(sourceKey: keyof SourceSections, heading: string) {
   return sourceKey === 'clinicianNotes' ? 0.04 : 0;
 }
 
+function instructionLanePenalty(block: SourceBlock) {
+  if (block.sourceKey !== 'objectiveData') {
+    return 0;
+  }
+
+  if (/\b(provider add-on|named prompt|cpt|billing|preference|instruction|do not|don't|avoid|use .*style)\b/i.test(block.text)) {
+    return -0.28;
+  }
+
+  return -0.08;
+}
+
 function splitSourceIntoBlocks(text: string) {
   const normalized = text.replace(/\r\n/g, '\n').trim();
 
@@ -159,7 +171,7 @@ function scoreBlock(section: ParsedDraftSection, sectionTokens: string[], block:
   }
 
   const headingBonus = blockPriority(block.sourceKey, section.heading);
-  const score = overlapRatio + phraseBonus + headingBonus;
+  const score = Math.max(0, overlapRatio + phraseBonus + headingBonus + instructionLanePenalty(block));
 
   return {
     score,

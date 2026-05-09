@@ -899,4 +899,118 @@ describe('assistant stale-context routing', () => {
     expect(payload.message).not.toContain('shorter concise format');
     expect(payload.actions?.[0]?.type).not.toBe('apply-draft-rewrite');
   });
+
+  it('recognizes typo-heavy two-paragraph draft shaping commands', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'put HPI in the frist para and MSE/pln in the secnd pargraph',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Outpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports anxiety is partially improved but sleep remains fragmented.',
+            '',
+            'MSE:',
+            'Mood anxious and thought process goal directed.',
+            '',
+            'Plan:',
+            'Continue source-supported follow-up plan.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.message).toContain('two-paragraph HPI/MSE/Plan format');
+    expect(payload.actions?.[0]?.draftText).toContain('HPI: Patient reports anxiety');
+    expect(payload.actions?.[0]?.draftText).toContain('\n\nMSE: Mood anxious');
+    expect(payload.actions?.[0]?.draftText).toContain('Plan: Continue source-supported follow-up plan');
+  });
+
+  it('recognizes brief-with-headers wording as concise sectioned formatting', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'make it briefer but keep headers',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Inpatient Psych Follow Up Note',
+          currentDraftText: [
+            'HPI:',
+            'Patient reports mood remains depressed with poor sleep.',
+            '',
+            'Risk:',
+            'Denies active intent but collateral review remains pending.',
+            '',
+            'Plan:',
+            'Continue source-supported safety monitoring.',
+          ].join('\n'),
+        },
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
+    expect(payload.message).toContain('concise sectioned format');
+    expect(payload.actions?.[0]?.draftText).toContain('HPI:\nPatient reports mood remains depressed');
+    expect(payload.actions?.[0]?.draftText).toContain('Risk:\nDenies active intent');
+    expect(payload.actions?.[0]?.draftText).toContain('Plan:\nContinue source-supported safety monitoring');
+  });
+
+  it('does not treat medication-reference follow-up shorthand as draft formatting just because a draft is visible', async () => {
+    const initialResponse = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'messy source: antipsychotic metabolic labs?',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Inpatient Psych Progress Note',
+          currentDraftText: 'HPI:\nPatient reports anxiety is partially improved.',
+        },
+      }),
+    }));
+    const initialPayload = await initialResponse.json();
+
+    const followupResponse = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'make practical; 1 para ok',
+        context: {
+          providerAddressingName: 'Daniel Hale',
+          noteType: 'Inpatient Psych Progress Note',
+          currentDraftText: 'HPI:\nPatient reports anxiety is partially improved.',
+        },
+        recentMessages: [
+          { role: 'provider', content: 'messy source: antipsychotic metabolic labs?' },
+          {
+            role: 'assistant',
+            content: initialPayload.message,
+            answerMode: initialPayload.answerMode,
+          },
+        ],
+      }),
+    }));
+
+    const payload = await followupResponse.json();
+    expect(payload.answerMode).toBe('medication_reference_answer');
+    expect(payload.builderFamily).toBe('medication-boundary');
+    expect(payload.message).toMatch(/metabolic|monitoring|labs/i);
+    expect(payload.message).not.toContain('one-paragraph format');
+    expect(payload.actions?.[0]?.type).not.toBe('apply-draft-rewrite');
+  });
 });

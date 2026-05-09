@@ -28,6 +28,8 @@ describe('post-note CPT recommendation regression', () => {
     expect(caseText).toMatch(/Medical decision-making/i);
     expect(caseText).toMatch(/Audio-only telehealth/i);
     expect(caseText).toMatch(/Patient education/i);
+    expect(caseText).toMatch(/CPT preference 99214/i);
+    expect(caseText).toMatch(/EHR destination: Tebra\/Kareo/i);
     expect(caseText).toMatch(/too thin|doing okay/i);
   });
 
@@ -64,5 +66,18 @@ describe('post-note CPT recommendation regression', () => {
     expect(assessment.documentationReadiness.presentElements.join(' ')).toMatch(/Patient location support is visible/i);
     expect(assessment.guardrails.join(' ')).toContain('does not select the final CPT level');
     expect(JSON.stringify(assessment)).not.toMatch(/must bill|bill this code|guaranteed/i);
+  });
+
+  it('does not let provider CPT preferences or EHR destination labels force billing candidates', () => {
+    const report = runPostNoteCptRegression();
+    const preferenceOnly = report.cases.find((item) => item.id === 'provider-cpt-preference-alone-no-family-forcing');
+    const destinationOnly = report.cases.find((item) => item.id === 'diagnosis-and-ehr-destination-alone-no-family-forcing');
+
+    expect(preferenceOnly?.passed, JSON.stringify(preferenceOnly, null, 2)).toBe(true);
+    expect(destinationOnly?.passed, JSON.stringify(destinationOnly, null, 2)).toBe(true);
+    expect(preferenceOnly?.candidateFamilies).toEqual([]);
+    expect(destinationOnly?.candidateFamilies).toEqual([]);
+    expect(preferenceOnly?.summary).toMatch(/too thin/i);
+    expect(destinationOnly?.summary).toMatch(/too thin/i);
   });
 });

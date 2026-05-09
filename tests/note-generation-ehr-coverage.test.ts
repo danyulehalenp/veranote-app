@@ -132,6 +132,36 @@ describe('note generation EHR and workflow coverage', () => {
     expect(tebraProgressTargets.map((target) => target.aliases.join(' ')).join(' ')).toMatch(/interval update|mental status|assessment|plan/i);
   });
 
+  it('keeps behavioral-health enterprise EHR copy packs ASCII-safe without losing field targets', () => {
+    const strictBehavioralHealthDestinations = [
+      'Netsmart myAvatar',
+      'Qualifacts/CareLogic',
+      'Credible',
+    ] as const;
+    const draft = [
+      'Narrative:',
+      'Patient states “I’m not ready”—collateral remains pending.',
+      '',
+      'Plan:',
+      '• Review housing barrier.',
+      '1. Reassess safety wording before export.',
+    ].join('\n');
+
+    for (const destination of strictBehavioralHealthDestinations) {
+      const formatted = formatTextForOutputDestination({ text: draft, destination });
+      const readiness = buildEhrOutputReadiness(destination, 'inpatient-psych-follow-up');
+      const targetText = readiness.fieldTargets.map((target) => `${target.label} ${target.aliases.join(' ')}`).join(' ');
+
+      expect(formatted, destination).not.toMatch(/[“”–—•]/);
+      expect(formatted, destination).toContain('"I\'m not ready"-collateral remains pending.');
+      expect(formatted, destination).toContain('- Review housing barrier.');
+      expect(readiness.fieldLevelCopySupported, destination).toBe(true);
+      expect(targetText, destination).toMatch(/narrative|hpi|interval|subjective/i);
+      expect(targetText, destination).toMatch(/MSE|risk|mental status|safety/i);
+      expect(readiness.guardrails.join(' '), destination).toMatch(/future connector work/i);
+    }
+  });
+
   it('keeps typo-heavy and provider-add-on leakage cases in the protected bank', () => {
     expect(sourcePacketRegressionCases.some((item) => /misspell|typo|qick|exposre|sertrline|anxity/i.test([
       item.title,

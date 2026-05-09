@@ -70,6 +70,15 @@ function hasCommunicationComplexity(text: string) {
   ]);
 }
 
+function stripExplicitMissingCptSignals(text: string) {
+  return text
+    .replace(/\bno\b[^.]{0,180}\b(?:encounter time|total time|time|mdm|medical decision[-\s]making|psychotherapy|therapy|psychotherapy intervention|medication[-\s]management|prescribing|risk complexity|medical decision[-\s]making details?)\b[^.]{0,100}\b(?:visible|documented|available|present|listed|noted|details?|work|support)\b/gi, ' ')
+    .replace(/\bwithout\b[^.]{0,140}\b(?:time|mdm|medical decision[-\s]making|psychotherapy|therapy|medication[-\s]management|prescribing|risk complexity)\b[^.]{0,80}\b(?:visible|documented|available|present|listed|noted|details?|work|support)\b/gi, ' ')
+    .replace(/\b(?:time|mdm|medical decision[-\s]making|psychotherapy|therapy|medication[-\s]management|prescribing|risk complexity)\b[^.]{0,80}\b(?:is|are)\s+not\s+(?:visible|documented|available|present|listed|noted)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function hasEvaluationWork(text: string, noteType: string) {
   return /evaluation|intake|initial/i.test(noteType)
     || hasMatch(text, [
@@ -175,17 +184,18 @@ export function evaluatePostNoteCptRecommendations(
   const completedNoteText = compact(input.completedNoteText);
   const noteType = compact(input.noteType);
   const normalizedNote = normalize(completedNoteText);
+  const evidenceNote = stripExplicitMissingCptSignals(normalizedNote);
   const normalizedNoteType = normalize(noteType);
   const encounterSupport = input.encounterSupport;
   const candidates: CptRecommendationCandidate[] = [];
   const timeSignals = extractMinuteSignals(completedNoteText, encounterSupport);
 
-  const psychotherapyContent = hasPsychotherapyContent(normalizedNote);
-  const medicationManagement = hasMedicationManagement(normalizedNote);
-  const mdmSupport = hasMdmSupport(normalizedNote);
-  const crisisWork = hasCrisisWork(normalizedNote) || /crisis/i.test(noteType);
-  const evaluationWork = hasEvaluationWork(normalizedNote, noteType);
-  const communicationComplexity = hasCommunicationComplexity(normalizedNote)
+  const psychotherapyContent = hasPsychotherapyContent(evidenceNote);
+  const medicationManagement = hasMedicationManagement(evidenceNote);
+  const mdmSupport = hasMdmSupport(evidenceNote);
+  const crisisWork = hasCrisisWork(evidenceNote) || /crisis/i.test(noteType);
+  const evaluationWork = hasEvaluationWork(evidenceNote, noteType);
+  const communicationComplexity = hasCommunicationComplexity(evidenceNote)
     || Boolean(encounterSupport?.interactiveComplexity);
   const telehealthContext = /telehealth|video|audio-only|audio only|virtual/i.test(`${noteType} ${completedNoteText}`)
     || Boolean(encounterSupport?.telehealthModality && encounterSupport.telehealthModality !== 'not-applicable');
