@@ -96,4 +96,41 @@ describe('source fidelity summary', () => {
     expect(summary.openReviewItems).toBe(0);
     expect(summary.reviewItems.every((item) => item.severity === 'info')).toBe(true);
   });
+
+  it('removes reviewed and dismissed source-fidelity items from the open count', () => {
+    const evidenceMap: SectionEvidenceMap = {
+      hpi: {
+        sectionAnchor: 'hpi',
+        sectionHeading: 'HPI',
+        sectionTerms: ['sleep'],
+        links: [],
+      },
+    };
+
+    const summary = buildSourceFidelitySummary({
+      sections: [{ anchor: 'hpi', heading: 'HPI' }],
+      evidenceMap,
+      confirmedEvidenceBySection: {},
+      totalSourceBlocks: 2,
+      contradictionFlags: ['Possible contradiction: Patient denies SI but collateral reports suicidal texts.'],
+      reviewState: {
+        'section-evidence-missing': {
+          id: 'section-evidence-missing',
+          status: 'reviewed',
+          updatedAt: '2026-05-08T12:00:00.000Z',
+        },
+        'source-conflict-0': {
+          id: 'source-conflict-0',
+          status: 'dismissed',
+          updatedAt: '2026-05-08T12:01:00.000Z',
+        },
+      },
+    });
+
+    expect(summary.openReviewItems).toBe(0);
+    expect(summary.reviewedReviewItems).toBe(1);
+    expect(summary.dismissedReviewItems).toBe(1);
+    expect(summary.reviewItems.find((item) => item.id === 'section-evidence-missing')?.reviewStatus).toBe('reviewed');
+    expect(summary.reviewItems.find((item) => item.id === 'source-conflict-0')?.reviewStatus).toBe('dismissed');
+  });
 });

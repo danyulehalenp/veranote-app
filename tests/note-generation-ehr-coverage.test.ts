@@ -8,6 +8,8 @@ import {
 import {
   OUTPUT_DESTINATIONS,
   OUTPUT_NOTE_FOCUSES,
+  formatTextForOutputDestination,
+  getOutputDestinationFieldTargets,
   getOutputDestinationMeta,
 } from '@/lib/veranote/output-destinations';
 
@@ -98,6 +100,36 @@ describe('note generation EHR and workflow coverage', () => {
       expect(labelsAndAliases, destination).toMatch(/hpi|history|subjective|narrative|reason|interval/i);
       expect(labelsAndAliases, destination).toMatch(/plan|follow-up|medication|intervention|service plan|proposed discharge/i);
     }
+  });
+
+  it('keeps strict and sectioned EHR copy packs paste-safe and field-addressable', () => {
+    const draft = [
+      'HPI:',
+      'Patient states “better”—but still anxious.',
+      '',
+      'Plan:',
+      '• Continue source-supported plan.',
+      '1. Follow up after labs return.',
+    ].join('\n');
+
+    const wellskyText = formatTextForOutputDestination({
+      text: draft,
+      destination: 'WellSky',
+    });
+
+    expect(wellskyText).toContain('"better"-but still anxious.');
+    expect(wellskyText).toContain('- Continue source-supported plan.');
+    expect(wellskyText).toContain('- Follow up after labs return.');
+    expect(wellskyText).not.toMatch(/[“”–—•]/);
+
+    const tebraProgressTargets = getOutputDestinationFieldTargets('Tebra/Kareo', 'inpatient-psych-follow-up');
+    expect(tebraProgressTargets.map((target) => target.id)).toEqual(expect.arrayContaining([
+      'tebra-psych-progress-followup',
+      'tebra-psych-progress-mse',
+      'tebra-psych-progress-impression',
+      'tebra-psych-progress-intervention-plan',
+    ]));
+    expect(tebraProgressTargets.map((target) => target.aliases.join(' ')).join(' ')).toMatch(/interval update|mental status|assessment|plan/i);
   });
 
   it('keeps typo-heavy and provider-add-on leakage cases in the protected bank', () => {

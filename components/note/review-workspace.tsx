@@ -9,7 +9,14 @@ import { findProviderProfile } from '@/lib/constants/provider-profiles';
 import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '@/lib/constants/settings';
 import { describePopulatedSourceSections, EMPTY_SOURCE_SECTIONS, normalizeSourceSections } from '@/lib/ai/source-sections';
 import { countWords, parseDraftSections, reconcileSectionReviewState, type ParsedDraftSection } from '@/lib/note/review-sections';
-import { buildSectionEvidenceMap, buildSourceBlocks, getSignalLabel, highlightTermsInText, type SourceBlock } from '@/lib/note/source-linking';
+import {
+  buildSectionEvidenceMap,
+  buildSectionSentenceEvidenceMap,
+  buildSourceBlocks,
+  getSignalLabel,
+  highlightTermsInText,
+  type SourceBlock,
+} from '@/lib/note/source-linking';
 import { buildSourceFidelitySummary, type SourceFidelitySummary } from '@/lib/note/source-fidelity-summary';
 import { getHighRiskWarnings } from '@/lib/eval/high-risk-warnings';
 import { buildDiagnosisProfileSummary, normalizeDiagnosisProfile } from '@/lib/note/diagnosis-profile';
@@ -47,7 +54,14 @@ import {
   writeCachedProviderSettings,
 } from '@/lib/veranote/provider-settings-client';
 import { resolveVeraAddress } from '@/lib/veranote/vera-relationship';
-import type { DraftRevision, DraftSession, PersistedDraftSession, ReviewStatus, SourceSections } from '@/types/session';
+import type {
+  DraftRevision,
+  DraftSession,
+  PersistedDraftSession,
+  ReviewStatus,
+  SourceFidelityReviewStatus,
+  SourceSections,
+} from '@/types/session';
 import type { DictationTargetSection } from '@/types/dictation';
 import type { NoteSectionKey, OutputScope } from '@/lib/note/section-profiles';
 
@@ -749,6 +763,30 @@ const sourceFidelityToneClasses = {
   caution: 'border-rose-300/22 bg-[rgba(244,63,94,0.13)] text-rose-50',
 } as const;
 
+const sourceFidelityStatusClasses = {
+  open: 'border-white/14 bg-white/10 text-cyan-50/78',
+  reviewed: 'border-emerald-300/22 bg-[rgba(16,185,129,0.14)] text-emerald-50',
+  'needs-revision': 'border-amber-300/24 bg-[rgba(245,158,11,0.16)] text-amber-50',
+  dismissed: 'border-slate-300/18 bg-slate-500/12 text-slate-100/76',
+} satisfies Record<SourceFidelityReviewStatus, string>;
+
+function revealReviewTarget(targetId: string) {
+  const target = document.getElementById(targetId);
+  if (!target) {
+    return;
+  }
+
+  let current: HTMLElement | null = target;
+  while (current) {
+    if (current instanceof HTMLDetailsElement) {
+      current.open = true;
+    }
+    current = current.parentElement;
+  }
+
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function ProvenanceChip({ label }: { label: string }) {
   return (
     <span className="rounded-full border border-white/12 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-cyan-50 shadow-[0_8px_22px_rgba(4,12,24,0.18)]">
@@ -844,12 +882,7 @@ function DrawerJumpButton(props: {
   return (
     <button
       type="button"
-      onClick={() => {
-        const target = document.getElementById(props.targetId);
-        if (target) {
-          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      }}
+      onClick={() => revealReviewTarget(props.targetId)}
       className="workspace-chip rounded-full px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:shadow-[0_14px_32px_rgba(2,8,18,0.2)]"
     >
       {props.label}
@@ -860,8 +893,11 @@ function DrawerJumpButton(props: {
 function SourceFidelityPulse(props: {
   summary: SourceFidelitySummary;
   compact?: boolean;
+  onReviewItemStatusChange?: (itemId: string, status: SourceFidelityReviewStatus) => void;
 }) {
-  const visibleItems = props.summary.reviewItems.slice(0, props.compact ? 3 : 5);
+  const visibleItems = props.summary.reviewItems
+    .filter((item) => item.reviewStatus !== 'dismissed')
+    .slice(0, props.compact ? 3 : 5);
 
   return (
     <section
@@ -897,30 +933,72 @@ function SourceFidelityPulse(props: {
           <div className="mt-1 text-lg font-semibold text-white">{props.summary.openReviewItems}</div>
         </div>
       </div>
+      {(props.summary.reviewedReviewItems || props.summary.dismissedReviewItems) ? (
+        <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-medium text-cyan-50/70">
+          {props.summary.reviewedReviewItems ? (
+            <span className="rounded-full border border-emerald-300/18 bg-[rgba(16,185,129,0.1)] px-2.5 py-1 text-emerald-50">
+              {props.summary.reviewedReviewItems} reviewed
+            </span>
+          ) : null}
+          {props.summary.dismissedReviewItems ? (
+            <span className="rounded-full border border-slate-300/18 bg-white/8 px-2.5 py-1">
+              {props.summary.dismissedReviewItems} dismissed
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {visibleItems.length ? (
         <div data-testid="conflict-gap-panel" className="mt-3 grid gap-2">
           {visibleItems.map((reviewItem) => (
-            <button
+            <div
               key={reviewItem.id}
-              type="button"
               data-testid="conflict-gap-item"
-              onClick={() => {
-                const target = document.getElementById(reviewItem.targetId);
-                if (target) {
-                  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-              }}
-              className={`rounded-[16px] border px-3 py-2 text-left transition hover:shadow-[0_14px_32px_rgba(2,8,18,0.2)] ${sourceFidelityToneClasses[reviewItem.severity]}`}
+              className={`rounded-[16px] border px-3 py-2 transition hover:shadow-[0_14px_32px_rgba(2,8,18,0.2)] ${sourceFidelityToneClasses[reviewItem.severity]}`}
             >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-white/14 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  {reviewItem.category}
-                </span>
-                <span className="text-sm font-semibold">{reviewItem.label}</span>
+              <button
+                type="button"
+                onClick={() => revealReviewTarget(reviewItem.targetId)}
+                className="w-full text-left"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-white/14 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                    {reviewItem.category}
+                  </span>
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${sourceFidelityStatusClasses[reviewItem.reviewStatus]}`}>
+                    {reviewItem.reviewStatus.replace('-', ' ')}
+                  </span>
+                  <span className="text-sm font-semibold">{reviewItem.label}</span>
+                </div>
+                <div className="mt-1 text-xs leading-5 opacity-86">{reviewItem.detail}</div>
+              </button>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  data-testid="source-fidelity-review-action"
+                  onClick={() => props.onReviewItemStatusChange?.(reviewItem.id, 'reviewed')}
+                  className="rounded-full border border-emerald-300/24 bg-[rgba(16,185,129,0.14)] px-2.5 py-1 text-[11px] font-semibold text-emerald-50"
+                >
+                  Mark reviewed
+                </button>
+                <button
+                  type="button"
+                  data-testid="source-fidelity-review-action"
+                  onClick={() => props.onReviewItemStatusChange?.(reviewItem.id, 'needs-revision')}
+                  className="rounded-full border border-amber-300/24 bg-[rgba(245,158,11,0.14)] px-2.5 py-1 text-[11px] font-semibold text-amber-50"
+                >
+                  Needs revision
+                </button>
+                <button
+                  type="button"
+                  data-testid="source-fidelity-review-action"
+                  onClick={() => props.onReviewItemStatusChange?.(reviewItem.id, 'dismissed')}
+                  className="rounded-full border border-white/14 bg-white/8 px-2.5 py-1 text-[11px] font-semibold text-cyan-50/76"
+                >
+                  Dismiss
+                </button>
               </div>
-              <div className="mt-1 text-xs leading-5 opacity-86">{reviewItem.detail}</div>
-            </button>
+            </div>
           ))}
         </div>
       ) : (
@@ -2437,13 +2515,42 @@ export function ReviewWorkspace({
     flashInteractionMessage(`${sectionHeading} marked ${status.replace('-', ' ')}.`);
   }
 
-  function jumpToElementById(id: string) {
-    const node = document.getElementById(id);
-    if (!node) {
+  function handleSourceFidelityReviewStatusChange(itemId: string, status: SourceFidelityReviewStatus) {
+    const baseSession = buildLatestReviewSession();
+    if (!baseSession) {
       return;
     }
 
-    node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const nextSession: DraftSession = {
+      ...baseSession,
+      note: draftText,
+      sourceFidelityReviewState: {
+        ...(baseSession.sourceFidelityReviewState || {}),
+        [itemId]: {
+          id: itemId,
+          status,
+          updatedAt: new Date().toISOString(),
+          reviewerComment: baseSession.sourceFidelityReviewState?.[itemId]?.reviewerComment || '',
+        },
+      },
+    };
+
+    commitDraftSession(nextSession);
+    flashInteractionMessage(`Source-fidelity item marked ${status.replace('-', ' ')}.`);
+  }
+
+  function jumpToElementById(id: string) {
+    revealReviewTarget(id);
+  }
+
+  function handleFocusSourceBlock(sectionAnchor: string, block: SourceBlock) {
+    setFocusedSectionAnchor(sectionAnchor);
+    setFocusedEvidenceBlockId(block.id);
+    setActiveSourceKey(block.sourceKey);
+
+    window.setTimeout(() => {
+      revealReviewTarget(`source-block-${block.id}`);
+    }, 0);
   }
 
   function handleJumpToFirstOpenSection() {
@@ -2785,6 +2892,10 @@ export function ReviewWorkspace({
     };
   }, [ambientTranscriptHandoff, sourceBlocks]);
   const sectionEvidenceMap = useMemo(() => buildSectionEvidenceMap(draftSections, sourceSections), [draftSections, sourceSections]);
+  const sectionSentenceEvidenceMap = useMemo(
+    () => buildSectionSentenceEvidenceMap(draftSections, sourceSections),
+    [draftSections, sourceSections],
+  );
   const focusedSectionEvidence = focusedSectionAnchor ? sectionEvidenceMap[focusedSectionAnchor] : null;
   const focusedEvidenceBlock = useMemo(
     () => focusedEvidenceBlockId ? sourceBlocks.find((block) => block.id === focusedEvidenceBlockId) || null : null,
@@ -3169,6 +3280,7 @@ export function ReviewWorkspace({
       highRiskWarningLabels: highRiskWarnings.map((warning) => warning.title),
       medicationWarningLabels: medicationScaffoldWarnings.map((warning) => warning.title),
       mseReviewLabels: draftMseTermsNeedingReview.map(({ entry }) => `${entry.domain}: ${entry.term}`),
+      reviewState: session?.sourceFidelityReviewState,
     }),
     [
       contradictionFlags,
@@ -3180,6 +3292,7 @@ export function ReviewWorkspace({
       objectiveReview.conflictBullets,
       reconciledSectionReviewState,
       sectionEvidenceMap,
+      session?.sourceFidelityReviewState,
       sourceBlocks.length,
     ],
   );
@@ -3730,6 +3843,16 @@ export function ReviewWorkspace({
                 topSourceLabel: topSourceBlock ? `${topSourceBlock.sourceLabel} (${topSourceBlock.id})` : undefined,
               });
               const confirmedEvidenceIds = getConfirmedEvidenceBlockIds(currentSession, section.anchor);
+              const sentenceEvidence = sectionSentenceEvidenceMap[section.anchor] || [];
+              const sectionTraceRows = sentenceEvidence.length
+                ? sentenceEvidence
+                : (evidence?.links.length ? [{
+                  id: `${section.anchor}-section-trace`,
+                  sectionAnchor: section.anchor,
+                  sectionHeading: section.heading,
+                  sentence: extractFirstReviewSentence(section.body) || 'Section-level source support available. Open a source chip to inspect the likely supporting source block.',
+                  links: evidence.links,
+                }] : []);
               const isFirstOpenSection = firstOpenReviewSection?.anchor === section.anchor;
               const firstEvidenceLink = evidence?.links[0];
               const firstEvidenceBlock = firstEvidenceLink
@@ -3897,6 +4020,48 @@ export function ReviewWorkspace({
                           </button>
                         );
                       })}
+                    </div>
+                  ) : null}
+                  {sectionTraceRows.length ? (
+                    <div data-testid="section-source-trace-card" className="mt-3 rounded-[16px] border border-sky-300/18 bg-[rgba(56,189,248,0.08)] p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/78">
+                            Sentence source trace
+                          </div>
+                          <p className="mt-1 text-xs text-sky-50/74">
+                            Click a source chip to open the supporting source block before approving this wording.
+                          </p>
+                        </div>
+                        <ProvenanceChip label="Section-to-source" />
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {sectionTraceRows.slice(0, 2).map((sentenceLink) => (
+                          <div key={sentenceLink.id} data-testid="section-source-sentence" className="rounded-[14px] border border-white/10 bg-white/6 p-3">
+                            <div className="text-sm leading-6 text-white">{sentenceLink.sentence}</div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {sentenceLink.links.slice(0, 2).map((link) => {
+                                const block = sourceBlocks.find((item) => item.id === link.blockId);
+                                if (!block) {
+                                  return null;
+                                }
+
+                                return (
+                                  <button
+                                    key={`${sentenceLink.id}-${link.blockId}`}
+                                    type="button"
+                                    data-testid="section-source-block-button"
+                                    onClick={() => handleFocusSourceBlock(section.anchor, block)}
+                                    className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${evidenceSignalClasses[link.signal]} ${focusedEvidenceBlockId === block.id ? 'ring-2 ring-sky-200' : ''}`}
+                                  >
+                                    {block.sourceLabel} · {getSignalLabel(link.signal)}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ) : null}
                   {reviewState?.updatedAt ? (
@@ -4547,7 +4712,11 @@ export function ReviewWorkspace({
           ) : null}
 
           <div className="mt-4">
-            <SourceFidelityPulse summary={sourceFidelitySummary} compact />
+            <SourceFidelityPulse
+              summary={sourceFidelitySummary}
+              compact
+              onReviewItemStatusChange={handleSourceFidelityReviewStatusChange}
+            />
           </div>
 
           {showAtlasReviewDock ? (
@@ -4572,12 +4741,61 @@ export function ReviewWorkspace({
 
           <textarea ref={draftTextareaRef} value={draftText} onChange={(event) => setDraftText(event.target.value)} className="workspace-control mt-4 min-h-[780px] w-full rounded-[24px] p-4 text-sm leading-7" />
 
+          <div id="source-evidence-layer" className="mt-4 rounded-[22px] border border-sky-300/18 bg-[rgba(56,189,248,0.08)] p-4">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/78">Source evidence quick view</div>
+                <p className="mt-1 text-sm leading-6 text-sky-50/74">
+                  Click a source trace below to bring the likely source block here before approving section wording.
+                </p>
+              </div>
+              <InlineMetric label="blocks" value={sourceBlocks.length} />
+            </div>
+            <div className="mt-3 max-h-[260px] space-y-2 overflow-auto pr-1">
+              {sourceBlocks.length ? sourceBlocks.map((block) => {
+                const isFocused = focusedEvidenceBlockId === block.id;
+                return (
+                  <div
+                    key={block.id}
+                    id={`source-block-${block.id}`}
+                    className={`rounded-[16px] border p-3 ${isFocused ? 'border-sky-300/36 bg-[rgba(56,189,248,0.16)]' : 'border-white/10 bg-white/5'}`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-50/74">{block.sourceLabel}</span>
+                      {isFocused ? (
+                        <span className="rounded-full border border-sky-200/24 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-50">
+                          Focused
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white">{block.text}</div>
+                  </div>
+                );
+              }) : (
+                <div className="rounded-[16px] border border-white/10 bg-white/5 p-3 text-sm text-sky-50/70">
+                  No source blocks are available yet.
+                </div>
+              )}
+            </div>
+          </div>
+
           {draftSections.length ? (
             <div className="workspace-subpanel mt-4 rounded-[22px] p-4">
               <div className="text-sm font-semibold text-white">Section review status</div>
               <div className="mt-3 grid gap-3">
                 {draftSections.map((section) => {
                   const reviewState = reconciledSectionReviewState[section.anchor];
+                  const evidence = sectionEvidenceMap[section.anchor];
+                  const sentenceEvidence = sectionSentenceEvidenceMap[section.anchor] || [];
+                  const sectionTraceRows = sentenceEvidence.length
+                    ? sentenceEvidence
+                    : (evidence?.links.length ? [{
+                      id: `${section.anchor}-embedded-section-trace`,
+                      sectionAnchor: section.anchor,
+                      sectionHeading: section.heading,
+                      sentence: extractFirstReviewSentence(section.body) || 'Section-level source support available. Open a source chip to inspect the likely supporting source block.',
+                      links: evidence.links,
+                    }] : []);
                   const isFirstOpenSection = firstOpenReviewSection?.anchor === section.anchor;
                   const isActiveReviewTarget = isFirstOpenSection && hasOpenReviewSections;
                   const embeddedReviewPrompt = !hasOpenReviewSections
@@ -4667,6 +4885,38 @@ export function ReviewWorkspace({
                             {hasOpenReviewSections ? 'Review task' : 'Final read'}
                           </div>
                           <p className={`mt-1 text-sm ${hasOpenReviewSections ? 'text-amber-50/92' : 'text-emerald-50/92'}`}>{embeddedReviewPrompt}</p>
+                        </div>
+                      ) : null}
+                      {sectionTraceRows.length ? (
+                        <div data-testid="section-source-trace-card" className="mt-3 rounded-[14px] border border-sky-300/18 bg-[rgba(56,189,248,0.08)] p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/78">
+                            Source trace
+                          </div>
+                          {sectionTraceRows.slice(0, 1).map((sentenceLink) => (
+                            <div key={sentenceLink.id} data-testid="section-source-sentence" className="mt-2">
+                              <div className="text-sm leading-6 text-sky-50/88">{sentenceLink.sentence}</div>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {sentenceLink.links.slice(0, 2).map((link) => {
+                                  const block = sourceBlocks.find((item) => item.id === link.blockId);
+                                  if (!block) {
+                                    return null;
+                                  }
+
+                                  return (
+                                    <button
+                                      key={`${sentenceLink.id}-${link.blockId}`}
+                                      type="button"
+                                      data-testid="section-source-block-button"
+                                      onClick={() => handleFocusSourceBlock(section.anchor, block)}
+                                      className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${evidenceSignalClasses[link.signal]} ${focusedEvidenceBlockId === block.id ? 'ring-2 ring-sky-200' : ''}`}
+                                    >
+                                      {block.sourceLabel} · {getSignalLabel(link.signal)}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       ) : null}
                     </div>
@@ -4798,7 +5048,10 @@ export function ReviewWorkspace({
       </div>
 
       <div className="mb-6">
-        <SourceFidelityPulse summary={sourceFidelitySummary} />
+        <SourceFidelityPulse
+          summary={sourceFidelitySummary}
+          onReviewItemStatusChange={handleSourceFidelityReviewStatusChange}
+        />
       </div>
 
       {showAtlasReviewDock ? (
@@ -6494,6 +6747,7 @@ export function ReviewWorkspace({
                   return (
                     <div
                       key={block.id}
+                      id={`source-block-${block.id}`}
                       className={`w-full rounded-[18px] border p-3 text-left ${isFocused ? 'border-sky-300/30 bg-[rgba(56,189,248,0.1)]' : 'border-white/10 bg-[rgba(255,255,255,0.04)]'}`}
                     >
                       <button
@@ -6549,6 +6803,7 @@ export function ReviewWorkspace({
                   return (
                     <div
                       key={block.id}
+                      id={`source-block-${block.id}`}
                       className={`w-full rounded-[18px] border p-3 text-left ${isFocused ? 'border-sky-300/30 bg-[rgba(56,189,248,0.1)]' : 'border-white/10 bg-[rgba(255,255,255,0.04)]'}`}
                     >
                       <button

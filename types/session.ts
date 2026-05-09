@@ -91,6 +91,7 @@ export interface DraftSession {
   flags: string[];
   copilotSuggestions: CopilotSuggestion[];
   sectionReviewState?: SectionReviewState;
+  sourceFidelityReviewState?: SourceFidelityReviewState;
   recoveryState?: DraftRecoveryState;
   mode: "live" | "fallback";
   warning?: string;
@@ -218,6 +219,17 @@ export interface SectionReviewEntry {
 }
 
 export type SectionReviewState = Record<string, SectionReviewEntry>;
+
+export type SourceFidelityReviewStatus = "open" | "reviewed" | "needs-revision" | "dismissed";
+
+export interface SourceFidelityReviewEntry {
+  id: string;
+  status: SourceFidelityReviewStatus;
+  updatedAt?: string;
+  reviewerComment?: string;
+}
+
+export type SourceFidelityReviewState = Record<string, SourceFidelityReviewEntry>;
 
 export type CopilotSuggestionSeverity = "info" | "review" | "warning";
 

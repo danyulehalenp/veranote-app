@@ -27,6 +27,16 @@ export type SectionEvidenceMap = Record<
   }
 >;
 
+export type SectionSentenceEvidence = {
+  id: string;
+  sectionAnchor: string;
+  sectionHeading: string;
+  sentence: string;
+  links: SectionEvidenceLink[];
+};
+
+export type SectionSentenceEvidenceMap = Record<string, SectionSentenceEvidence[]>;
+
 const SOURCE_LABELS: Record<keyof SourceSections, string> = {
   intakeCollateral: 'Pre-Visit Data',
   clinicianNotes: 'Live Visit Notes',
@@ -167,6 +177,25 @@ function signalForScore(score: number): SectionEvidenceLink['signal'] {
   return 'weak-overlap';
 }
 
+function splitDraftSectionIntoSentences(body: string) {
+  const normalized = body.replace(/\s+/g, ' ').trim();
+
+  if (!normalized) {
+    return [];
+  }
+
+  const sentences = normalized
+    .split(/(?<=[.!?])\s+(?=["'A-Z0-9])|;\s+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 24);
+
+  if (sentences.length) {
+    return sentences;
+  }
+
+  return normalized.length >= 24 ? [normalized] : [];
+}
+
 export function buildSectionEvidenceMap(sections: ParsedDraftSection[], sourceSections: SourceSections): SectionEvidenceMap {
   const blocks = buildSourceBlocks(sourceSections);
 
@@ -196,6 +225,50 @@ export function buildSectionEvidenceMap(sections: ParsedDraftSection[], sourceSe
           links,
         },
       ];
+    }),
+  );
+}
+
+export function buildSectionSentenceEvidenceMap(
+  sections: ParsedDraftSection[],
+  sourceSections: SourceSections,
+  maxSentencesPerSection = 3,
+): SectionSentenceEvidenceMap {
+  const blocks = buildSourceBlocks(sourceSections);
+
+  return Object.fromEntries(
+    sections.map((section) => {
+      const sentenceEvidence = splitDraftSectionIntoSentences(section.body)
+        .slice(0, 8)
+        .map((sentence, index) => {
+          const sentenceTerms = unique(tokenize(`${section.heading} ${sentence}`)).slice(0, 14);
+          const links = blocks
+            .map((block) => {
+              const { score, overlapTerms } = scoreBlock({ ...section, body: sentence }, sentenceTerms, block);
+              return {
+                blockId: block.id,
+                score,
+                overlapTerms,
+                signal: signalForScore(score),
+              } satisfies SectionEvidenceLink;
+            })
+            .filter((link) => link.score >= 0.18 && link.overlapTerms.length > 0)
+            .sort((left, right) => right.score - left.score)
+            .slice(0, 3);
+
+          return {
+            id: `${section.anchor}-sentence-${index + 1}`,
+            sectionAnchor: section.anchor,
+            sectionHeading: section.heading,
+            sentence,
+            links,
+          } satisfies SectionSentenceEvidence;
+        })
+        .filter((item) => item.links.length > 0)
+        .sort((left, right) => (right.links[0]?.score || 0) - (left.links[0]?.score || 0))
+        .slice(0, maxSentencesPerSection);
+
+      return [section.anchor, sentenceEvidence];
     }),
   );
 }

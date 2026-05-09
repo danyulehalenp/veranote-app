@@ -826,6 +826,29 @@ async function main() {
     if (!conflictGapItemsVisible && !/No source-fidelity conflicts or gaps/i.test(sourceFidelityPulseText)) {
       throw new Error('Source-fidelity pulse did not show either conflict/gap items or a clear no-items state.');
     }
+    const sourceTraceCardVisible = await waitForVisible(page.getByTestId('section-source-trace-card').first(), 10000);
+    if (!sourceTraceCardVisible) {
+      throw new Error('Section source trace card did not render for sentence-level source review.');
+    }
+    const sourceTraceButton = page.getByTestId('section-source-block-button').first();
+    const sourceTraceButtonVisible = await waitForVisible(sourceTraceButton, 5000);
+    if (!sourceTraceButtonVisible) {
+      throw new Error('Section source trace did not expose a clickable source block button.');
+    }
+    await sourceTraceButton.click();
+    const sourceEvidenceLayerOpened = await waitForVisible(page.locator('#source-evidence-layer').first(), 5000);
+    if (!sourceEvidenceLayerOpened) {
+      throw new Error('Clicking a sentence source trace did not reveal the source evidence layer.');
+    }
+    const firstSourceReviewAction = page
+      .getByTestId('source-fidelity-review-action')
+      .filter({ hasText: /Mark reviewed/i })
+      .first();
+    const sourceFidelityReviewActionVisible = await waitForVisible(firstSourceReviewAction, 5000);
+    if (sourceFidelityReviewActionVisible) {
+      await firstSourceReviewAction.click();
+      await page.getByTestId('source-fidelity-pulse').first().getByText(/reviewed/i).first().waitFor({ state: 'visible', timeout: 5000 });
+    }
 
     await openAssistantPanel(page);
     const assistantResult = await askVisibleAssistantTurn(page, 'What should I check before copying this note?');
@@ -922,6 +945,10 @@ async function main() {
         sourceFidelityPulseVisible,
         sourceFidelityPulseCharacters: sourceFidelityPulseText.length,
         sourceFidelityConflictGapStateVisible: conflictGapItemsVisible || /No source-fidelity conflicts or gaps/i.test(sourceFidelityPulseText),
+        sourceTraceCardVisible,
+        sourceTraceButtonVisible,
+        sourceEvidenceLayerOpened,
+        sourceFidelityReviewActionVisible,
         assistantAnswerCharacters: assistantResult.answerCharacters,
         assistantAnswerVisible: assistantResult.visibleInViewport,
         assistantRewriteAnswerCharacters: assistantRewriteResult.rewriteAnswerCharacters,

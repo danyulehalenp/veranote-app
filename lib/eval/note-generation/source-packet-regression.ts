@@ -1466,7 +1466,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       ].join('\n'),
     },
     required: [
-      { label: 'copied-forward old med list visible as historical', pattern: /copied[-\s]?forward|prior note|last year|old plan|historical/i },
+      { label: 'copied-forward old med list visible as historical', pattern: /copied[-\s]?forward|prior (?:note|chart)|last year|old plan|historical|prior chart medication reconciliation/i },
       { label: 'sertraline discontinuation/current nonuse visible', pattern: /sertraline.*(?:discontinued|not taken|not taking)|Zoloft.*not taking/i },
       { label: 'trazodone not picked up visible', pattern: /(?:trazodone.{0,80}(?:never picked up|never picking up|not picked up|not taking))|(?:(?:never picked up|never picking up|not picked up|not taking).{0,80}trazodone)/i },
       { label: 'med reconciliation conflict visible', pattern: /medication reconciliation|reconciliation conflict|med list conflict|conflict/i },
