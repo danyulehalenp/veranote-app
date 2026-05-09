@@ -10,6 +10,7 @@ import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '@/lib/constant
 import { describePopulatedSourceSections, EMPTY_SOURCE_SECTIONS, normalizeSourceSections } from '@/lib/ai/source-sections';
 import { countWords, parseDraftSections, reconcileSectionReviewState, type ParsedDraftSection } from '@/lib/note/review-sections';
 import { buildSectionEvidenceMap, buildSourceBlocks, getSignalLabel, highlightTermsInText, type SourceBlock } from '@/lib/note/source-linking';
+import { buildSourceFidelitySummary, type SourceFidelitySummary } from '@/lib/note/source-fidelity-summary';
 import { getHighRiskWarnings } from '@/lib/eval/high-risk-warnings';
 import { buildDiagnosisProfileSummary, normalizeDiagnosisProfile } from '@/lib/note/diagnosis-profile';
 import { buildEncounterSupportSummary, buildEncounterSupportWarnings, getEncounterSupportConfig, normalizeEncounterSupport } from '@/lib/note/encounter-support';
@@ -742,6 +743,12 @@ const evidenceSignalClasses = {
   'weak-overlap': 'border-slate-200 bg-slate-50 text-slate-700',
 } as const;
 
+const sourceFidelityToneClasses = {
+  info: 'border-sky-300/20 bg-[rgba(56,189,248,0.1)] text-sky-50',
+  review: 'border-amber-300/22 bg-[rgba(245,158,11,0.14)] text-amber-50',
+  caution: 'border-rose-300/22 bg-[rgba(244,63,94,0.13)] text-rose-50',
+} as const;
+
 function ProvenanceChip({ label }: { label: string }) {
   return (
     <span className="rounded-full border border-white/12 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-cyan-50 shadow-[0_8px_22px_rgba(4,12,24,0.18)]">
@@ -847,6 +854,91 @@ function DrawerJumpButton(props: {
     >
       {props.label}
     </button>
+  );
+}
+
+function SourceFidelityPulse(props: {
+  summary: SourceFidelitySummary;
+  compact?: boolean;
+}) {
+  const visibleItems = props.summary.reviewItems.slice(0, props.compact ? 3 : 5);
+
+  return (
+    <section
+      data-testid="source-fidelity-pulse"
+      className="workspace-subpanel rounded-[24px] border border-cyan-200/14 bg-[rgba(10,28,46,0.62)] p-4"
+    >
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/66">
+            Source fidelity
+          </div>
+          <h3 className="mt-1 text-lg font-semibold text-white">{props.summary.statusLabel}</h3>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-cyan-50/70">{props.summary.statusDetail}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <InlineMetric label="linked" value={`${props.summary.linkedSections}/${props.summary.totalSections || 0}`} />
+          <InlineMetric label="confirmed" value={props.summary.confirmedSections} />
+          <InlineMetric label="source blocks" value={props.summary.totalSourceBlocks} />
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <div className="rounded-[16px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] px-3 py-2">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/60">No source link</div>
+          <div className="mt-1 text-lg font-semibold text-white">{props.summary.noEvidenceSections}</div>
+        </div>
+        <div className="rounded-[16px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] px-3 py-2">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/60">Weak clue only</div>
+          <div className="mt-1 text-lg font-semibold text-white">{props.summary.weakOnlySections}</div>
+        </div>
+        <div className="rounded-[16px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] px-3 py-2">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/60">Open review items</div>
+          <div className="mt-1 text-lg font-semibold text-white">{props.summary.openReviewItems}</div>
+        </div>
+      </div>
+
+      {visibleItems.length ? (
+        <div data-testid="conflict-gap-panel" className="mt-3 grid gap-2">
+          {visibleItems.map((reviewItem) => (
+            <button
+              key={reviewItem.id}
+              type="button"
+              data-testid="conflict-gap-item"
+              onClick={() => {
+                const target = document.getElementById(reviewItem.targetId);
+                if (target) {
+                  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+              }}
+              className={`rounded-[16px] border px-3 py-2 text-left transition hover:shadow-[0_14px_32px_rgba(2,8,18,0.2)] ${sourceFidelityToneClasses[reviewItem.severity]}`}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-white/14 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  {reviewItem.category}
+                </span>
+                <span className="text-sm font-semibold">{reviewItem.label}</span>
+              </div>
+              <div className="mt-1 text-xs leading-5 opacity-86">{reviewItem.detail}</div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-3 rounded-[16px] border border-emerald-300/20 bg-[rgba(16,185,129,0.1)] px-3 py-2 text-sm text-emerald-50">
+          No source-fidelity conflicts or gaps are currently surfaced. Still do the final clinician read before export.
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <DrawerJumpButton label="Open source evidence" targetId="source-evidence-layer" />
+        {props.summary.reviewItems.some((item) => item.targetId === 'objective-warning-layer') ? (
+          <DrawerJumpButton label="Objective conflict" targetId="objective-warning-layer" />
+        ) : null}
+        {props.summary.reviewItems.some((item) => item.targetId === 'high-risk-warning-layer') ? (
+          <DrawerJumpButton label="Risk wording" targetId="high-risk-warning-layer" />
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -3060,6 +3152,37 @@ export function ReviewWorkspace({
       structuredDiagnosisAlignment,
     ],
   );
+  const sourceFidelitySummary = useMemo(
+    () => buildSourceFidelitySummary({
+      sections: draftSections.map((section) => ({ anchor: section.anchor, heading: section.heading })),
+      evidenceMap: sectionEvidenceMap,
+      confirmedEvidenceBySection: Object.fromEntries(
+        Object.entries(reconciledSectionReviewState).map(([anchor, entry]) => [
+          anchor,
+          entry.confirmedEvidenceBlockIds || [],
+        ]),
+      ),
+      totalSourceBlocks: sourceBlocks.length,
+      missingInfoFlags,
+      contradictionFlags,
+      objectiveConflictBullets: objectiveReview.conflictBullets,
+      highRiskWarningLabels: highRiskWarnings.map((warning) => warning.title),
+      medicationWarningLabels: medicationScaffoldWarnings.map((warning) => warning.title),
+      mseReviewLabels: draftMseTermsNeedingReview.map(({ entry }) => `${entry.domain}: ${entry.term}`),
+    }),
+    [
+      contradictionFlags,
+      draftMseTermsNeedingReview,
+      draftSections,
+      highRiskWarnings,
+      medicationScaffoldWarnings,
+      missingInfoFlags,
+      objectiveReview.conflictBullets,
+      reconciledSectionReviewState,
+      sectionEvidenceMap,
+      sourceBlocks.length,
+    ],
+  );
   const exportReadiness = useMemo(() => {
     const blockers = [];
     const warnings = [];
@@ -3082,6 +3205,10 @@ export function ReviewWorkspace({
 
     if (phaseTwoTrustCues.length) {
       warnings.push(`${phaseTwoTrustCues.length} Phase 2 trust cue${phaseTwoTrustCues.length === 1 ? '' : 's'} is still active in Review. Re-check objective conflict, medication truth, diagnosis caution, or risk wording before export.`);
+    }
+
+    if (sourceFidelitySummary.openReviewItems) {
+      warnings.push(`${sourceFidelitySummary.openReviewItems} source-fidelity item${sourceFidelitySummary.openReviewItems === 1 ? '' : 's'} should be checked so conflicts, gaps, or weak evidence do not get flattened.`);
     }
 
     if (isDischargeNote) {
@@ -3122,6 +3249,7 @@ export function ReviewWorkspace({
     encounterSupportWarnings,
     medicalNecessitySupport,
     phaseTwoTrustCues.length,
+    sourceFidelitySummary.openReviewItems,
     isDischargeNote,
     medicationSignalSummary.dosageSignalCount,
     medicationSignalSummary.medicationNameCount,
@@ -4418,6 +4546,10 @@ export function ReviewWorkspace({
             </div>
           ) : null}
 
+          <div className="mt-4">
+            <SourceFidelityPulse summary={sourceFidelitySummary} compact />
+          </div>
+
           {showAtlasReviewDock ? (
             <div className="mt-4 grid gap-4">
               <AtlasNudgeStrip
@@ -4663,6 +4795,10 @@ export function ReviewWorkspace({
             </select>
           </label>
         ) : null}
+      </div>
+
+      <div className="mb-6">
+        <SourceFidelityPulse summary={sourceFidelitySummary} />
       </div>
 
       {showAtlasReviewDock ? (

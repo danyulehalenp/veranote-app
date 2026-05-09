@@ -815,6 +815,18 @@ async function main() {
       throw new Error('Post-note CPT support candidate did not show a conservative support-strength badge.');
     }
 
+    const sourceFidelityPulseVisible = await waitForVisible(page.getByTestId('source-fidelity-pulse').first(), 10000);
+    const sourceFidelityPulseText = sourceFidelityPulseVisible
+      ? await page.getByTestId('source-fidelity-pulse').first().innerText()
+      : '';
+    if (!sourceFidelityPulseVisible || !/Source fidelity|linked|source blocks|Open source evidence/i.test(sourceFidelityPulseText)) {
+      throw new Error('Source-fidelity pulse did not render with evidence coverage and source navigation.');
+    }
+    const conflictGapItemsVisible = await page.getByTestId('conflict-gap-item').first().isVisible().catch(() => false);
+    if (!conflictGapItemsVisible && !/No source-fidelity conflicts or gaps/i.test(sourceFidelityPulseText)) {
+      throw new Error('Source-fidelity pulse did not show either conflict/gap items or a clear no-items state.');
+    }
+
     await openAssistantPanel(page);
     const assistantResult = await askVisibleAssistantTurn(page, 'What should I check before copying this note?');
     if (!assistantResult.answerCharacters || !assistantResult.visibleInViewport) {
@@ -907,6 +919,9 @@ async function main() {
         postNoteCptPanelCharacters: postNoteCptPanelText.length,
         postNoteCptGuardrailVisible,
         postNoteCptReadinessVisible,
+        sourceFidelityPulseVisible,
+        sourceFidelityPulseCharacters: sourceFidelityPulseText.length,
+        sourceFidelityConflictGapStateVisible: conflictGapItemsVisible || /No source-fidelity conflicts or gaps/i.test(sourceFidelityPulseText),
         assistantAnswerCharacters: assistantResult.answerCharacters,
         assistantAnswerVisible: assistantResult.visibleInViewport,
         assistantRewriteAnswerCharacters: assistantRewriteResult.rewriteAnswerCharacters,
