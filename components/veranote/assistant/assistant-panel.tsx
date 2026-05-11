@@ -1335,7 +1335,7 @@ export const AssistantPanel = memo(function AssistantPanel({
   if (isMinimized) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div data-assistant-drag-handle="true" className="flex touch-none select-none flex-wrap items-center justify-between gap-2 border-b border-cyan-200/10 pb-3">
+        <div data-assistant-drag-handle="true" className="flex cursor-move touch-none select-none flex-wrap items-center justify-between gap-2 border-b border-cyan-200/10 pb-3">
           <div>
             <div className="flex items-center gap-3">
               <AssistantPersonaAvatar avatar={assistantPersona.avatar} label={assistantName} size="sm" />
@@ -1401,7 +1401,7 @@ export const AssistantPanel = memo(function AssistantPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div data-assistant-drag-handle="true" className="shrink-0 touch-none select-none space-y-2 border-b border-cyan-200/10 pb-2">
+      <div data-assistant-drag-handle="true" className="shrink-0 cursor-move touch-none select-none space-y-2 border-b border-cyan-200/10 pb-2">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">

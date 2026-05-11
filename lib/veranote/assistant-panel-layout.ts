@@ -10,6 +10,11 @@ export type AssistantViewport = {
   height: number;
 };
 
+export type AssistantPanelRenderedBounds = {
+  width: number;
+  height: number;
+};
+
 export const PANEL_LAYOUT_STORAGE_KEY = 'veranote-assistant-panel-layout';
 export const PANEL_SIZE_STORAGE_KEY = 'veranote-assistant-panel-size';
 export const PANEL_OPEN_STORAGE_KEY = 'veranote-assistant-panel-open';
@@ -69,14 +74,18 @@ export function buildDefaultAssistantPanelLayout(
 export function clampAssistantPanelLayout(
   layout: AssistantPanelLayout,
   viewport: AssistantViewport,
+  renderedBounds?: AssistantPanelRenderedBounds,
 ): AssistantPanelLayout {
   const size = clampAssistantPanelSize(layout.width, layout.height, viewport);
+  const positionBounds = renderedBounds ?? size;
+  const positionWidth = clamp(positionBounds.width, 1, viewport.width - PANEL_MARGIN * 2);
+  const positionHeight = clamp(positionBounds.height, 1, viewport.height - PANEL_MARGIN * 2);
 
   return {
     width: size.width,
     height: size.height,
-    x: clamp(layout.x, PANEL_MARGIN, viewport.width - size.width - PANEL_MARGIN),
-    y: clamp(layout.y, PANEL_MARGIN, viewport.height - size.height - PANEL_MARGIN),
+    x: clamp(layout.x, PANEL_MARGIN, viewport.width - positionWidth - PANEL_MARGIN),
+    y: clamp(layout.y, PANEL_MARGIN, viewport.height - positionHeight - PANEL_MARGIN),
   };
 }
 
@@ -131,6 +140,7 @@ export function parseStoredAssistantPanelLayout(
   rawLayout: string | null,
   rawLegacySize: string | null,
   viewport: AssistantViewport,
+  renderedBounds?: AssistantPanelRenderedBounds,
 ) {
   if (rawLayout) {
     try {
@@ -146,7 +156,7 @@ export function parseStoredAssistantPanelLayout(
           y: parsed.y,
           width: parsed.width,
           height: parsed.height,
-        }, viewport);
+        }, viewport, renderedBounds);
       }
     } catch {
       // Ignore invalid persisted layout and fall back.

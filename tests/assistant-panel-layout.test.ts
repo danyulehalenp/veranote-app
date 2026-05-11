@@ -6,6 +6,7 @@ import {
   PANEL_DEFAULT_BOTTOM_OFFSET,
   PANEL_MARGIN,
   parseStoredAssistantPanelLayout,
+  MINIMIZED_PANEL_LAYOUT,
   snapAssistantPanelLayout,
 } from '@/lib/veranote/assistant-panel-layout';
 
@@ -76,5 +77,35 @@ describe('assistant panel layout helpers', () => {
 
     expect(snapped.x).toBe(PANEL_MARGIN);
     expect(snapped.y).toBe(PANEL_MARGIN);
+  });
+
+  it('can clamp a minimized dock by its rendered bounds without losing saved panel size', () => {
+    const layout = clampAssistantPanelLayout({
+      x: 1300,
+      y: 820,
+      width: 620,
+      height: 720,
+    }, viewport, MINIMIZED_PANEL_LAYOUT);
+
+    expect(layout.width).toBe(620);
+    expect(layout.height).toBe(720);
+    expect(layout.x).toBe(viewport.width - MINIMIZED_PANEL_LAYOUT.width - PANEL_MARGIN);
+    expect(layout.y).toBe(viewport.height - MINIMIZED_PANEL_LAYOUT.height - PANEL_MARGIN);
+  });
+
+  it('restores a minimized persisted dock using minimized bounds', () => {
+    const restored = parseStoredAssistantPanelLayout(JSON.stringify({
+      x: 1128,
+      y: 784,
+      width: 620,
+      height: 720,
+    }), null, viewport, MINIMIZED_PANEL_LAYOUT);
+
+    expect(restored).toEqual({
+      x: viewport.width - MINIMIZED_PANEL_LAYOUT.width - PANEL_MARGIN,
+      y: viewport.height - MINIMIZED_PANEL_LAYOUT.height - PANEL_MARGIN,
+      width: 620,
+      height: 720,
+    });
   });
 });

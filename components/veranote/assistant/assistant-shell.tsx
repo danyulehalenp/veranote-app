@@ -11,12 +11,14 @@ import {
   buildDefaultAssistantPanelLayout,
   clampAssistantPanelLayout,
   getRenderedAssistantPanelBounds,
+  MINIMIZED_PANEL_LAYOUT,
   PANEL_LAYOUT_STORAGE_KEY,
   PANEL_MINIMIZED_STORAGE_KEY,
   PANEL_OPEN_STORAGE_KEY,
   PANEL_SIZE_STORAGE_KEY,
   parseStoredAssistantPanelLayout,
   snapAssistantPanelLayout,
+  type AssistantPanelRenderedBounds,
   type AssistantPanelLayout,
   type AssistantViewport,
 } from '@/lib/veranote/assistant-panel-layout';
@@ -56,6 +58,7 @@ function layoutsMatch(a: AssistantPanelLayout, b: AssistantPanelLayout) {
 
 type CommitLayoutOptions = {
   persist?: boolean;
+  renderedBounds?: AssistantPanelRenderedBounds;
   snap?: boolean;
 };
 
@@ -77,6 +80,7 @@ export function AssistantShell() {
   const [providerPersonaContext, setProviderPersonaContext] = useState<Pick<AssistantApiContext, 'userAiName' | 'userAiRole' | 'userAiAvatar'>>({});
 
   const layoutRef = useRef(panelLayout);
+  const suppressNextDockClickRef = useRef(false);
   const routeStage = useMemo(() => resolveAssistantStageForPathname(pathname), [pathname]);
   const stage = context.stage || routeStage;
   const resolvedProviderIdentityId = data?.user?.providerIdentityId || context.providerIdentityId || getCurrentProviderId();
@@ -106,7 +110,7 @@ export function AssistantShell() {
     const viewport = getAssistantViewport();
     const normalized = options.snap
       ? snapAssistantPanelLayout(nextLayout, viewport)
-      : clampAssistantPanelLayout(nextLayout, viewport);
+      : clampAssistantPanelLayout(nextLayout, viewport, options.renderedBounds);
 
     layoutRef.current = normalized;
     setPanelLayout((current) => layoutsMatch(current, normalized) ? current : normalized);
@@ -239,10 +243,12 @@ export function AssistantShell() {
     }
 
     const viewport = getAssistantViewport();
+    const shouldUseMinimizedBounds = viewport.width < DOCKED_VIEWPORT_WIDTH || window.localStorage.getItem(PANEL_MINIMIZED_STORAGE_KEY) === 'true';
     const storedLayout = parseStoredAssistantPanelLayout(
       window.localStorage.getItem(PANEL_LAYOUT_STORAGE_KEY),
       window.localStorage.getItem(PANEL_SIZE_STORAGE_KEY),
       viewport,
+      shouldUseMinimizedBounds ? MINIMIZED_PANEL_LAYOUT : undefined,
     );
     layoutRef.current = storedLayout;
     setPanelLayout(storedLayout);
@@ -279,18 +285,16 @@ export function AssistantShell() {
     function handleWindowResize() {
       const viewport = getAssistantViewport();
       setIsCompactViewport(viewport.width < COMPACT_VIEWPORT_WIDTH);
-      if (viewport.width < DOCKED_VIEWPORT_WIDTH) {
-        setIsMinimized(true);
-      }
       commitPanelLayout(layoutRef.current, {
         persist: false,
+        renderedBounds: isMinimized ? MINIMIZED_PANEL_LAYOUT : undefined,
       });
     }
 
     handleWindowResize();
     window.addEventListener('resize', handleWindowResize);
     return () => window.removeEventListener('resize', handleWindowResize);
-  }, [commitPanelLayout]);
+  }, [commitPanelLayout, isMinimized]);
 
   useEffect(() => {
     function handleContextEvent(event: Event) {
@@ -354,8 +358,10 @@ export function AssistantShell() {
     }
 
     const target = event.target as HTMLElement | null;
+    const dragHandle = target?.closest(DRAG_HANDLE_SELECTOR);
+    const interactiveTarget = target?.closest(INTERACTIVE_DRAG_EXCLUSIONS);
 
-    if (!target?.closest(DRAG_HANDLE_SELECTOR) || target.closest(INTERACTIVE_DRAG_EXCLUSIONS)) {
+    if (!dragHandle || (interactiveTarget && interactiveTarget !== dragHandle)) {
       return;
     }
 
@@ -363,16 +369,22 @@ export function AssistantShell() {
     const startX = event.clientX;
     const startY = event.clientY;
     const startLayout = layoutRef.current;
+    const renderedBounds = getRenderedAssistantPanelBounds(startLayout, isMinimized);
+    let hasMoved = false;
     setIsInteracting(true);
     document.body.style.userSelect = 'none';
 
     function handlePointerMove(moveEvent: PointerEvent) {
+      if (Math.abs(moveEvent.clientX - startX) > 4 || Math.abs(moveEvent.clientY - startY) > 4) {
+        hasMoved = true;
+      }
       commitPanelLayout({
         ...startLayout,
         x: startLayout.x + (moveEvent.clientX - startX),
         y: startLayout.y + (moveEvent.clientY - startY),
       }, {
         persist: false,
+        renderedBounds,
       });
     }
 
@@ -381,19 +393,22 @@ export function AssistantShell() {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
       setIsInteracting(false);
+      if (isMinimized && hasMoved) {
+        suppressNextDockClickRef.current = true;
+      }
       commitPanelLayout({
         ...startLayout,
         x: startLayout.x + (moveEvent.clientX - startX),
         y: startLayout.y + (moveEvent.clientY - startY),
       }, {
         persist: true,
-        snap: true,
+        renderedBounds,
       });
     }
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
-  }, [commitPanelLayout, isCompactViewport]);
+  }, [commitPanelLayout, isCompactViewport, isMinimized]);
 
   const beginResize = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (isCompactViewport || isMinimized) {
@@ -448,7 +463,7 @@ export function AssistantShell() {
         left: `${panelLayout.x}px`,
         top: `${panelLayout.y}px`,
         width: `${renderedBounds.width}px`,
-        height: isMinimized ? undefined : `${renderedBounds.height}px`,
+        height: `${renderedBounds.height}px`,
       };
 
   return (
@@ -476,21 +491,38 @@ export function AssistantShell() {
 
       {isOpen && isMinimized ? (
         <div
-          className={`fixed bottom-4 right-4 z-50 sm:bottom-10 sm:right-6 ${isInteracting ? 'opacity-92' : ''}`}
+          data-testid="assistant-minimized-dock"
+          className={`fixed z-50 ${isCompactViewport ? 'bottom-4 right-4 sm:bottom-10 sm:right-6' : ''} ${isInteracting ? 'opacity-92' : ''}`}
+          style={desktopFrameStyle}
+          onPointerDown={beginDrag}
         >
           <div
             data-assistant-drag-handle="true"
-            role={isCompactViewport ? 'button' : undefined}
-            tabIndex={isCompactViewport ? 0 : undefined}
-            aria-label={isCompactViewport ? `Open ${assistantPersona.name}` : undefined}
-            onClick={isCompactViewport ? expandPanel : undefined}
-            onKeyDown={isCompactViewport ? (event) => {
+            role="button"
+            tabIndex={0}
+            aria-label={`Open ${assistantPersona.name}`}
+            onClick={(event) => {
+              const target = event.target as HTMLElement | null;
+              if (suppressNextDockClickRef.current) {
+                suppressNextDockClickRef.current = false;
+                return;
+              }
+              if (target?.closest('[data-no-drag="true"]')) {
+                return;
+              }
+              expandPanel();
+            }}
+            onKeyDown={(event) => {
+              const target = event.target as HTMLElement | null;
+              if (target?.closest('[data-no-drag="true"]')) {
+                return;
+              }
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
                 expandPanel();
               }
-            } : undefined}
-            className="flex items-center gap-2 rounded-full border border-cyan-200/18 bg-[rgba(4,12,24,0.94)] p-2.5 shadow-[0_22px_60px_rgba(4,12,24,0.4)] backdrop-blur-xl transition sm:gap-3 sm:px-4"
+            }}
+            className="flex h-full items-center gap-2 rounded-full border border-cyan-200/18 bg-[rgba(4,12,24,0.94)] p-2.5 shadow-[0_22px_60px_rgba(4,12,24,0.4)] backdrop-blur-xl transition sm:gap-3 sm:px-4"
           >
             <AssistantPersonaAvatar avatar={assistantPersona.avatar} label={assistantPersona.name} size="sm" />
             <div className="hidden min-w-0 sm:block">
@@ -532,6 +564,7 @@ export function AssistantShell() {
 
       {isOpen && !isMinimized ? (
         <div
+          data-testid="assistant-floating-panel"
           className={`fixed z-40 ${isCompactViewport ? 'inset-x-3 bottom-20 top-3' : ''}`}
           style={desktopFrameStyle}
           onPointerDown={beginDrag}
