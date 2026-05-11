@@ -62,6 +62,10 @@ import {
 } from '@/lib/veranote/provider-identity';
 import { buildDraftRecoveryState } from '@/lib/veranote/draft-recovery';
 import {
+  buildContinuitySourceBlock,
+  buildContinuityTodaySignals,
+} from '@/lib/veranote/patient-continuity';
+import {
   fetchProviderSettingsFromServer,
   readCachedProviderSettings,
   writeCachedProviderSettings,
@@ -108,6 +112,11 @@ import type { DraftComposeLane, DraftSession, EncounterSupport, PersistedDraftSe
 import type { DictationAuditEvent, DictationTargetSection, TranscriptSegment } from '@/types/dictation';
 import type { EvalCaseSelection } from '@/types/eval';
 import type { AmbientCareSetting, AmbientListeningMode } from '@/types/ambient-listening';
+import type {
+  PatientContinuityFactCategory,
+  PatientContinuityPrivacyMode,
+  PatientContinuityRecord,
+} from '@/types/patient-continuity';
 
 const PROVIDER_ROLE_OPTIONS = [
   'Psychiatric NP',
@@ -159,7 +168,27 @@ function specialtyForNoteType(noteType: string) {
   return entry?.[0] || 'Psychiatry';
 }
 
+function formatContinuityDateLabel(value?: string) {
+  if (!value) {
+    return 'No date';
+  }
+
+  const dateOnly = value.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateOnly) ? dateOnly : 'Saved';
+}
+
 type SourceWorkspaceMode = 'manual' | 'dictation' | 'transcript' | 'objective';
+
+const CONTINUITY_CATEGORY_OPTIONS: Array<{ value: PatientContinuityFactCategory | 'all'; label: string }> = [
+  { value: 'all', label: 'Any category' },
+  { value: 'risk-safety', label: 'Risk / safety' },
+  { value: 'medication', label: 'Medication' },
+  { value: 'open-loop', label: 'Open loops' },
+  { value: 'prior-intervention', label: 'Prior interventions' },
+  { value: 'active-theme', label: 'Active themes' },
+  { value: 'source-conflict', label: 'Source conflicts' },
+  { value: 'other', label: 'Other' },
+];
 
 function inferAmbientCareSetting(noteType: string): AmbientCareSetting {
   if (/telehealth/i.test(noteType)) {
@@ -1142,6 +1171,18 @@ export function NewNoteForm() {
   const [evalBanner, setEvalBanner] = useState('');
   const [outputProfileName, setOutputProfileName] = useState('');
   const [outputProfileSiteLabel, setOutputProfileSiteLabel] = useState('');
+  const [continuityRecords, setContinuityRecords] = useState<PatientContinuityRecord[]>([]);
+  const [selectedContinuityId, setSelectedContinuityId] = useState('');
+  const [continuitySearchQuery, setContinuitySearchQuery] = useState('');
+  const [continuityDateFrom, setContinuityDateFrom] = useState('');
+  const [continuityDateTo, setContinuityDateTo] = useState('');
+  const [continuityNoteTypeFilter, setContinuityNoteTypeFilter] = useState('');
+  const [continuityCategory, setContinuityCategory] = useState<PatientContinuityFactCategory | 'all'>('all');
+  const [continuityPatientLabel, setContinuityPatientLabel] = useState('');
+  const [continuityPatientDescription, setContinuityPatientDescription] = useState('');
+  const [continuityPrivacyMode, setContinuityPrivacyMode] = useState<PatientContinuityPrivacyMode>('neutral-id');
+  const [continuityLoading, setContinuityLoading] = useState(false);
+  const [continuityStatus, setContinuityStatus] = useState('');
   const resolvedProviderIdentityId = session?.user?.providerIdentityId || getCurrentProviderId();
   const showInternalDictationDebug = resolvedProviderIdentityId === 'provider-daniel-hale-beta';
   const ambientSessionResumeStorageKey = getAmbientSessionResumeStorageKey(resolvedProviderIdentityId);
@@ -1167,6 +1208,22 @@ export function NewNoteForm() {
   const noteTypeOptions = useMemo(() => noteTypeOptionsBySpecialty[specialty] || [], [specialty]);
   const templateOptions = useMemo(() => templateOptionsByNoteType[noteType] || [], [noteType]);
   const sourceInput = useMemo(() => buildSourceInputFromSections(sourceSections), [sourceSections]);
+  const selectedContinuityRecord = useMemo(
+    () => continuityRecords.find((record) => record.id === selectedContinuityId) || null,
+    [continuityRecords, selectedContinuityId],
+  );
+  const continuityNoteTypeOptions = useMemo(
+    () => Array.from(new Set([
+      noteType,
+      ...noteTypeOptions,
+      ...continuityRecords.flatMap((record) => record.sourceNoteTypes),
+    ].filter(Boolean))).slice(0, 30),
+    [continuityRecords, noteType, noteTypeOptions],
+  );
+  const continuityTodaySignals = useMemo(
+    () => buildContinuityTodaySignals(selectedContinuityRecord, sourceInput),
+    [selectedContinuityRecord, sourceInput],
+  );
   const populatedSectionLabels = useMemo(() => describePopulatedSourceSections(sourceSections), [sourceSections]);
   const currentTemplateDescription = templateDescriptions[template] || 'Template description not yet defined.';
   const sectionPlan = useMemo(() => planSections({ noteType, requestedScope: outputScope, requestedSections }), [noteType, outputScope, requestedSections]);
@@ -1337,6 +1394,42 @@ export function NewNoteForm() {
   useEffect(() => {
     setHasClientHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (!hasClientHydrated) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        const params = new URLSearchParams({ providerId: resolvedProviderIdentityId });
+        const response = await fetch(`/api/patient-continuity?${params.toString()}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        const payload = await response.json() as { records?: PatientContinuityRecord[]; activeRecord?: PatientContinuityRecord | null };
+
+        if (!response.ok || !Array.isArray(payload.records)) {
+          return;
+        }
+
+        setContinuityRecords(payload.records);
+        setSelectedContinuityId((current) => (
+          current && payload.records?.some((record) => record.id === current)
+            ? current
+            : payload.activeRecord?.id || payload.records?.[0]?.id || ''
+        ));
+      } catch (error) {
+        if ((error as Error)?.name !== 'AbortError') {
+          setContinuityStatus('Continuity recall is optional and did not load yet.');
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, [hasClientHydrated, resolvedProviderIdentityId]);
 
   useEffect(() => {
     if (!hasClientHydrated) {
@@ -3841,6 +3934,196 @@ export function NewNoteForm() {
     });
   }
 
+  function scrollToPatientContinuityPanel() {
+    setActiveComposeLane('source');
+    setSourceWorkspaceMode('manual');
+    setEvalBanner('Patient Continuity lets you search prior Veranote snapshots by label, date, note type, risk/medication/open-loop category, or draft clue.');
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.getElementById('patient-continuity-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+  }
+
+  async function loadPatientContinuityRecords(overrides: Partial<{
+    query: string;
+    dateFrom: string;
+    dateTo: string;
+    noteType: string;
+    category: PatientContinuityFactCategory | 'all';
+  }> = {}) {
+    setContinuityLoading(true);
+    setContinuityStatus('');
+
+    try {
+      const params = new URLSearchParams({ providerId: resolvedProviderIdentityId });
+      const query = overrides.query ?? continuitySearchQuery;
+      const dateFrom = overrides.dateFrom ?? continuityDateFrom;
+      const dateTo = overrides.dateTo ?? continuityDateTo;
+      const noteTypeFilter = overrides.noteType ?? continuityNoteTypeFilter;
+      const category = overrides.category ?? continuityCategory;
+
+      if (query.trim()) {
+        params.set('query', query.trim());
+      }
+      if (dateFrom) {
+        params.set('dateFrom', dateFrom);
+      }
+      if (dateTo) {
+        params.set('dateTo', dateTo);
+      }
+      if (noteTypeFilter.trim()) {
+        params.set('noteType', noteTypeFilter.trim());
+      }
+      if (category && category !== 'all') {
+        params.set('category', category);
+      }
+
+      const response = await fetch(`/api/patient-continuity?${params.toString()}`, { cache: 'no-store' });
+      const payload = await response.json() as { records?: PatientContinuityRecord[]; activeRecord?: PatientContinuityRecord | null };
+
+      if (!response.ok || !Array.isArray(payload.records)) {
+        throw new Error('Patient continuity search did not return records.');
+      }
+
+      setContinuityRecords(payload.records);
+      setSelectedContinuityId((current) => (
+        current && payload.records?.some((record) => record.id === current)
+          ? current
+          : payload.activeRecord?.id || payload.records?.[0]?.id || ''
+      ));
+      setContinuityStatus(payload.records.length
+        ? `Found ${payload.records.length} continuity snapshot${payload.records.length === 1 ? '' : 's'}.`
+        : 'No continuity snapshots matched those filters.');
+    } catch (error) {
+      setContinuityStatus(error instanceof Error ? error.message : 'Unable to search continuity snapshots right now.');
+    } finally {
+      setContinuityLoading(false);
+    }
+  }
+
+  async function handleApplyContinuityToSource(recordId = selectedContinuityId) {
+    if (!recordId) {
+      setContinuityStatus('Choose a continuity snapshot first.');
+      return;
+    }
+
+    setContinuityLoading(true);
+    setContinuityStatus('');
+
+    try {
+      const response = await fetch('/api/patient-continuity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          providerId: resolvedProviderIdentityId,
+          recordId,
+          action: 'mark-used',
+        }),
+      });
+      const payload = await response.json() as {
+        record?: PatientContinuityRecord;
+        continuitySourceBlock?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.record) {
+        throw new Error(payload.error || 'Unable to apply continuity snapshot.');
+      }
+
+      const sourceBlock = payload.continuitySourceBlock || buildContinuitySourceBlock(payload.record);
+      setSourceWorkspaceMode('manual');
+      setActiveSourceTab('intakeCollateral');
+      setSourceSections((current) => {
+        const existing = current.intakeCollateral.trim();
+        return {
+          ...current,
+          intakeCollateral: existing
+            ? `${existing}\n\n---\n\n${sourceBlock}`
+            : sourceBlock,
+        };
+      });
+      setContinuityRecords((current) => [
+        payload.record as PatientContinuityRecord,
+        ...current.filter((record) => record.id !== payload.record?.id),
+      ]);
+      setSelectedContinuityId(payload.record.id);
+      setContinuityPatientLabel(payload.record.patientLabel);
+      setContinuityPatientDescription(payload.record.patientDescription || '');
+      setContinuityPrivacyMode(payload.record.privacyMode);
+      setContinuityStatus('Continuity loaded into Box 1: Pre-Visit Data. Verify today before using prior facts.');
+      setEvalBanner('Loaded prior Veranote continuity into Pre-Visit Data as source context. It stays marked as prior context, not today’s fact.');
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          document.getElementById('source-field-intakeCollateral')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+      });
+    } catch (error) {
+      setContinuityStatus(error instanceof Error ? error.message : 'Unable to apply continuity snapshot right now.');
+    } finally {
+      setContinuityLoading(false);
+    }
+  }
+
+  async function handleSaveContinuitySnapshot() {
+    const noteText = generatedSession?.note || draftCheckpoint?.note || '';
+    const sourceText = sourceInput;
+
+    if (!noteText.trim() && !sourceText.trim()) {
+      setContinuityStatus('Add source or generate a draft before saving continuity.');
+      return;
+    }
+
+    setContinuityLoading(true);
+    setContinuityStatus('');
+
+    try {
+      const response = await fetch('/api/patient-continuity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          providerId: resolvedProviderIdentityId,
+          recordId: selectedContinuityId || undefined,
+          patientLabel: continuityPatientLabel || selectedContinuityRecord?.patientLabel || undefined,
+          patientDescription: continuityPatientDescription || selectedContinuityRecord?.patientDescription || undefined,
+          privacyMode: continuityPrivacyMode,
+          sourceDraftId: generatedSession?.draftId || draftCheckpoint?.draftId || undefined,
+          sourceNoteType: noteType,
+          sourceDate: new Date().toISOString(),
+          sourceText,
+          noteText,
+          action: 'save-snapshot',
+        }),
+      });
+      const payload = await response.json() as {
+        record?: PatientContinuityRecord;
+        records?: PatientContinuityRecord[];
+        error?: string;
+      };
+
+      if (!response.ok || !payload.record) {
+        throw new Error(payload.error || 'Unable to save continuity snapshot.');
+      }
+
+      setContinuityRecords(payload.records?.length ? payload.records : [
+        payload.record,
+        ...continuityRecords.filter((record) => record.id !== payload.record?.id),
+      ]);
+      setSelectedContinuityId(payload.record.id);
+      setContinuityPatientLabel(payload.record.patientLabel);
+      setContinuityPatientDescription(payload.record.patientDescription || '');
+      setContinuityPrivacyMode(payload.record.privacyMode);
+      setContinuityStatus('Continuity snapshot saved for future follow-up notes.');
+      setEvalBanner('Saved a Veranote continuity snapshot. Future notes can search and pull it back into Pre-Visit Data.');
+    } catch (error) {
+      setContinuityStatus(error instanceof Error ? error.message : 'Unable to save continuity snapshot right now.');
+    } finally {
+      setContinuityLoading(false);
+    }
+  }
+
   function handleWorkflowStageJump(stageId: (typeof workspaceStageItems)[number]['id']) {
     if (stageId === 'source') {
       handlePasteSourceJump();
@@ -4522,6 +4805,13 @@ export function NewNoteForm() {
       helper: 'Load outside records, OCR text, referrals, or ER packets.',
       keywords: ['document', 'documents', 'upload', 'ocr', 'pdf', 'er', 'referral', 'outside record', 'scan'],
       action: handleDocumentSourceJump,
+    },
+    {
+      id: 'patient-continuity',
+      label: 'Prior Patient / Note Search',
+      helper: 'Search prior continuity by date, note type, medication, risk, open loop, label, or draft clue.',
+      keywords: ['patient', 'prior', 'previous', 'history', 'continuity', 'recall', 'date', 'follow up', 'follow-up', 'old note'],
+      action: scrollToPatientContinuityPanel,
     },
     {
       id: 'dictation',
@@ -5750,6 +6040,262 @@ export function NewNoteForm() {
               <div className="grid gap-3">
                 <div id="document-source-intake">
                   <DocumentSourceIntake onCommitToSource={handleReviewedDocumentSourceCommit} />
+                </div>
+
+                <div id="patient-continuity-panel" className="workspace-subpanel rounded-[20px] p-3.5">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Patient Continuity</div>
+                      <div className="mt-1 text-sm font-semibold text-white">Search prior Veranote snapshots, then load only relevant context into Box 1.</div>
+                      <p className="mt-1 max-w-3xl text-xs leading-5 text-cyan-50/68">
+                        Search by label, identifying description, date, note type, source/draft clue, medication, risk, open loops, or prior interventions. This is recall support, not a replacement for the EHR.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void loadPatientContinuityRecords();
+                        }}
+                        disabled={continuityLoading}
+                        className="workspace-action-pill rounded-full border border-cyan-200/18 bg-cyan-300/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-50 transition hover:border-cyan-100/38 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {continuityLoading ? 'Searching...' : 'Search prior notes'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleApplyContinuityToSource();
+                        }}
+                        disabled={continuityLoading || !selectedContinuityRecord}
+                        className="workspace-action-card rounded-full border border-emerald-200/22 bg-emerald-300/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-50 transition disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Use in Pre-Visit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleSaveContinuitySnapshot();
+                        }}
+                        disabled={continuityLoading || (!sourceInput.trim() && !generatedSession?.note?.trim() && !draftCheckpoint?.note?.trim())}
+                        className="workspace-action-card rounded-full border border-amber-200/24 bg-amber-300/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-50 transition disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Save snapshot
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1.15fr)_repeat(4,minmax(120px,0.5fr))]">
+                    <label className="grid gap-1 text-xs text-cyan-50/74">
+                      <span className="font-semibold uppercase tracking-[0.12em] text-cyan-100/62">Search</span>
+                      <input
+                        value={continuitySearchQuery}
+                        onChange={(event) => setContinuitySearchQuery(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            void loadPatientContinuityRecords();
+                          }
+                        }}
+                        className="workspace-control rounded-xl px-3 py-2"
+                        placeholder="Patient label, med, risk, draft ID, referral clue..."
+                      />
+                    </label>
+                    <label className="grid gap-1 text-xs text-cyan-50/74">
+                      <span className="font-semibold uppercase tracking-[0.12em] text-cyan-100/62">From date</span>
+                      <input
+                        type="date"
+                        value={continuityDateFrom}
+                        onChange={(event) => setContinuityDateFrom(event.target.value)}
+                        className="workspace-control rounded-xl px-3 py-2"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-xs text-cyan-50/74">
+                      <span className="font-semibold uppercase tracking-[0.12em] text-cyan-100/62">To date</span>
+                      <input
+                        type="date"
+                        value={continuityDateTo}
+                        onChange={(event) => setContinuityDateTo(event.target.value)}
+                        className="workspace-control rounded-xl px-3 py-2"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-xs text-cyan-50/74">
+                      <span className="font-semibold uppercase tracking-[0.12em] text-cyan-100/62">Note type</span>
+                      <select
+                        value={continuityNoteTypeFilter}
+                        onChange={(event) => setContinuityNoteTypeFilter(event.target.value)}
+                        className="workspace-control rounded-xl px-3 py-2"
+                      >
+                        <option value="">Any note</option>
+                        {continuityNoteTypeOptions.map((item) => (
+                          <option key={item} value={item}>{item}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="grid gap-1 text-xs text-cyan-50/74">
+                      <span className="font-semibold uppercase tracking-[0.12em] text-cyan-100/62">Find category</span>
+                      <select
+                        value={continuityCategory}
+                        onChange={(event) => setContinuityCategory(event.target.value as PatientContinuityFactCategory | 'all')}
+                        className="workspace-control rounded-xl px-3 py-2"
+                      >
+                        {CONTINUITY_CATEGORY_OPTIONS.map((item) => (
+                          <option key={item.value} value={item.value}>{item.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,0.95fr)_minmax(280px,0.55fr)]">
+                    <div className="rounded-[16px] border border-cyan-200/12 bg-[rgba(7,18,32,0.48)] p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100/60">Matches</div>
+                          <div className="mt-1 text-sm font-semibold text-white">
+                            {continuityRecords.length ? `${continuityRecords.length} continuity snapshot${continuityRecords.length === 1 ? '' : 's'}` : 'No snapshots loaded yet'}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setContinuityNoteTypeFilter(noteType);
+                            void loadPatientContinuityRecords({ noteType });
+                          }}
+                          className="workspace-action-pill rounded-full border border-cyan-200/18 bg-white/5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-50"
+                        >
+                          Current note type
+                        </button>
+                      </div>
+
+                      {continuityRecords.length ? (
+                        <div className="mt-3 grid max-h-52 gap-2 overflow-y-auto pr-1">
+                          {continuityRecords.slice(0, 8).map((record) => {
+                            const isSelected = selectedContinuityId === record.id;
+
+                            return (
+                              <button
+                                key={record.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedContinuityId(record.id);
+                                  setContinuityPatientLabel(record.patientLabel);
+                                  setContinuityPatientDescription(record.patientDescription || '');
+                                  setContinuityPrivacyMode(record.privacyMode);
+                                }}
+                                className={`workspace-action-card rounded-[14px] border px-3 py-2.5 text-left transition ${
+                                  isSelected
+                                    ? 'border-emerald-200/34 bg-emerald-300/12 text-white'
+                                    : 'border-white/10 bg-white/5 text-cyan-50/80 hover:border-cyan-200/24'
+                                }`}
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="text-sm font-semibold">{record.patientLabel}</span>
+                                  <span className="text-[11px] text-cyan-50/58">
+                                    {formatContinuityDateLabel(record.lastSourceDate)}
+                                  </span>
+                                </div>
+                                <div className="mt-1 line-clamp-2 text-xs leading-5 text-cyan-50/62">{record.recallSummary}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="mt-3 rounded-[14px] border border-white/10 bg-white/5 p-3 text-sm leading-6 text-cyan-50/68">
+                          After an initial evaluation or completed note, save a continuity snapshot here. Follow-up notes can pull it back by date, note type, med/risk category, or search text.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-[16px] border border-cyan-200/12 bg-[rgba(7,18,32,0.48)] p-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100/60">Selected snapshot</div>
+                      {selectedContinuityRecord ? (
+                        <div className="mt-2 space-y-3 text-sm text-cyan-50/74">
+                          <div>
+                            <div className="font-semibold text-white">{selectedContinuityRecord.patientLabel}</div>
+                            {selectedContinuityRecord.patientDescription ? (
+                              <div className="mt-1 text-xs leading-5 text-cyan-50/58">{selectedContinuityRecord.patientDescription}</div>
+                            ) : null}
+                          </div>
+                          <div className="rounded-[14px] border border-white/10 bg-white/5 p-3 text-xs leading-5 text-cyan-50/68">
+                            {selectedContinuityRecord.recallSummary}
+                          </div>
+                          {selectedContinuityRecord.todayPrepChecklist.length ? (
+                            <div className="space-y-1">
+                              {selectedContinuityRecord.todayPrepChecklist.slice(0, 3).map((item) => (
+                                <div key={item} className="rounded-[12px] border border-cyan-200/10 bg-cyan-300/8 px-3 py-2 text-xs leading-5 text-cyan-50/72">
+                                  {item}
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                          {continuityTodaySignals.length ? (
+                            <div className="space-y-1">
+                              {continuityTodaySignals.map((signal) => (
+                                <div key={signal.id} className={`rounded-[12px] border px-3 py-2 text-xs leading-5 ${
+                                  signal.tone === 'caution'
+                                    ? 'border-amber-200/24 bg-amber-300/10 text-amber-50'
+                                    : signal.tone === 'review'
+                                      ? 'border-sky-200/22 bg-sky-300/10 text-sky-50'
+                                      : 'border-cyan-200/16 bg-cyan-300/8 text-cyan-50/72'
+                                }`}>
+                                  <div className="font-semibold">{signal.label}</div>
+                                  <div className="mt-1 opacity-80">{signal.detail}</div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-sm leading-6 text-cyan-50/64">
+                          Pick a match to preview what Veranote will carry forward into today’s source packet.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <details className="mt-3 rounded-[16px] border border-cyan-200/10 bg-white/5 p-3">
+                    <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/66">
+                      Save settings for future recall
+                    </summary>
+                    <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_minmax(160px,0.4fr)]">
+                      <label className="grid gap-1 text-xs text-cyan-50/74">
+                        <span className="font-semibold uppercase tracking-[0.12em] text-cyan-100/62">Patient label</span>
+                        <input
+                          value={continuityPatientLabel}
+                          onChange={(event) => setContinuityPatientLabel(event.target.value)}
+                          className="workspace-control rounded-xl px-3 py-2"
+                          placeholder="Room 214, initials, or patient name if allowed"
+                        />
+                      </label>
+                      <label className="grid gap-1 text-xs text-cyan-50/74">
+                        <span className="font-semibold uppercase tracking-[0.12em] text-cyan-100/62">Identifying description</span>
+                        <input
+                          value={continuityPatientDescription}
+                          onChange={(event) => setContinuityPatientDescription(event.target.value)}
+                          className="workspace-control rounded-xl px-3 py-2"
+                          placeholder="Optional: referral source, unit, short descriptor"
+                        />
+                      </label>
+                      <label className="grid gap-1 text-xs text-cyan-50/74">
+                        <span className="font-semibold uppercase tracking-[0.12em] text-cyan-100/62">Privacy mode</span>
+                        <select
+                          value={continuityPrivacyMode}
+                          onChange={(event) => setContinuityPrivacyMode(event.target.value as PatientContinuityPrivacyMode)}
+                          className="workspace-control rounded-xl px-3 py-2"
+                        >
+                          <option value="neutral-id">Neutral ID</option>
+                          <option value="description-only">Description only</option>
+                          <option value="patient-name">Patient name allowed</option>
+                        </select>
+                      </label>
+                    </div>
+                  </details>
+
+                  {continuityStatus ? (
+                    <div className="mt-3 rounded-[14px] border border-cyan-200/12 bg-cyan-300/8 px-3 py-2 text-xs leading-5 text-cyan-50/72">
+                      {continuityStatus}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="workspace-subpanel rounded-[20px] p-3">

@@ -370,6 +370,45 @@ function hardenSourceBoundRiskWording(note: string, sourceInput: string) {
   .replace(/\bno\s+safety\s+concerns?\b/gi, 'safety risk is not fully established from the provided source');
 }
 
+function preservePatientContinuityBoundaries(note: string, sourceInput: string) {
+ const hasContinuityContext = /Patient Continuity Context - Veranote recall layer|Use this as prior context only|Continuity safety rule/i.test(sourceInput);
+ if (!hasContinuityContext) return note;
+
+ let cleaned = note
+  .replace(/\b(?:prior |previously documented )?passive (?:death wish|SI|suicidal ideation)[^.\n]*(?:resolved|cleared|no longer present)[^.\n]*(?:\.\s*)?/gi, 'Previously documented passive-risk content remains prior context; today source documents denial of active SI, plan, or intent when present. ')
+  .replace(/\b(?:prior |previously documented )?suicidal ideation[^.\n]*(?:resolved|cleared|no longer present)[^.\n]*(?:\.\s*)?/gi, 'Previously documented risk/safety content remains prior context; today source documents current risk statements when present. ');
+
+ const sourceHasPriorRisk = /\bpreviously documented\b.{0,180}\b(passive death|passive SI|suicid|risk\/safety|safety planning)\b|\b(passive death|passive SI|suicid|risk\/safety|safety planning)\b.{0,180}\bpreviously documented\b/i.test(sourceInput);
+ const sourceHasTodayRiskDenial = /\bdenies? active (?:suicidal ideation|SI)\b|\bdenies?[^.\n]{0,80}\b(?:plan|intent)\b|\bnot trying to kill myself\b/i.test(sourceInput);
+ const sourceHasMedicationContinuity = /\bpreviously documented\b.{0,180}\b(?:medication|sertraline|zoloft|lithium|lamotrigine|dose|missed doses?)\b|\b(?:medication|sertraline|zoloft|lithium|lamotrigine|dose|missed doses?)\b.{0,180}\bpreviously documented\b/i.test(sourceInput);
+ const sourceHasTodayMedicationSignal = /\bmissed (?:one|two|three|\d+) doses?\b|\bmissed\b.{0,60}\bthis week\b|\bforget\b.{0,60}\bmedicine\b|\btaking\b.{0,80}\bmost days\b/i.test(sourceInput);
+ const sourceHasOpenLoop = /\bpreviously documented\b.{0,180}\b(?:referral|collateral|pending|follow[-\s]?up|open loops?)\b|\b(?:referral|collateral|pending|follow[-\s]?up|open loops?)\b.{0,180}\bpreviously documented\b/i.test(sourceInput);
+ const noteAlreadyMarksPrior = /\b(previously documented|prior context|prior note|historical continuity|prior continuity)\b/i.test(cleaned);
+ const continuityLines: string[] = [];
+
+ if (!noteAlreadyMarksPrior) {
+  continuityLines.push('Prior continuity source was used only as previously documented context; current statements should remain tied to today source.');
+ }
+
+ if (sourceHasPriorRisk && sourceHasTodayRiskDenial && !/\bpreviously documented\b.{0,160}\b(?:denies|denial|active SI|plan|intent)\b/i.test(cleaned)) {
+  continuityLines.push('Risk continuity: prior risk/safety content was previously documented; today source documents denial of active SI, plan, or intent, and the prior risk item remains a reconciliation point.');
+ }
+
+ if (sourceHasMedicationContinuity && sourceHasTodayMedicationSignal && !/\bpreviously documented\b.{0,160}\b(?:missed|forget|most days|adherence)\b/i.test(cleaned)) {
+  continuityLines.push('Medication continuity: prior medication adherence/tolerability context should be reconciled with today source, including missed-dose details.');
+ }
+
+ if (sourceHasOpenLoop && !/\bpreviously documented\b.{0,160}\b(?:referral|collateral|pending|open loop|transportation)\b/i.test(cleaned)) {
+  continuityLines.push('Open loops: prior referral, collateral, lab, or follow-up items should be marked as completed, still pending, or not addressed today.');
+ }
+
+ if (!continuityLines.length) {
+  return cleaned;
+ }
+
+ return `${cleaned.trim()}\n\nContinuity / Prior Context:\n${continuityLines.join(' ')}`;
+}
+
 function preserveDiagnosticUncertainty(note: string, sourceInput: string) {
  const sourceHasDiagnosticUncertaintyCue = /\b(?:psychosis concern|past psychosis|past concern about psychosis|differential|rule[-\s]?out|r\/o|diagnostic uncertainty|medical red flags?|medical contributor|substance timing|stimulant|no confirmed prior .*diagnosis|manic-like|cannabis use)\b/i.test(sourceInput)
   && /\b(?:psychosis|diagnos|differential|rule[-\s]?out|medical|substance|stimulant|insomnia|bipolar|manic|cannabis)\b/i.test(sourceInput);
@@ -484,7 +523,8 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withLabLimitsPreserved = preservePendingOrUnclearLabSourceLimits(withMedicalClearancePreserved, input.sourceInput);
  const withMatDoseDecisionLimit = preservePendingMatDoseDecision(withLabLimitsPreserved, input.sourceInput);
  const withSourceBoundRisk = hardenSourceBoundRiskWording(withMatDoseDecisionLimit, input.sourceInput);
- const withDiagnosticUncertainty = preserveDiagnosticUncertainty(withSourceBoundRisk, input.sourceInput);
+ const withContinuityBoundaries = preservePatientContinuityBoundaries(withSourceBoundRisk, input.sourceInput);
+ const withDiagnosticUncertainty = preserveDiagnosticUncertainty(withContinuityBoundaries, input.sourceInput);
  const withPsychosisConflictPreserved = preservePsychosisObservationConflict(withDiagnosticUncertainty, input.sourceInput);
  const withRestraintSourceStatus = preserveRestraintSourceStatus(withPsychosisConflictPreserved, input.sourceInput);
  const withoutUnsupportedMedicationAction = removeUnsupportedMedicationActionPlan(withRestraintSourceStatus, input.sourceInput);

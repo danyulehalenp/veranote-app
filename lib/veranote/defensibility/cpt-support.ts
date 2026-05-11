@@ -79,6 +79,21 @@ function stripExplicitMissingCptSignals(text: string) {
     .trim();
 }
 
+function hasContinuityRecallContext(text: string) {
+  return /\bPatient Continuity Context - Veranote recall layer\b|\bContinuity safety rule\b|\bprior context only\b|\bpreviously documented\b|\bVeranote recall layer\b/i.test(text);
+}
+
+function hasCurrentEncounterCodingSupport(text: string) {
+  return hasMatch(text, [
+    /\b(?:today(?:'s)?|current|this)\s+(?:encounter|visit|session|appointment)\b/,
+    /\binterval update\b|\blive visit\b|\bprovider live note\b|\bduring (?:the|today(?:'s)?) visit\b/,
+    /\bpatient (?:reports|endorses|denies|states|describes)\b/,
+    /\b(?:medication adherence|side effects?|dose adjustment|treatment options?|risks?, benefits?,? and alternatives?) (?:reviewed|discussed|addressed)\b/,
+    /\b(?:total|encounter|session|visit|psychotherapy|therapy)\s*(?:time|minutes|min)?[:\s-]*\d{1,3}\s*(?:min|mins|minute|minutes)\b/i,
+    /\b(?:mental status|MSE|exam|risk assessment|safety plan|psychotherapy intervention|CBT|DBT|motivational interviewing)\b/i,
+  ]);
+}
+
 function hasEvaluationWork(text: string, noteType: string) {
   return /evaluation|intake|initial/i.test(noteType)
     || hasMatch(text, [
@@ -189,6 +204,8 @@ export function evaluatePostNoteCptRecommendations(
   const encounterSupport = input.encounterSupport;
   const candidates: CptRecommendationCandidate[] = [];
   const timeSignals = extractMinuteSignals(completedNoteText, encounterSupport);
+  const continuityRecallContext = hasContinuityRecallContext(completedNoteText);
+  const continuityOnlyReview = continuityRecallContext && !hasCurrentEncounterCodingSupport(evidenceNote);
 
   const psychotherapyContent = hasPsychotherapyContent(evidenceNote);
   const medicationManagement = hasMedicationManagement(evidenceNote);
@@ -217,6 +234,35 @@ export function evaluatePostNoteCptRecommendations(
       guardrails: [
         'Do not recommend a CPT family without completed note text.',
         'Final code selection must be verified against current CPT, payer, facility, and clinician documentation requirements.',
+      ],
+    };
+  }
+
+  if (continuityOnlyReview) {
+    return {
+      summary: 'Prior continuity context alone is too thin for meaningful CPT-support candidates.',
+      candidates: [],
+      documentationReadiness: {
+        status: 'too-thin',
+        presentElements: ['Prior Veranote continuity context is present.'],
+        missingElements: [
+          'Today\'s encounter work is not clearly documented.',
+          'Do not use copied-forward or recalled prior-note content alone to support a code family.',
+          'Final selection requires current CPT/payer/facility review and the provider/coder of record.',
+        ],
+      },
+      timeSignals,
+      missingGlobalElements: [
+        'Prior continuity context must be confirmed and tied to today\'s encounter before coding-support review.',
+        'Encounter family is not clear from the completed note text.',
+        'Final selection requires current CPT/payer/facility review and the provider/coder of record.',
+      ],
+      guardrails: [
+        'These are possible CPT-support candidates, not definitive billing recommendations.',
+        'Veranote can surface documentation support and missing elements, but it does not select the final CPT level.',
+        'Never add or rewrite clinical facts just to support a code.',
+        'Do not infer a CPT family from prior continuity context, copied-forward material, note type, diagnosis, or destination EHR alone.',
+        'Verify against current CPT, payer, facility, telehealth, and state-specific requirements before billing.',
       ],
     };
   }
@@ -375,6 +421,7 @@ export function evaluatePostNoteCptRecommendations(
   }
 
   const missingGlobalElements = [
+    ...(continuityRecallContext ? ['Prior continuity context is present; confirm it is documented as prior, confirmed today, or conflicting with today before coding-support review.'] : []),
     ...(!timeSignals.length ? ['No clear time signal was found; avoid time-dependent code confidence.'] : []),
     ...(!medicationManagement && !psychotherapyContent && !evaluationWork && !crisisWork
       ? ['Encounter family is not clear from the completed note text.'] : []),
@@ -436,6 +483,7 @@ export function evaluatePostNoteCptRecommendations(
       'Veranote can surface documentation support and missing elements, but it does not select the final CPT level.',
       'Never add or rewrite clinical facts just to support a code.',
       'Do not infer a CPT level from diagnosis, note type, template choice, or destination EHR alone.',
+      'Do not infer billing from prior continuity context unless today\'s encounter documentation independently justifies review.',
       'Verify against current CPT, payer, facility, telehealth, and state-specific requirements before billing.',
       'If documentation is thin or contradictory, show the gap rather than forcing a code family.',
     ],

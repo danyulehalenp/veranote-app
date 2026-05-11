@@ -20,6 +20,8 @@ import type {
 import type { VeranoteBuildTask } from '@/types/task';
 import type { VeraMemoryLedger } from '@/types/vera-memory';
 import type { DictationAuditEvent } from '@/types/dictation';
+import type { PatientContinuityRecord } from '@/types/patient-continuity';
+import { normalizePatientContinuityRecord } from '@/lib/veranote/patient-continuity';
 
 type DraftRecord = PersistedDraftSession;
 
@@ -34,6 +36,7 @@ type PrototypeDb = {
   notePresetsByProviderId: Record<string, NotePreset[]>;
   assistantLearningByProviderId: Record<string, AssistantLearningStore>;
   veraMemoryLedgerByProviderId: Record<string, VeraMemoryLedger>;
+  patientContinuityByProviderId: Record<string, PatientContinuityRecord[]>;
   veranoteBuildTasks: VeranoteBuildTask[];
   betaFeedback: BetaFeedbackItem[];
 };
@@ -105,6 +108,9 @@ const defaultDb: PrototypeDb = {
       settings: DEFAULT_PROVIDER_SETTINGS,
       learningStore: createEmptyAssistantLearningStore(),
     }),
+  },
+  patientContinuityByProviderId: {
+    [DEFAULT_PROVIDER_IDENTITY_ID]: [],
   },
   veranoteBuildTasks: [],
   betaFeedback: [],
@@ -203,6 +209,18 @@ async function readDb(): Promise<PrototypeDb> {
               },
               learningStore: createEmptyAssistantLearningStore(),
             }),
+          },
+      patientContinuityByProviderId: typeof parsed.patientContinuityByProviderId === 'object' && parsed.patientContinuityByProviderId
+        ? Object.fromEntries(
+            Object.entries(parsed.patientContinuityByProviderId).map(([providerId, records]) => [
+              providerId,
+              Array.isArray(records)
+                ? records.map((record) => normalizePatientContinuityRecord(record as Partial<PatientContinuityRecord>, providerId))
+                : [],
+            ]),
+          )
+        : {
+            [DEFAULT_PROVIDER_IDENTITY_ID]: [],
           },
       veranoteBuildTasks: Array.isArray(parsed.veranoteBuildTasks) ? parsed.veranoteBuildTasks : [],
       betaFeedback: Array.isArray(parsed.betaFeedback) ? parsed.betaFeedback.map((item) => normalizeBetaFeedbackItem(item as Partial<BetaFeedbackItem>)) : [],
@@ -336,6 +354,26 @@ function assertDurableResult(error: unknown, action: string): asserts error is n
     const message = error instanceof Error ? error.message : JSON.stringify(error);
     throw new Error(`Unable to ${action} in durable storage: ${message}`);
   }
+}
+
+function isMissingPatientContinuityTableError(error: unknown) {
+  if (!error) {
+    return false;
+  }
+
+  const errorLike = error as { code?: unknown; message?: unknown; details?: unknown };
+  const message = [
+    errorLike.code,
+    errorLike.message,
+    errorLike.details,
+    error instanceof Error ? error.message : '',
+    JSON.stringify(error),
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  return message.includes('42p01')
+    || message.includes('veranote_patient_continuity')
+    || message.includes('relation')
+    || message.includes('does not exist');
 }
 
 type JsonRow<T> = {
@@ -707,6 +745,74 @@ async function saveVeraMemoryLedgerDurable(ledger: VeraMemoryLedger, providerId:
 
   assertDurableResult(error, 'save memory ledger');
   return ledger;
+}
+
+async function listPatientContinuityDurable(providerId: string, options?: { includeArchived?: boolean }) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  let query = supabase
+    .from('veranote_patient_continuity')
+    .select('id, provider_id, data')
+    .eq('provider_id', providerId)
+    .order('updated_at', { ascending: false })
+    .limit(200);
+
+  if (!options?.includeArchived) {
+    query = query.is('archived_at', null);
+  }
+
+  const { data, error } = await query;
+  if (error && isMissingPatientContinuityTableError(error)) {
+    return null;
+  }
+  assertDurableResult(error, 'list patient continuity');
+
+  return ((data || []) as Array<JsonRow<Partial<PatientContinuityRecord>> & { id: string; provider_id: string }>).map((row) => (
+    normalizePatientContinuityRecord({
+      ...row.data,
+      id: row.id,
+      providerIdentityId: row.provider_id,
+    }, row.provider_id)
+  ));
+}
+
+async function upsertPatientContinuityDurable(record: PatientContinuityRecord, providerId: string) {
+  const supabase = getDurableSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { error } = await supabase
+    .from('veranote_patient_continuity')
+    .upsert({
+      id: record.id,
+      provider_id: providerId,
+      patient_label: record.patientLabel,
+      last_source_date: record.lastSourceDate || null,
+      data: record,
+      created_at: record.createdAt,
+      updated_at: record.updatedAt,
+      last_used_at: record.lastUsedAt || null,
+      archived_at: record.archivedAt || null,
+    }, { onConflict: 'id' });
+
+  if (error && isMissingPatientContinuityTableError(error)) {
+    return null;
+  }
+  assertDurableResult(error, 'save patient continuity');
+  return record;
+}
+
+async function getPatientContinuityDurable(recordId: string, providerId: string, options?: { includeArchived?: boolean }) {
+  const records = await listPatientContinuityDurable(providerId, { includeArchived: options?.includeArchived });
+  if (!records) {
+    return null;
+  }
+
+  return records.find((record) => record.id === recordId) || null;
 }
 
 async function listBetaFeedbackDurable() {
@@ -1448,4 +1554,77 @@ export async function getVeraMemoryLedger(providerId = DEFAULT_PROVIDER_IDENTITY
       settings: await getProviderSettings(providerId),
       learningStore: db.assistantLearningByProviderId?.[providerId] || createEmptyAssistantLearningStore(),
     });
+}
+
+export async function listPatientContinuityRecords(providerId = DEFAULT_PROVIDER_IDENTITY_ID, options?: { includeArchived?: boolean }) {
+  const durableRecords = await listPatientContinuityDurable(providerId, options);
+  if (durableRecords) {
+    return durableRecords;
+  }
+
+  const db = await readDb();
+  return (db.patientContinuityByProviderId?.[providerId] || [])
+    .filter((record) => options?.includeArchived ? true : !record.archivedAt)
+    .sort((left, right) => (
+      new Date(right.lastUsedAt || right.updatedAt).getTime()
+      - new Date(left.lastUsedAt || left.updatedAt).getTime()
+    ));
+}
+
+export async function getPatientContinuityRecord(recordId: string, providerId = DEFAULT_PROVIDER_IDENTITY_ID, options?: { includeArchived?: boolean }) {
+  const durableRecord = await getPatientContinuityDurable(recordId, providerId, options);
+  if (durableRecord) {
+    return durableRecord;
+  }
+
+  const records = await listPatientContinuityRecords(providerId, options);
+  return records.find((record) => record.id === recordId) || null;
+}
+
+export async function savePatientContinuityRecord(record: PatientContinuityRecord, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const normalized = normalizePatientContinuityRecord({
+    ...record,
+    providerIdentityId: providerId,
+    updatedAt: new Date().toISOString(),
+  }, providerId);
+  const durableRecord = await upsertPatientContinuityDurable(normalized, providerId);
+  if (durableRecord) {
+    return durableRecord;
+  }
+
+  const db = await readDb();
+  const bucket = db.patientContinuityByProviderId?.[providerId] || [];
+  db.patientContinuityByProviderId = {
+    ...(db.patientContinuityByProviderId || {}),
+    [providerId]: [
+      normalized,
+      ...bucket.filter((item) => item.id !== normalized.id),
+    ].slice(0, 200),
+  };
+  await writeDb(db);
+  return normalized;
+}
+
+export async function markPatientContinuityUsed(recordId: string, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const current = await getPatientContinuityRecord(recordId, providerId, { includeArchived: true });
+  if (!current) {
+    return null;
+  }
+
+  return savePatientContinuityRecord({
+    ...current,
+    lastUsedAt: new Date().toISOString(),
+  }, providerId);
+}
+
+export async function archivePatientContinuityRecord(recordId: string, providerId = DEFAULT_PROVIDER_IDENTITY_ID) {
+  const current = await getPatientContinuityRecord(recordId, providerId, { includeArchived: true });
+  if (!current) {
+    return null;
+  }
+
+  return savePatientContinuityRecord({
+    ...current,
+    archivedAt: new Date().toISOString(),
+  }, providerId);
 }

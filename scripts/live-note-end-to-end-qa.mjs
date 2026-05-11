@@ -226,19 +226,39 @@ async function gotoWorkspace(page, appUrl) {
 }
 
 async function ensureComposeSetupVisible(page) {
-  const clinicalFieldSelect = page.locator('select[aria-label="Select clinical field"]').first();
-  if (await waitForVisible(clinicalFieldSelect, 1500)) {
-    return;
+  const deadline = Date.now() + 30000;
+  let bodyText = '';
+
+  while (Date.now() < deadline) {
+    const clinicalFieldSelects = page.locator('select[aria-label="Select clinical field"]');
+    const count = await clinicalFieldSelects.count().catch(() => 0);
+    for (let index = 0; index < count; index += 1) {
+      if (await clinicalFieldSelects.nth(index).isVisible().catch(() => false)) {
+        return;
+      }
+    }
+
+    bodyText = await page.locator('body').innerText().catch(() => '');
+    if (/MAIN WORKFLOW/i.test(bodyText) && /SETUP/i.test(bodyText) && /FIELD/i.test(bodyText) && /Generate Draft/i.test(bodyText)) {
+      return;
+    }
+
+    if (/Preparing your note workspace/i.test(bodyText)) {
+      await page.waitForTimeout(500);
+      continue;
+    }
+
+    await page.waitForTimeout(250);
   }
 
   const backToCompose = page.getByText('Back to Compose', { exact: true }).first();
   if (await waitForVisible(backToCompose, 5000)) {
     await backToCompose.click();
-    await clinicalFieldSelect.waitFor({ state: 'visible', timeout: 30000 });
+    await clinicalFieldSelects.first().waitFor({ state: 'attached', timeout: 30000 });
     return;
   }
 
-  const bodyExcerpt = await page.locator('body').innerText().then((text) => text.slice(0, 1200)).catch(() => '');
+  const bodyExcerpt = bodyText.slice(0, 1200);
   throw new Error([
     `Compose setup controls did not become visible on ${page.url()}.`,
     `Body excerpt: ${bodyExcerpt}`,

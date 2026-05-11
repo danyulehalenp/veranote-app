@@ -10,7 +10,7 @@ export type SourceFidelitySection = {
 
 export type SourceFidelityReviewItem = {
   id: string;
-  category: 'Evidence' | 'Conflict' | 'Risk' | 'Medication' | 'MSE' | 'Missing data';
+  category: 'Evidence' | 'Conflict' | 'Continuity' | 'Risk' | 'Medication' | 'MSE' | 'Missing data';
   severity: SourceFidelitySeverity;
   label: string;
   detail: string;
@@ -45,6 +45,7 @@ type BuildSourceFidelitySummaryInput = {
   highRiskWarningLabels?: string[];
   medicationWarningLabels?: string[];
   mseReviewLabels?: string[];
+  continuityFlags?: string[];
   reviewState?: SourceFidelityReviewState;
 };
 
@@ -140,6 +141,17 @@ export function buildSourceFidelitySummary(input: BuildSourceFidelitySummaryInpu
       label: 'Objective/source mismatch cue',
       detail: bullet,
       targetId: 'objective-warning-layer',
+    }, input.reviewState));
+  });
+
+  unique(input.continuityFlags || []).slice(0, 3).forEach((flag, index) => {
+    reviewItems.push(item({
+      id: `continuity-review-${index}`,
+      category: 'Continuity',
+      severity: 'review',
+      label: 'Prior context needs today verification',
+      detail: flag,
+      targetId: 'source-evidence-layer',
     }, input.reviewState));
   });
 

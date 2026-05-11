@@ -1695,6 +1695,58 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'provider instruction leaked', pattern: /Do not state bridge|Provider Add-On/i },
     ],
   },
+  {
+    id: 'patient-continuity-followup-prior-risk-medication-verify-today',
+    title: 'Follow-up note uses prior Veranote continuity as context without copying it into today as confirmed fact',
+    specialty: 'Psychiatry',
+    ehr: 'Luminello',
+    noteType: 'Outpatient Psych Follow-Up',
+    customInstructions: 'Use prior continuity as recall context only. Separate previously documented items from today-confirmed details.',
+    sourceSections: {
+      intakeCollateral: [
+        'Patient Continuity Context - Veranote recall layer',
+        'Patient label: patient-0426',
+        'Use this as prior context only. Verify today before documenting as current fact.',
+        'Risk/Safety:',
+        '- Passive death wish was previously documented after job loss (needs confirmation today).',
+        'Medication:',
+        '- Sertraline was previously documented as 50 mg daily with missed doses (needs confirmation today).',
+        'Open loops:',
+        '- Therapy referral barrier was previously documented (needs confirmation today).',
+        'Continuity safety rule: do not silently copy prior note content into today. Mark previously documented, confirmed today, or conflicting with today source.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Today live visit notes:',
+        '- Patient reports mood a little better today.',
+        '- Denies active SI, plan, or intent today.',
+        '- Reports taking sertraline most days but missed two doses this week.',
+        '- Therapy referral still not scheduled due to transportation.',
+        '- No side effects volunteered today.',
+      ].join('\n'),
+      patientTranscript: [
+        'Ambient transcript:',
+        'Patient: "I still forget the medicine sometimes, but I am trying."',
+        'Patient: "I am not trying to kill myself. I just still feel stuck."',
+      ].join('\n'),
+      objectiveData: [
+        'Provider Add-On:',
+        '- Do not say prior passive SI resolved.',
+        '- Do not say medication adherence is good.',
+        '- Do not make the prior note sound like today unless confirmed in today source.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'prior continuity is identified as prior context', pattern: /previously documented|prior context|prior continuity|continuity/i },
+      { label: 'today active SI denial remains visible', pattern: /denies? active .*?(?:plan|intent)|not trying to kill myself|denies? .*?(?:plan|intent).*?today/i },
+      { label: 'today missed-dose detail remains visible', pattern: /missed (?:two|2) doses|forget.*medicine|missed.*this week/i },
+      { label: 'therapy referral barrier remains visible', pattern: /therapy referral.*(?:not scheduled|transportation)|transportation/i },
+    ],
+    forbidden: [
+      { label: 'prior passive SI treated as resolved', pattern: /passive (?:SI|suicidal ideation|death wish).{0,80}(?:resolved|no longer present|cleared)/i },
+      { label: 'adherence overstated from continuity', pattern: /taking as prescribed|adherence is good|good adherence|fully adherent/i },
+      { label: 'continuity instruction leaked', pattern: /Continuity safety rule|Patient Continuity Context|do not silently copy/i },
+    ],
+  },
 ];
 
 function loadEvaluationEnv() {

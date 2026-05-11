@@ -356,6 +356,27 @@ export const postNoteCptRegressionCases: PostNoteCptRegressionCase[] = [
     requiredText: [/too thin for meaningful CPT-support candidates/i, /Encounter family is not clear/i],
     forbiddenText: [/diagnosis.*supports.*CPT/i, /bill this code/i, /guaranteed/i, /meets criteria for/i],
   },
+  {
+    id: 'prior-continuity-context-alone-no-family-forcing',
+    title: 'Prior Veranote continuity context alone cannot create coding-support candidates',
+    noteType: 'Outpatient Psych Follow-Up',
+    completedNoteText: [
+      'Patient Continuity Context - Veranote recall layer.',
+      'Use this as prior context only. Verify today before documenting as current fact.',
+      'Previously documented: prior passive suicidal ideation, medication nonadherence, and therapy referral barrier.',
+      'Continuity safety rule: do not silently copy prior note content into today.',
+      'No current encounter time, MDM, psychotherapy intervention, medication-management work, or today visit documentation is visible.',
+    ].join(' '),
+    expectedCandidates: [],
+    forbiddenCandidates: [
+      { family: 'Office / outpatient E/M family' },
+      { family: 'Psychotherapy add-on with E/M family' },
+      { family: 'Psychotherapy-only family' },
+      { family: 'Psychotherapy for crisis family' },
+    ],
+    requiredText: [/Prior continuity context alone is too thin/i, /copied-forward or recalled prior-note content alone/i, /prior continuity context/i],
+    forbiddenText: [/bill this code/i, /guaranteed/i, /stronger-documentation-support/i, /must bill/i],
+  },
 ];
 
 function stringifyAssessment(assessment: PostNoteCptRecommendationAssessment) {

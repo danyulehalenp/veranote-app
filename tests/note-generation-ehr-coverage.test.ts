@@ -64,6 +64,12 @@ describe('note generation EHR and workflow coverage', () => {
   it('keeps every named EHR profile copy-paste only and field-addressable across note focuses', () => {
     expect(EHR_COPY_PASTE_FORMATTING_CONTRACT.currentMode).toBe('copy_paste_export_only');
     expect(EHR_COPY_PASTE_FORMATTING_CONTRACT.directWritebackSupported).toBe(false);
+    expect(OUTPUT_DESTINATIONS).toEqual(expect.arrayContaining([
+      'Luminello',
+      'Welligent',
+      'NextGen',
+      'Practice Fusion',
+    ]));
 
     for (const destination of OUTPUT_DESTINATIONS.filter((item) => item !== 'Generic')) {
       for (const noteFocus of OUTPUT_NOTE_FOCUSES) {
@@ -137,6 +143,7 @@ describe('note generation EHR and workflow coverage', () => {
       'Netsmart myAvatar',
       'Qualifacts/CareLogic',
       'Credible',
+      'Welligent',
     ] as const;
     const draft = [
       'Narrative:',
@@ -199,5 +206,14 @@ describe('note generation EHR and workflow coverage', () => {
       item.sourceSections.intakeCollateral,
       item.sourceSections.objectiveData,
     ].filter(Boolean).join('\n')))).toBe(true);
+  });
+
+  it('keeps prior-patient continuity as a protected copy-forward safety workflow', () => {
+    const continuityCase = sourcePacketRegressionCases.find((item) => item.id === 'patient-continuity-followup-prior-risk-medication-verify-today');
+
+    expect(continuityCase?.ehr).toBe('Luminello');
+    expect(continuityCase?.sourceSections.intakeCollateral).toMatch(/Patient Continuity Context - Veranote recall layer/i);
+    expect(continuityCase?.customInstructions).toMatch(/previously documented|today-confirmed/i);
+    expect(continuityCase?.forbidden.map((item) => item.label).join(' ')).toMatch(/continuity|adherence|resolved/i);
   });
 });

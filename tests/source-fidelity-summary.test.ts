@@ -50,6 +50,7 @@ describe('source fidelity summary', () => {
       highRiskWarningLabels: ['Unsupported no-risk wording'],
       medicationWarningLabels: ['Lithium renal safety'],
       mseReviewLabels: ['thought content: hopeless'],
+      continuityFlags: ['Prior continuity context is loaded and needs today verification.'],
     });
 
     expect(summary.totalSections).toBe(3);
@@ -61,6 +62,7 @@ describe('source fidelity summary', () => {
     expect(summary.reviewItems[0]?.severity).toBe('caution');
     expect(summary.reviewItems.map((item) => item.category)).toEqual(expect.arrayContaining([
       'Conflict',
+      'Continuity',
       'Evidence',
       'Medication',
       'MSE',
@@ -68,6 +70,7 @@ describe('source fidelity summary', () => {
       'Risk',
     ]));
     expect(summary.reviewItems.some((item) => /collateral reports suicidal texts/i.test(item.detail))).toBe(true);
+    expect(summary.reviewItems.some((item) => item.id === 'continuity-review-0')).toBe(true);
   });
 
   it('reports a ready source trace when every section has confirmed strong support and no review flags', () => {

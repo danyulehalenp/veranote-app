@@ -3263,6 +3263,26 @@ export function ReviewWorkspace({
       structuredDiagnosisAlignment,
     ],
   );
+  const continuityReviewFlags = useMemo(() => {
+    const sourceText = [
+      session?.sourceInput || '',
+      ...Object.values(sourceSections),
+    ].join('\n');
+
+    if (!/Patient Continuity Context - Veranote recall layer|Continuity safety rule/i.test(sourceText)) {
+      return [];
+    }
+
+    const flags = [
+      'Prior continuity context is loaded. Verify today before documenting prior facts as current facts.',
+    ];
+
+    if (!/\b(previously documented|prior context|confirmed today|conflicting with today|today(?:'s)? source|today confirms)\b/i.test(draftText)) {
+      flags.push('Draft may need explicit prior-versus-current wording before finish/export.');
+    }
+
+    return flags;
+  }, [draftText, session?.sourceInput, sourceSections]);
   const sourceFidelitySummary = useMemo(
     () => buildSourceFidelitySummary({
       sections: draftSections.map((section) => ({ anchor: section.anchor, heading: section.heading })),
@@ -3280,10 +3300,12 @@ export function ReviewWorkspace({
       highRiskWarningLabels: highRiskWarnings.map((warning) => warning.title),
       medicationWarningLabels: medicationScaffoldWarnings.map((warning) => warning.title),
       mseReviewLabels: draftMseTermsNeedingReview.map(({ entry }) => `${entry.domain}: ${entry.term}`),
+      continuityFlags: continuityReviewFlags,
       reviewState: session?.sourceFidelityReviewState,
     }),
     [
       contradictionFlags,
+      continuityReviewFlags,
       draftMseTermsNeedingReview,
       draftSections,
       highRiskWarnings,
