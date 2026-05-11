@@ -340,6 +340,16 @@ function preservePendingOrUnclearLabSourceLimits(note: string, sourceInput: stri
   labLimits.push('Pregnancy test line was not visible in the available source.');
  }
 
+ if (/\bEKG\b.{0,80}(?:\?|unclear|question mark|OCR|tachy\?)|\bsinus tachy\?/i.test(sourceInput)
+  && !/\bEKG\b.{0,120}(?:unclear|question|OCR|tachy|not fully visible|source limitation)/i.test(note)) {
+  labLimits.push('EKG wording was unclear or question-marked in the scanned/OCR source.');
+ }
+
+ if (/\btroponin\b.{0,80}(?:not visible|line not visible|cut off|unclear)/i.test(sourceInput)
+  && !/\btroponin\b.{0,120}(?:not visible|line not visible|cut off|unclear|not documented|source limitation)/i.test(note)) {
+  labLimits.push('Troponin line was not visible in the available scanned/OCR source.');
+ }
+
  if (!labLimits.length) {
   return note;
  }

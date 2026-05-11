@@ -56,6 +56,9 @@ export const CLINICIAN_NOTE_QUALITY_SWEEP_CASES: ClinicianSweepExpectation[] = [
   { id: 'social-work-discharge-planning-housing-barrier', area: 'social-work', minQualityScore: 86 },
   { id: 'mat-followup-fentanyl-denial-naloxone-no-dose-change', area: 'substance-use', minQualityScore: 86 },
   { id: 'epic-outpatient-med-allergy-reconciliation-conflict', area: 'ehr-formatting', minQualityScore: 86 },
+  { id: 'messy-out-of-order-followup-provider-story-prompt', area: 'ehr-formatting', minQualityScore: 86 },
+  { id: 'wellsky-inpatient-followup-scrambled-risk-mse-plan', area: 'source-conflict', minQualityScore: 86 },
+  { id: 'generic-previous-provider-referral-ocr-disputed-medical-psych-history', area: 'document-intake', minQualityScore: 86 },
 ];
 
 const REQUIRED_AREAS: ClinicianSweepArea[] = [
