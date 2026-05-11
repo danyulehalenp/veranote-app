@@ -3727,7 +3727,13 @@ export function NewNoteForm() {
 
   function scrollToWorkspaceActiveLaneTop() {
     const target = document.getElementById('workspace-active-lane-top') || composeWorkspaceRef.current;
-    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (!target) {
+      return;
+    }
+
+    const targetTop = window.scrollY + target.getBoundingClientRect().top;
+    const nextTop = Math.max(0, Math.min(targetTop - 96, 160));
+    window.scrollTo({ top: nextTop, left: 0, behavior: 'smooth' });
   }
 
   function scrollToElementWhenReady(

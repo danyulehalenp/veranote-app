@@ -17,8 +17,29 @@ import path from 'node:path';
 
 const APP_URL = process.env.LIVE_ASSISTANT_PANEL_URL || 'http://localhost:3001/dashboard/new-note?fresh=assistant-panel-layout-qa';
 const AUTH_COOKIE = process.env.LIVE_ASSISTANT_PANEL_AUTH_COOKIE || 'veranote-provider-token';
+const QA_EMAIL = process.env.LIVE_ASSISTANT_PANEL_QA_EMAIL || 'daniel.hale@veranote-beta.local';
 const OUTPUT_DIR = process.env.LIVE_ASSISTANT_PANEL_OUTPUT_DIR || 'test-results';
 const TEST_PROVIDER_ID = 'provider-assistant-panel-qa';
+
+async function readLocalEnvValue(key) {
+  if (process.env[key]) {
+    return process.env[key];
+  }
+
+  try {
+    const contents = await fs.readFile(path.resolve('.env.local'), 'utf8');
+    const line = contents
+      .split(/\r?\n/)
+      .find((entry) => entry.trim().startsWith(`${key}=`));
+    if (!line) {
+      return null;
+    }
+
+    return line.slice(line.indexOf('=') + 1).trim().replace(/^['"]|['"]$/g, '') || null;
+  } catch {
+    return null;
+  }
+}
 
 function requestUrl(url) {
   return new Promise((resolve) => {
@@ -64,6 +85,19 @@ async function waitForVisible(locator, timeout = 2500) {
 
 async function gotoWorkspace(page) {
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
+
+  if (page.url().includes('/sign-in')) {
+    const accessCode = await readLocalEnvValue('VERANOTE_BETA_ACCESS_CODE');
+    if (!accessCode) {
+      throw new Error('Production assistant panel QA reached sign-in and VERANOTE_BETA_ACCESS_CODE was not available.');
+    }
+    await page.locator('input[type="email"]').first().fill(QA_EMAIL);
+    await page.locator('input[type="password"]').first().fill(accessCode);
+    await page.getByRole('button', { name: /sign in/i }).click();
+    await page.waitForURL((url) => !url.pathname.includes('/sign-in'), { timeout: 30000 });
+    await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
+  }
+
   await page.locator('.workspace-left-rail').waitFor({ state: 'visible', timeout: 30000 });
   await page.locator('.workspace-main-column').waitFor({ state: 'visible', timeout: 30000 });
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
