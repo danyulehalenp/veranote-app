@@ -476,8 +476,36 @@ async function getLongestTextareaValue(page) {
   });
 }
 
+async function readCurrentLocalDraftSession(page) {
+  return page.evaluate(() => {
+    const sessions = Object.keys(window.localStorage)
+      .filter((key) => key.startsWith('clinical-documentation-transformer:draft-session:'))
+      .map((key) => {
+        try {
+          const parsed = JSON.parse(window.localStorage.getItem(key) || '{}');
+          return {
+            key,
+            draftId: parsed.id || parsed.draftId || null,
+            noteType: parsed.noteType || null,
+            note: parsed.note || '',
+            draftRevisions: parsed.draftRevisions || [],
+            updatedAt: parsed.updatedAt || parsed.lastSavedAt || '',
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
+
+    return sessions[0] || null;
+  }).catch(() => null);
+}
+
 async function applyAssistantOneParagraphRewrite(page) {
   const beforeDraft = await getLongestTextareaValue(page);
+  const beforeSession = await readCurrentLocalDraftSession(page);
+  const beforeRevisionCount = beforeSession?.draftRevisions?.length || 0;
   const rewriteResult = await askVisibleAssistantTurn(
     page,
     'Make the current draft into one paragraph without adding new facts.',
@@ -493,30 +521,123 @@ async function applyAssistantOneParagraphRewrite(page) {
 
   await page.getByText(/applied .* rewrite to Draft/i).waitFor({ state: 'visible', timeout: 15000 });
   await page.waitForFunction(
-    (priorDraft) => {
+    ({ priorDraft, priorRevisionCount }) => {
       const nextDraft = Array.from(document.querySelectorAll('textarea'))
         .map((textarea) => textarea.value || '')
         .filter(Boolean)
         .sort((left, right) => right.length - left.length)[0] || '';
+      const latestSession = Object.keys(window.localStorage)
+        .filter((key) => key.startsWith('clinical-documentation-transformer:draft-session:'))
+        .map((key) => {
+          try {
+            return JSON.parse(window.localStorage.getItem(key) || '{}');
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .sort((left, right) => String(right.updatedAt || right.lastSavedAt || '').localeCompare(String(left.updatedAt || left.lastSavedAt || '')))[0];
+      const revisionCount = latestSession?.draftRevisions?.length || 0;
+      const latestRevision = latestSession?.draftRevisions?.[revisionCount - 1];
 
       return nextDraft.length > 120
         && nextDraft !== priorDraft
-        && /\b(patient|hpi|subjective|plan|assessment|mse|mood|safety)\b/i.test(nextDraft);
+        && /\b(patient|hpi|subjective|plan|assessment|mse|mood|safety)\b/i.test(nextDraft)
+        && revisionCount > priorRevisionCount
+        && latestRevision?.source === 'assistant-rewrite'
+        && typeof latestRevision.note === 'string'
+        && latestRevision.note.trim() === String(priorDraft).trim();
     },
-    beforeDraft,
+    { priorDraft: beforeDraft, priorRevisionCount: beforeRevisionCount },
     { timeout: 20000 },
   );
 
   const afterDraft = await getLongestTextareaValue(page);
+  const afterSession = await readCurrentLocalDraftSession(page);
+  const afterRevisionCount = afterSession?.draftRevisions?.length || 0;
+  const latestRevision = afterSession?.draftRevisions?.[afterRevisionCount - 1] || null;
+  const revisionHistoryVisible = Boolean(await waitForAnyVisible([
+    page.getByTestId('draft-version-history'),
+  ], 5000));
 
   return {
     rewriteAnswerCharacters: rewriteResult.answerCharacters,
     rewriteAnswerVisible: rewriteResult.visibleInViewport,
     actionVisible: true,
     draftChanged: Boolean(beforeDraft && afterDraft && beforeDraft !== afterDraft),
+    priorDraftText: beforeDraft,
     beforeDraftCharacters: beforeDraft.length,
     afterDraftCharacters: afterDraft.length,
     paragraphBreaksAfter: (afterDraft.match(/\n\s*\n/g) || []).length,
+    revisionHistoryCreated: afterRevisionCount > beforeRevisionCount,
+    revisionHistorySource: latestRevision?.source || '',
+    revisionHistoryLabel: latestRevision?.label || '',
+    revisionHistorySavedPriorDraft: Boolean(latestRevision?.note?.trim() && latestRevision.note.trim() === beforeDraft.trim()),
+    revisionHistoryVisible,
+  };
+}
+
+async function restoreLatestDraftRevision(page, expectedDraft) {
+  const beforeRestoreDraft = await getLongestTextareaValue(page);
+  const beforeSession = await readCurrentLocalDraftSession(page);
+  const beforeRevisionCount = beforeSession?.draftRevisions?.length || 0;
+  const history = page.getByTestId('draft-version-history').first();
+  await history.waitFor({ state: 'visible', timeout: 10000 });
+  await history.evaluate((element) => {
+    if (element instanceof HTMLDetailsElement) {
+      element.open = true;
+    }
+  });
+
+  const restoreButton = history.getByRole('button', { name: /^Restore$/ }).first();
+  await restoreButton.waitFor({ state: 'visible', timeout: 10000 });
+  await restoreButton.click();
+
+  await page.getByText(/Restored ".*" into Draft/i).waitFor({ state: 'visible', timeout: 15000 });
+  await page.waitForFunction(
+    ({ expected, priorDraft, priorRevisionCount }) => {
+      const nextDraft = Array.from(document.querySelectorAll('textarea'))
+        .map((textarea) => textarea.value || '')
+        .filter(Boolean)
+        .sort((left, right) => right.length - left.length)[0] || '';
+      const latestSession = Object.keys(window.localStorage)
+        .filter((key) => key.startsWith('clinical-documentation-transformer:draft-session:'))
+        .map((key) => {
+          try {
+            return JSON.parse(window.localStorage.getItem(key) || '{}');
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .sort((left, right) => String(right.updatedAt || right.lastSavedAt || '').localeCompare(String(left.updatedAt || left.lastSavedAt || '')))[0];
+      const revisionCount = latestSession?.draftRevisions?.length || 0;
+      const latestRevision = latestSession?.draftRevisions?.[revisionCount - 1];
+
+      return nextDraft.trim() === String(expected).trim()
+        && nextDraft.trim() !== String(priorDraft).trim()
+        && revisionCount > priorRevisionCount
+        && latestRevision?.source === 'manual-restore'
+        && typeof latestRevision.note === 'string'
+        && latestRevision.note.trim() === String(priorDraft).trim();
+    },
+    { expected: expectedDraft, priorDraft: beforeRestoreDraft, priorRevisionCount: beforeRevisionCount },
+    { timeout: 20000 },
+  );
+
+  const afterRestoreDraft = await getLongestTextareaValue(page);
+  const afterSession = await readCurrentLocalDraftSession(page);
+  const afterRevisionCount = afterSession?.draftRevisions?.length || 0;
+  const latestRevision = afterSession?.draftRevisions?.[afterRevisionCount - 1] || null;
+
+  return {
+    restoredDraftMatchesPrior: afterRestoreDraft.trim() === String(expectedDraft).trim(),
+    restoredDraftChangedFromRewrite: afterRestoreDraft.trim() !== beforeRestoreDraft.trim(),
+    manualRestoreRevisionCreated: afterRevisionCount > beforeRevisionCount,
+    manualRestoreRevisionSource: latestRevision?.source || '',
+    manualRestoreRevisionSavedRewrittenDraft: Boolean(latestRevision?.note?.trim() && latestRevision.note.trim() === beforeRestoreDraft.trim()),
+    beforeRestoreDraftCharacters: beforeRestoreDraft.length,
+    afterRestoreDraftCharacters: afterRestoreDraft.length,
   };
 }
 
@@ -879,6 +1000,24 @@ async function main() {
     if (!assistantRewriteResult.draftChanged || !assistantRewriteResult.rewriteAnswerVisible) {
       throw new Error('Assistant rewrite action did not visibly rewrite the draft.');
     }
+    if (
+      !assistantRewriteResult.revisionHistoryCreated
+      || assistantRewriteResult.revisionHistorySource !== 'assistant-rewrite'
+      || !assistantRewriteResult.revisionHistorySavedPriorDraft
+      || !assistantRewriteResult.revisionHistoryVisible
+    ) {
+      throw new Error(`Assistant rewrite did not preserve prior draft history: ${JSON.stringify(assistantRewriteResult)}`);
+    }
+    const assistantRestoreResult = await restoreLatestDraftRevision(page, assistantRewriteResult.priorDraftText);
+    if (
+      !assistantRestoreResult.restoredDraftMatchesPrior
+      || !assistantRestoreResult.restoredDraftChangedFromRewrite
+      || !assistantRestoreResult.manualRestoreRevisionCreated
+      || assistantRestoreResult.manualRestoreRevisionSource !== 'manual-restore'
+      || !assistantRestoreResult.manualRestoreRevisionSavedRewrittenDraft
+    ) {
+      throw new Error(`Draft version history restore did not recover the prior draft safely: ${JSON.stringify(assistantRestoreResult)}`);
+    }
 
     const copyEnabledBeforeApproval = await getFirstVisibleButtonEnabled(page, 'Copy Final Note');
     const approvedSectionClicks = await approveAllVisibleSections(page);
@@ -978,6 +1117,18 @@ async function main() {
         assistantRewriteBeforeDraftCharacters: assistantRewriteResult.beforeDraftCharacters,
         assistantRewriteAfterDraftCharacters: assistantRewriteResult.afterDraftCharacters,
         assistantRewriteParagraphBreaksAfter: assistantRewriteResult.paragraphBreaksAfter,
+        assistantRewriteRevisionHistoryCreated: assistantRewriteResult.revisionHistoryCreated,
+        assistantRewriteRevisionHistorySource: assistantRewriteResult.revisionHistorySource,
+        assistantRewriteRevisionHistoryLabel: assistantRewriteResult.revisionHistoryLabel,
+        assistantRewriteRevisionHistorySavedPriorDraft: assistantRewriteResult.revisionHistorySavedPriorDraft,
+        assistantRewriteRevisionHistoryVisible: assistantRewriteResult.revisionHistoryVisible,
+        assistantRestoreDraftMatchesPrior: assistantRestoreResult.restoredDraftMatchesPrior,
+        assistantRestoreDraftChangedFromRewrite: assistantRestoreResult.restoredDraftChangedFromRewrite,
+        assistantRestoreRevisionCreated: assistantRestoreResult.manualRestoreRevisionCreated,
+        assistantRestoreRevisionSource: assistantRestoreResult.manualRestoreRevisionSource,
+        assistantRestoreRevisionSavedRewrittenDraft: assistantRestoreResult.manualRestoreRevisionSavedRewrittenDraft,
+        assistantRestoreBeforeDraftCharacters: assistantRestoreResult.beforeRestoreDraftCharacters,
+        assistantRestoreAfterDraftCharacters: assistantRestoreResult.afterRestoreDraftCharacters,
         copyBlockedBeforeApproval: !copyEnabledBeforeApproval,
         approvedSectionClicks,
         copyEnabledAfterApproval,

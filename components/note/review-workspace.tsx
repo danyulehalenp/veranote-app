@@ -3714,6 +3714,43 @@ export function ReviewWorkspace({
     </div>
   ) : null;
 
+  const renderDraftVersionHistory = (currentSession: DraftSession) => currentSession.draftRevisions?.length ? (
+    <details data-testid="draft-version-history" className="workspace-subpanel mt-4 rounded-[22px] p-4">
+      <summary className="cursor-pointer text-sm font-semibold text-cyan-50">
+        Draft version history · {currentSession.draftRevisions.length}
+      </summary>
+      <div className="mt-2 text-xs leading-5 text-cyan-50/66">
+        {assistantPersona.name} rewrites save the prior draft here before replacing the active Draft.
+      </div>
+      <div className="mt-3 grid max-h-56 gap-2 overflow-y-auto pr-1">
+        {[...currentSession.draftRevisions].reverse().slice(0, 8).map((revision) => (
+          <div key={revision.id} className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-3 py-2.5">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold text-white">{revision.label}</div>
+                <div className="mt-0.5 text-[11px] text-cyan-50/58">
+                  {new Date(revision.createdAt).toLocaleString()} · {revision.wordCount ?? countWords(revision.note)} words
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleRestoreDraftRevision(revision);
+                }}
+                className="rounded-full border border-cyan-200/14 bg-[rgba(18,181,208,0.1)] px-3 py-1 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/26 hover:bg-[rgba(18,181,208,0.16)]"
+              >
+                Restore
+              </button>
+            </div>
+            <div className="mt-2 line-clamp-2 text-[11px] leading-5 text-cyan-50/64">
+              {revision.note.replace(/\s+/g, ' ').slice(0, 260)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </details>
+  ) : null;
+
   const renderDraftEditorSection = () => {
     const currentSession = session!;
 
@@ -3757,42 +3794,7 @@ export function ReviewWorkspace({
             ))}
           </div>
         ) : null}
-        {currentSession.draftRevisions?.length ? (
-          <details className="workspace-subpanel mt-4 rounded-[22px] p-4">
-            <summary className="cursor-pointer text-sm font-semibold text-cyan-50">
-              Draft version history · {currentSession.draftRevisions.length}
-            </summary>
-            <div className="mt-2 text-xs leading-5 text-cyan-50/66">
-              Atlas rewrites save the prior draft here before replacing the active Draft.
-            </div>
-            <div className="mt-3 grid max-h-56 gap-2 overflow-y-auto pr-1">
-              {[...currentSession.draftRevisions].reverse().slice(0, 8).map((revision) => (
-                <div key={revision.id} className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-3 py-2.5">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <div className="text-xs font-semibold text-white">{revision.label}</div>
-                      <div className="mt-0.5 text-[11px] text-cyan-50/58">
-                        {new Date(revision.createdAt).toLocaleString()} · {revision.wordCount ?? countWords(revision.note)} words
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleRestoreDraftRevision(revision);
-                      }}
-                      className="rounded-full border border-cyan-200/14 bg-[rgba(18,181,208,0.1)] px-3 py-1 text-[11px] font-medium text-cyan-50 transition hover:border-cyan-200/26 hover:bg-[rgba(18,181,208,0.16)]"
-                    >
-                      Restore
-                    </button>
-                  </div>
-                  <div className="mt-2 line-clamp-2 text-[11px] leading-5 text-cyan-50/64">
-                    {revision.note.replace(/\s+/g, ' ').slice(0, 260)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </details>
-        ) : null}
+        {renderDraftVersionHistory(currentSession)}
         <div className="workspace-subpanel mt-4 rounded-[22px] p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Section navigator</div>
@@ -4760,6 +4762,8 @@ export function ReviewWorkspace({
           ) : null}
 
           <PostNoteCptSupportPanel assessment={postNoteCptRecommendations} variant="embedded" />
+
+          {renderDraftVersionHistory(session)}
 
           <textarea ref={draftTextareaRef} value={draftText} onChange={(event) => setDraftText(event.target.value)} className="workspace-control mt-4 min-h-[780px] w-full rounded-[24px] p-4 text-sm leading-7" />
 

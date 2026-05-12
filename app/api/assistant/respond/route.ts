@@ -1481,6 +1481,208 @@ function formatDraftWithConciseHeadings(draftText: string) {
     .trim();
 }
 
+function splitDraftSentences(text: string) {
+  const normalized = text
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalized) {
+    return [];
+  }
+
+  const sentences = normalized.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [normalized];
+  return sentences
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function scoreDraftSentenceForConcision(sentence: string, heading: string) {
+  const normalized = normalizeMessageForClinicalRouting(`${heading} ${sentence}`);
+  let score = 0;
+
+  if (/\b(si|suicid|hi|homicid|self[-\s]?harm|risk|safety|denies?|denied|collateral|staff|observed)\b/.test(normalized)) {
+    score += 6;
+  }
+
+  if (/\b(med|medication|adherence|missed|forgot|stopped|refus|side effect|dose|escitalopram|sertraline|fluoxetine|paroxetine|paxil|wellbutrin|bupropion|lithium|lamotrigine|lamictal|clozapine|antipsychotic|ssri|snri)\b/.test(normalized)) {
+    score += 5;
+  }
+
+  if (/\b(plan|follow[-\s]?up|referral|therapy|monitor|return|continue|change|recommend|consider)\b/.test(normalized)) {
+    score += 4;
+  }
+
+  if (/\b(anxiety|panic|depress|mood|sleep|appetite|psychosis|hallucination|mania|avoidance|improved|worse|ongoing|partial|symptom)\b/.test(normalized)) {
+    score += 3;
+  }
+
+  if (/\b(mse|mental status|appearance|speech|affect|thought process|thought content|insight|judgment|cooperative|goal directed|psychosis)\b/.test(normalized)) {
+    score += 2;
+  }
+
+  if (/\b(no final|not documented|missing|visible draft|source supports?)\b/.test(normalized)) {
+    score += 2;
+  }
+
+  if (sentence.length > 260) {
+    score -= 1;
+  }
+
+  return score;
+}
+
+function tightenDraftSentence(sentence: string) {
+  return sentence
+    .replace(/\bPatient reports\b/g, 'Reports')
+    .replace(/\bPatient reported\b/g, 'Reported')
+    .replace(/\bPatient denies\b/g, 'Denies')
+    .replace(/\bPatient denied\b/g, 'Denied')
+    .replace(/\bis being considered\b/g, 'considered')
+    .replace(/\bare being considered\b/g, 'considered')
+    .replace(/\bis documented in the visible draft\b/g, 'documented')
+    .replace(/\bare documented in the visible draft\b/g, 'documented')
+    .replace(/\bNo final medication change is documented in the visible draft\b/g, 'No final medication change documented')
+    .replace(/\bspeech normal rate\b/gi, 'normal-rate speech')
+    .replace(/\bthought process goal directed\b/gi, 'goal-directed thought process')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function shortenDraftSectionText(heading: string, text: string) {
+  const sentences = splitDraftSentences(text);
+  if (sentences.length <= 1) {
+    return text.replace(/\s+/g, ' ').trim();
+  }
+
+  const normalizedHeading = normalizeMessageForClinicalRouting(heading);
+  const targetSentenceCount = /\b(hpi|interval|history|subjective)\b/.test(normalizedHeading)
+    ? 2
+    : /\b(plan|next steps?|recommendations?|follow[-\s]?up)\b/.test(normalizedHeading)
+    ? 2
+    : 1;
+  const scored = sentences.map((sentence, index) => ({
+    sentence,
+    index,
+    score: scoreDraftSentenceForConcision(sentence, heading),
+  }));
+  const selectedIndexes = new Set(
+    scored
+      .sort((left, right) => {
+        if (right.score !== left.score) {
+          return right.score - left.score;
+        }
+        return left.index - right.index;
+      })
+      .slice(0, targetSentenceCount)
+      .map((item) => item.index),
+  );
+
+  return scored
+    .sort((left, right) => left.index - right.index)
+    .filter((item) => selectedIndexes.has(item.index))
+    .map((item) => tightenDraftSentence(item.sentence))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function formatDraftShorter(draftText: string) {
+  const sections = splitDraftIntoNamedSections(draftText);
+  if (!sections.length) {
+    const sentences = splitDraftSentences(collapseDraftToOneParagraph(draftText));
+    if (sentences.length <= 3) {
+      return sentences.join(' ').trim();
+    }
+
+    const scored = sentences.map((sentence, index) => ({
+      sentence,
+      index,
+      score: scoreDraftSentenceForConcision(sentence, 'Draft'),
+    }));
+    const selected = new Set(
+      scored
+        .sort((left, right) => {
+          if (right.score !== left.score) {
+            return right.score - left.score;
+          }
+          return left.index - right.index;
+        })
+        .slice(0, 3)
+        .map((item) => item.index),
+    );
+
+    return scored
+      .sort((left, right) => left.index - right.index)
+      .filter((item) => selected.has(item.index))
+      .map((item) => tightenDraftSentence(item.sentence))
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  return sections
+    .map((section) => {
+      const text = shortenDraftSectionText(section.heading, section.text);
+      return text ? `${section.heading}:\n${text}` : '';
+    })
+    .filter(Boolean)
+    .join('\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function formatDraftAsNarrativeStory(draftText: string) {
+  const sections = splitDraftIntoNamedSections(draftText);
+  if (!sections.length) {
+    return collapseDraftToOneParagraph(draftText);
+  }
+
+  const firstParagraph: string[] = [];
+  const secondParagraph: string[] = [];
+
+  for (const section of sections) {
+    if (sectionMatches(section.heading, [
+      /\bhpi\b/,
+      /\bsubjective\b/,
+      /\binterval\b/,
+      /\bchief\b/,
+      /\bhistory\b/,
+      /\bsymptoms?\b/,
+    ])) {
+      firstParagraph.push(section.text);
+      continue;
+    }
+
+    if (sectionMatches(section.heading, [
+      /\bmse\b/,
+      /\bmental status\b/,
+      /\bobjective\b/,
+      /\bassessment\b/,
+      /\bplan\b/,
+      /\brisk\b/,
+      /\bsafety\b/,
+    ])) {
+      secondParagraph.push(section.text);
+      continue;
+    }
+
+    if (!firstParagraph.length) {
+      firstParagraph.push(section.text);
+    } else {
+      secondParagraph.push(section.text);
+    }
+  }
+
+  const paragraphs = [
+    firstParagraph.join(' '),
+    secondParagraph.join(' '),
+  ]
+    .map((paragraph) => paragraph.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  return paragraphs.join('\n\n') || collapseDraftToOneParagraph(draftText);
+}
+
 function formatDraftWithExpandedDetails(draftText: string) {
   const sections = splitDraftIntoNamedSections(draftText);
   if (!sections.length) {
@@ -1553,7 +1755,7 @@ function formatDraftForRequest(draftText: string, request: DraftFormatRequest) {
     case 'concise-headings':
       return formatDraftWithConciseHeadings(draftText);
     case 'shorter':
-      return collapsed;
+      return formatDraftShorter(draftText);
     case 'longer':
       return formatDraftWithExpandedDetails(draftText);
     case 'professional':
@@ -1561,11 +1763,7 @@ function formatDraftForRequest(draftText: string, request: DraftFormatRequest) {
     case 'source-bound':
       return formatDraftConservatively(draftText);
     case 'narrative':
-      return collapsed
-        .replace(/\bSubjective:/g, 'Subjective summary:')
-        .replace(/\bObjective:/g, 'Objective summary:')
-        .replace(/\bAssessment:/g, 'Assessment:')
-        .replace(/\bPlan:/g, 'Plan:');
+      return formatDraftAsNarrativeStory(draftText);
     case 'chronological':
       return splitDraftIntoNamedSections(draftText)
         .map((section) => `${section.heading}: ${section.text}`)

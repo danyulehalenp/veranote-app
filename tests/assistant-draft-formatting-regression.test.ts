@@ -103,6 +103,65 @@ describe('assistant draft formatting regression', () => {
     expect(draftText.split(/\n\n/)[1]).toMatch(/Mental Status Exam:|Plan:/);
   });
 
+  it('shortens a visible draft while preserving medication, symptom, and plan signal', async () => {
+    const payload = await askFormatting('make this shorter and more concice but keep what matters');
+
+    expect(payload.answerMode).toBe('chart_ready_wording');
+    expect(payload.message).toMatch(/shorter concise format/i);
+
+    const action = payload.actions?.find((item) => item.type === 'apply-draft-rewrite');
+    const draftText = action?.draftText || '';
+    expect(draftText.length).toBeLessThan(messyDraft.length);
+    expect(draftText).toMatch(/forgot escitalopram twice/i);
+    expect(draftText).toMatch(/panic is less intense|ongoing avoidance/i);
+    expect(draftText).toMatch(/therapy referral (is being )?considered/i);
+    expect(draftText).not.toMatch(/What should I focus on|How should I move through/i);
+  });
+
+  it('turns a sectioned draft into story-flow narrative without adding unsupported facts', async () => {
+    const payload = await askFormatting('make it flow like a story');
+
+    expect(payload.answerMode).toBe('chart_ready_wording');
+    expect(payload.message).toMatch(/narrative story-flow format/i);
+
+    const action = payload.actions?.find((item) => item.type === 'apply-draft-rewrite');
+    const draftText = action?.draftText || '';
+    expect(draftText).toMatch(/panic is less intense/i);
+    expect(draftText).toMatch(/forgot escitalopram twice/i);
+    expect(draftText).toMatch(/no final medication change is documented/i);
+    expect(draftText).not.toMatch(/^HPI:/m);
+    expect(draftText).not.toMatch(/unsupported|invented/i);
+  });
+
+  it('treats a direct draft-shaping follow-up as a rewrite even when the provider does not say draft', async () => {
+    const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        stage: 'review',
+        mode: 'workflow-help',
+        message: 'make it one paragraph',
+        context: {
+          providerAddressingName: 'Test Provider',
+          noteType: 'Outpatient Psych Follow-Up',
+          outputDestination: 'Tebra/Kareo',
+          currentDraftText: messyDraft,
+        },
+        recentMessages: [
+          {
+            role: 'provider',
+            content: 'For this follow-up note, can you make the draft cleaner?',
+          },
+        ],
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    const payload = await response.json() as AssistantRoutePayload;
+    expect(payload.answerMode).toBe('chart_ready_wording');
+    expect(payload.actions?.some((item) => item.type === 'apply-draft-rewrite')).toBe(true);
+  });
+
   it('does not treat a new reference question as a draft rewrite just because a draft is visible', async () => {
     const payload = await askFormatting('what is schizoaffective disorder criteria?');
 
@@ -110,6 +169,14 @@ describe('assistant draft formatting regression', () => {
     expect(payload.message).toMatch(/schizoaffective/i);
     expect(payload.message).toMatch(/psychosis/i);
     expect(payload.message).not.toMatch(/Chart-ready wording/i);
+    expect(payload.actions?.some((item) => item.type === 'apply-draft-rewrite')).not.toBe(true);
+  });
+
+  it('topic-switches to a misspelled medication reference question instead of rewriting the draft', async () => {
+    const payload = await askFormatting('can lamictle cause a rash?');
+
+    expect(payload.answerMode).toMatch(/reference|medication/i);
+    expect(payload.message).toMatch(/Lamictal|lamotrigine|rash/i);
     expect(payload.actions?.some((item) => item.type === 'apply-draft-rewrite')).not.toBe(true);
   });
 });
