@@ -15,6 +15,7 @@ import {
   buildSourceBlocks,
   getSignalLabel,
   highlightTermsInText,
+  type SectionEvidenceLink,
   type SourceBlock,
 } from '@/lib/note/source-linking';
 import { buildSourceFidelitySummary, type SourceFidelitySummary } from '@/lib/note/source-fidelity-summary';
@@ -1827,6 +1828,7 @@ export function ReviewWorkspace({
   const [isRewriting, setIsRewriting] = useState<RewriteMode | null>(null);
   const [focusedSectionAnchor, setFocusedSectionAnchor] = useState<string | null>(null);
   const [focusedEvidenceBlockId, setFocusedEvidenceBlockId] = useState<string | null>(null);
+  const [focusedSentenceTraceId, setFocusedSentenceTraceId] = useState<string | null>(null);
   const reviewAutoFocusSeedRef = useRef<string | null>(null);
   const [lanePreferenceSuggestion, setLanePreferenceSuggestion] = useState<ReturnType<typeof getLanePreferenceSuggestion>>(null);
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -2896,6 +2898,54 @@ export function ReviewWorkspace({
     () => buildSectionSentenceEvidenceMap(draftSections, sourceSections),
     [draftSections, sourceSections],
   );
+  const clickableSentenceTraceRows = useMemo(() => {
+    const rows: Array<{
+      id: string;
+      sectionAnchor: string;
+      sectionHeading: string;
+      sentence: string;
+      linkedBlocks: Array<{ link: SectionEvidenceLink; block: SourceBlock }>;
+    }> = [];
+
+    draftSections.forEach((section) => {
+      const sentenceEvidence = sectionSentenceEvidenceMap[section.anchor] || [];
+      const sectionEvidence = sectionEvidenceMap[section.anchor];
+      const traceRows = sentenceEvidence.length
+        ? sentenceEvidence
+        : sectionEvidence?.links.length
+          ? [{
+            id: `${section.anchor}-draft-trace-fallback`,
+            sectionAnchor: section.anchor,
+            sectionHeading: section.heading,
+            sentence: extractFirstReviewSentence(section.body) || 'Section-level source support is available. Open a source chip to inspect the likely supporting block.',
+            links: sectionEvidence.links,
+          }]
+          : [];
+
+      traceRows.forEach((traceRow) => {
+        const linkedBlocks = traceRow.links
+          .map((link) => {
+            const block = sourceBlocks.find((item) => item.id === link.blockId);
+            return block ? { link, block } : null;
+          })
+          .filter((item): item is { link: SectionEvidenceLink; block: SourceBlock } => Boolean(item));
+
+        if (linkedBlocks.length) {
+          rows.push({
+            id: traceRow.id,
+            sectionAnchor: traceRow.sectionAnchor,
+            sectionHeading: traceRow.sectionHeading,
+            sentence: traceRow.sentence,
+            linkedBlocks,
+          });
+        }
+      });
+    });
+
+    return rows
+      .sort((left, right) => (right.linkedBlocks[0]?.link.score || 0) - (left.linkedBlocks[0]?.link.score || 0))
+      .slice(0, 8);
+  }, [draftSections, sectionEvidenceMap, sectionSentenceEvidenceMap, sourceBlocks]);
   const focusedSectionEvidence = focusedSectionAnchor ? sectionEvidenceMap[focusedSectionAnchor] : null;
   const focusedEvidenceBlock = useMemo(
     () => focusedEvidenceBlockId ? sourceBlocks.find((block) => block.id === focusedEvidenceBlockId) || null : null,
@@ -3751,6 +3801,99 @@ export function ReviewWorkspace({
     </details>
   ) : null;
 
+  const renderClickableDraftTracePanel = (variant: 'full' | 'embedded' = 'full') => {
+    if (!clickableSentenceTraceRows.length) {
+      return null;
+    }
+
+    const visibleRows = clickableSentenceTraceRows.slice(0, variant === 'embedded' ? 5 : 6);
+
+    return (
+      <div data-testid="draft-source-trace-panel" className="workspace-subpanel mt-4 rounded-[22px] border border-sky-300/18 bg-[rgba(56,189,248,0.08)] p-4">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/78">
+              Draft source trace
+            </div>
+            <p className="mt-1 text-sm leading-6 text-sky-50/74">
+              Click a draft sentence to open the source block Veranote thinks supports it.
+            </p>
+          </div>
+          <ProvenanceChip label="Click-to-source" />
+        </div>
+        <div className="mt-3 grid gap-2">
+          {visibleRows.map((row) => {
+            const isFocused = focusedSentenceTraceId === row.id;
+            const primaryBlock = row.linkedBlocks[0]?.block;
+
+            return (
+              <div
+                key={row.id}
+                data-testid="draft-source-trace-sentence"
+                role="button"
+                tabIndex={0}
+                aria-pressed={isFocused}
+                onClick={() => {
+                  setFocusedSentenceTraceId(row.id);
+                  if (primaryBlock) {
+                    handleFocusSourceBlock(row.sectionAnchor, primaryBlock);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setFocusedSentenceTraceId(row.id);
+                    if (primaryBlock) {
+                      handleFocusSourceBlock(row.sectionAnchor, primaryBlock);
+                    }
+                  }
+                }}
+                className={`workspace-action-card rounded-[16px] border px-3.5 py-3 text-left transition ${isFocused
+                  ? 'border-sky-200/52 bg-[rgba(56,189,248,0.18)] shadow-[0_16px_38px_rgba(14,165,233,0.14)]'
+                  : 'border-sky-300/16 bg-white/6 hover:border-sky-200/34 hover:bg-white/10'
+                }`}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-sky-200/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-50">
+                    {row.sectionHeading}
+                  </span>
+                  {isFocused ? (
+                    <span data-testid="draft-source-trace-selected" className="rounded-full border border-sky-200/24 bg-sky-300/16 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-50">
+                      Selected trace
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-2 text-sm leading-6 text-white">{row.sentence}</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {row.linkedBlocks.slice(0, 3).map(({ link, block }) => (
+                    <button
+                      key={`${row.id}-${block.id}`}
+                      type="button"
+                      data-testid="draft-source-trace-source-button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setFocusedSentenceTraceId(row.id);
+                        handleFocusSourceBlock(row.sectionAnchor, block);
+                      }}
+                      className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${evidenceSignalClasses[link.signal]} ${focusedEvidenceBlockId === block.id ? 'ring-2 ring-sky-200' : ''}`}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.stopPropagation();
+                        }
+                      }}
+                    >
+                      {block.sourceLabel} · {getSignalLabel(link.signal)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const renderDraftEditorSection = () => {
     const currentSession = session!;
 
@@ -3795,6 +3938,7 @@ export function ReviewWorkspace({
           </div>
         ) : null}
         {renderDraftVersionHistory(currentSession)}
+        {renderClickableDraftTracePanel('full')}
         <div className="workspace-subpanel mt-4 rounded-[22px] p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Section navigator</div>
@@ -4764,6 +4908,7 @@ export function ReviewWorkspace({
           <PostNoteCptSupportPanel assessment={postNoteCptRecommendations} variant="embedded" />
 
           {renderDraftVersionHistory(session)}
+          {renderClickableDraftTracePanel('embedded')}
 
           <textarea ref={draftTextareaRef} value={draftText} onChange={(event) => setDraftText(event.target.value)} className="workspace-control mt-4 min-h-[780px] w-full rounded-[24px] p-4 text-sm leading-7" />
 

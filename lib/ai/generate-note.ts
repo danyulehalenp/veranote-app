@@ -469,6 +469,8 @@ function removeUnsupportedMedicationActionPlan(note: string, sourceInput: string
    .replace(/\bNo changes? to (?:the )?buprenorphine(?:\/naloxone)? dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
    .replace(/\bNo buprenorphine dose changes? (?:are|is) documented(?: or recommended)?[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
    .replace(/\bNo dose changes? (?:are|were|is) documented(?: or recommended)?[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+   .replace(/\bNo changes? to (?:the )?(?:medication|current medication|MAT) dose[^.\n]*(?:documented|made|recommended)[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+   .replace(/\bNo (?:medication|current medication|MAT) dose changes?[^.\n]*(?:documented|made|recommended)[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
    .replace(/\b(?:The patient )?did not report any changes? to (?:their )?medication regimen[^.\n]*(?:\.\s*)?/gi, 'No current buprenorphine/naloxone dosing decision is documented in the provided source. ');
  }
 

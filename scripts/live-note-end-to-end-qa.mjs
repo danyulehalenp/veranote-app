@@ -967,6 +967,26 @@ async function main() {
     if (!conflictGapItemsVisible && !/No source-fidelity conflicts or gaps/i.test(sourceFidelityPulseText)) {
       throw new Error('Source-fidelity pulse did not show either conflict/gap items or a clear no-items state.');
     }
+    const draftSourceTracePanelVisible = await waitForVisible(page.getByTestId('draft-source-trace-panel').first(), 10000);
+    if (!draftSourceTracePanelVisible) {
+      throw new Error('Draft source trace panel did not render next to the review draft.');
+    }
+    const draftSourceTraceSentence = page.getByTestId('draft-source-trace-sentence').first();
+    const draftSourceTraceSentenceVisible = await waitForVisible(draftSourceTraceSentence, 5000);
+    if (!draftSourceTraceSentenceVisible) {
+      throw new Error('Draft source trace panel did not expose a clickable draft sentence.');
+    }
+    const draftSourceTraceButton = page.getByTestId('draft-source-trace-source-button').first();
+    const draftSourceTraceButtonVisible = await waitForVisible(draftSourceTraceButton, 5000);
+    if (!draftSourceTraceButtonVisible) {
+      throw new Error('Draft source trace panel did not expose a clickable source chip.');
+    }
+    await draftSourceTraceSentence.click();
+    const draftSourceTraceSelected = await waitForVisible(page.getByTestId('draft-source-trace-selected').first(), 5000);
+    const draftSourceTraceOpened = await waitForVisible(page.locator('#source-evidence-layer').first(), 5000);
+    if (!draftSourceTraceSelected || !draftSourceTraceOpened) {
+      throw new Error('Clicking a draft source trace did not select the trace and reveal the source evidence layer.');
+    }
     const sourceTraceCardVisible = await waitForVisible(page.getByTestId('section-source-trace-card').first(), 10000);
     if (!sourceTraceCardVisible) {
       throw new Error('Section source trace card did not render for sentence-level source review.');
@@ -1104,6 +1124,11 @@ async function main() {
         sourceFidelityPulseVisible,
         sourceFidelityPulseCharacters: sourceFidelityPulseText.length,
         sourceFidelityConflictGapStateVisible: conflictGapItemsVisible || /No source-fidelity conflicts or gaps/i.test(sourceFidelityPulseText),
+        draftSourceTracePanelVisible,
+        draftSourceTraceSentenceVisible,
+        draftSourceTraceButtonVisible,
+        draftSourceTraceSelected,
+        draftSourceTraceOpened,
         sourceTraceCardVisible,
         sourceTraceButtonVisible,
         sourceEvidenceLayerOpened,
