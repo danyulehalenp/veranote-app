@@ -46,6 +46,13 @@ import { assistantMemoryService } from '@/lib/veranote/assistant-memory-service'
 import { applyAssistantPersonaDefaults, listAssistantAvatarOptions, resolveAssistantPersona } from '@/lib/veranote/assistant-persona';
 import { buildLanePreferencePrompt, buildPreferenceAssistantDraft } from '@/lib/veranote/preference-draft';
 import {
+  analyzeProviderPromptDraft,
+  buildProviderPromptStudioDraft,
+  getPromptStudioGoalOptions,
+  sanitizeProviderPromptName,
+  type ProviderPromptStudioGoalId,
+} from '@/lib/veranote/provider-prompt-builder';
+import {
   buildStarterOutputProfiles,
   getOutputDestinationMeta,
   getOutputDestinationOptions,
@@ -1162,6 +1169,11 @@ export function NewNoteForm() {
   const [customInstructions, setCustomInstructions] = useState('');
   const [assistantPreferenceRequest, setAssistantPreferenceRequest] = useState('');
   const [assistantPreferenceDraft, setAssistantPreferenceDraft] = useState('');
+  const [promptBuilderGoalIds, setPromptBuilderGoalIds] = useState<ProviderPromptStudioGoalId[]>([
+    'preserve-source-uncertainty',
+    'preserve-risk-conflict',
+    'do-not-fill-mse',
+  ]);
   const [lanePreferenceSuggestion, setLanePreferenceSuggestion] = useState<ReturnType<typeof getLanePreferenceSuggestion>>(null);
   const [promptPreferenceSuggestion, setPromptPreferenceSuggestion] = useState<ReturnType<typeof getPromptPreferenceSuggestion>>(null);
   const [profilePromptPreferenceSuggestion, setProfilePromptPreferenceSuggestion] = useState<ReturnType<typeof assistantMemoryService.getProfilePromptSuggestion>>(null);
@@ -2488,6 +2500,9 @@ export function NewNoteForm() {
       visibleOutputProfiles.length,
     ],
   );
+  const promptStudioGoalOptions = useMemo(() => getPromptStudioGoalOptions(noteType), [noteType]);
+  const providerPromptWarnings = useMemo(() => analyzeProviderPromptDraft(customInstructions), [customInstructions]);
+  const assistantPromptDraftWarnings = useMemo(() => analyzeProviderPromptDraft(assistantPreferenceDraft), [assistantPreferenceDraft]);
   const composeReadinessItems = useMemo<StatusStripItem[]>(() => {
     const openAttentionCount = composeNudges.filter((item) => item.tone === 'warning' || item.tone === 'danger').length;
 
@@ -4381,7 +4396,7 @@ export function NewNoteForm() {
     const presetId = selectedPresetId && !isLocked ? selectedPresetId : `preset-custom-${Date.now()}`;
     const preset: NotePreset = {
       id: presetId,
-      name: (presetName || existingPreset?.name || `${noteType} Custom`).trim(),
+      name: sanitizeProviderPromptName(presetName || existingPreset?.name || `${noteType} Custom`),
       noteType,
       outputScope,
       requestedSections,
@@ -4439,6 +4454,26 @@ export function NewNoteForm() {
     }).catch(() => {
       // Keep local presets even if backend save fails.
     });
+  }
+
+  function togglePromptBuilderGoal(goalId: ProviderPromptStudioGoalId) {
+    setPromptBuilderGoalIds((current) => (
+      current.includes(goalId)
+        ? current.filter((item) => item !== goalId)
+        : [...current, goalId]
+    ));
+  }
+
+  function handleBuildPromptStudioDraft() {
+    const nextDraft = buildProviderPromptStudioDraft({
+      noteType,
+      specialty,
+      outputDestination: providerSettings.outputDestination,
+      selectedGoalIds: promptBuilderGoalIds,
+      freeText: assistantPreferenceRequest,
+    });
+
+    setAssistantPreferenceDraft(nextDraft);
   }
 
   function handleBuildPreferenceDraft(seed?: string) {
@@ -8245,38 +8280,64 @@ export function NewNoteForm() {
                       </div>
                     ) : null}
 
-                    <div className="mt-4 rounded-[20px] border border-slate-200 bg-white p-4">
-                      <div className="text-sm font-semibold text-slate-950">{assistantPersona.name} quick builder</div>
-                      <p className="mt-1 text-xs leading-5 text-slate-600">
-                        Describe how you want this note lane to behave, then let {assistantPersona.name} draft a reusable preference block for you.
-                      </p>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {[
-                          `Make ${noteType} more concise.`,
-                          'Keep the assessment more conservative and differential-aware.',
-                          'Make the plan shorter and easier to scan.',
-                          `Format this cleanly for ${providerSettings.outputDestination === 'Generic' ? 'my destination workflow' : getOutputDestinationMeta(providerSettings.outputDestination).label}.`,
-                        ].map((seed) => (
-                          <button
-                            key={seed}
-                            type="button"
-                            onClick={() => handleBuildPreferenceDraft(seed)}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-800 transition hover:border-cyan-200 hover:bg-cyan-50"
-                          >
-                            {seed}
-                          </button>
-                        ))}
+                    <div data-testid="prompt-builder-coach" className="mt-4 rounded-[20px] border border-slate-200 bg-white p-4">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-950">Prompt Studio Coach</div>
+                          <p className="mt-1 text-xs leading-5 text-slate-600">
+                            Build a reusable prompt from structured choices. This keeps prompt creation safer than a blank box and easier to test later.
+                          </p>
+                        </div>
+                        <div className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-900">
+                          Guided builder
+                        </div>
+                      </div>
+                      <div className="mt-4 rounded-[16px] border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-950">
+                        <span className="font-semibold">Safe prompt rule:</span> reusable prompts control structure, tone, section order, EHR formatting, and guardrails. Patient facts stay in the four source boxes so Veranote can trace them.
+                      </div>
+                      <div className="mt-4 grid gap-2 md:grid-cols-2">
+                        {promptStudioGoalOptions.map((goal) => {
+                          const isSelected = promptBuilderGoalIds.includes(goal.id);
+
+                          return (
+                            <button
+                              key={goal.id}
+                              type="button"
+                              data-testid="prompt-builder-goal-chip"
+                              aria-pressed={isSelected}
+                              onClick={() => togglePromptBuilderGoal(goal.id)}
+                              className={`workspace-action-card rounded-[16px] border px-3 py-2 text-left transition ${
+                                isSelected
+                                  ? 'border-cyan-300 bg-cyan-50 text-cyan-950 shadow-[0_12px_28px_rgba(14,165,233,0.14)]'
+                                  : 'border-slate-200 bg-slate-50 text-slate-800 hover:border-cyan-200 hover:bg-cyan-50'
+                              }`}
+                            >
+                              <div className="text-xs font-semibold">{goal.label}</div>
+                              <div className="mt-1 text-[11px] leading-4 opacity-75">
+                                {goal.instruction}
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                       <label className="mt-4 grid gap-2 text-sm font-medium text-ink">
-                        <span>Ask the built-in assistant for help with this note lane</span>
+                        <span>Optional plain-language preference</span>
                         <textarea
                           value={assistantPreferenceRequest}
                           onChange={(event) => setAssistantPreferenceRequest(event.target.value)}
                           className="min-h-[92px] w-full rounded-lg border border-border bg-white p-3"
-                          placeholder={`Example: For ${noteType}, keep the note source-close, make the plan short, and avoid a standalone MSE unless the source clearly supports it.`}
+                          placeholder={`Example: For ${noteType}, make the HPI read like a story, keep MSE and risk source-close, and format it for ${providerSettings.outputDestination === 'Generic' ? 'my EHR' : getOutputDestinationMeta(providerSettings.outputDestination).label}.`}
                         />
                       </label>
                       <div className="mt-3 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          data-testid="build-safe-prompt-button"
+                          onClick={handleBuildPromptStudioDraft}
+                          className="aurora-primary-button rounded-xl px-4 py-2 text-sm font-medium"
+                        >
+                          Build safe prompt from selections
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleBuildPreferenceDraft()}
@@ -8303,10 +8364,44 @@ export function NewNoteForm() {
                           </>
                         ) : null}
                       </div>
+                      <div className="mt-4">
+                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Fast starts</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {[
+                            `Make ${noteType} more concise.`,
+                            'Keep the assessment more conservative and differential-aware.',
+                            'Make the plan shorter and easier to scan.',
+                            `Format this cleanly for ${providerSettings.outputDestination === 'Generic' ? 'my destination workflow' : getOutputDestinationMeta(providerSettings.outputDestination).label}.`,
+                          ].map((seed) => (
+                            <button
+                              key={seed}
+                              type="button"
+                              onClick={() => handleBuildPreferenceDraft(seed)}
+                              className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-800 transition hover:border-cyan-200 hover:bg-cyan-50"
+                            >
+                              {seed}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       {assistantPreferenceDraft ? (
                         <div className="aurora-soft-panel mt-4 rounded-[18px] p-4">
                           <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{assistantPersona.name} draft</div>
                           <div className="mt-2 whitespace-pre-wrap text-sm text-ink">{assistantPreferenceDraft}</div>
+                          {assistantPromptDraftWarnings.length ? (
+                            <div data-testid="assistant-prompt-draft-warning" className="mt-3 grid gap-2">
+                              {assistantPromptDraftWarnings.map((warning) => (
+                                <div key={warning.id} className={`rounded-[14px] border p-3 text-xs leading-5 ${
+                                  warning.severity === 'caution'
+                                    ? 'border-amber-200 bg-amber-50 text-amber-950'
+                                    : 'border-sky-200 bg-sky-50 text-sky-950'
+                                }`}>
+                                  <div className="font-semibold">{warning.label}</div>
+                                  <div className="mt-1">{warning.detail}</div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
@@ -8334,6 +8429,24 @@ export function NewNoteForm() {
                           This applies to the next draft immediately. Save it as a named prompt if the provider wants to reuse it for this note type.
                         </span>
                       </label>
+                      {providerPromptWarnings.length ? (
+                        <div data-testid="provider-prompt-safety-warning" className="mt-3 grid gap-2">
+                          {providerPromptWarnings.map((warning) => (
+                            <div key={warning.id} className={`rounded-[16px] border p-3 text-xs leading-5 ${
+                              warning.severity === 'caution'
+                                ? 'border-amber-200 bg-amber-50 text-amber-950'
+                                : 'border-sky-200 bg-sky-50 text-sky-950'
+                            }`}>
+                              <div className="font-semibold">{warning.label}</div>
+                              <div className="mt-1">{warning.detail}</div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div data-testid="provider-prompt-safety-checklist" className="mt-3 rounded-[16px] border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-950">
+                          Prompt safety check: no obvious identifiers, encounter-specific facts, unsafe auto-completion, or billing-overreach language detected.
+                        </div>
+                      )}
                       <div className="mt-3 flex flex-wrap gap-3">
                         <button
                           type="button"
