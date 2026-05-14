@@ -28,6 +28,8 @@ const SHOULD_START_SERVER = process.env.LIVE_NOTE_E2E_START_SERVER !== '0';
 const EXPECTED_GENERATION_MODE = process.env.LIVE_NOTE_E2E_EXPECT_GENERATION_MODE || process.env.LIVE_NOTE_EXPECT_GENERATION_MODE || '';
 const ALLOW_OPENAI_NOT_APPROVED_FALLBACK = process.env.LIVE_NOTE_E2E_ALLOW_APPROVAL_FALLBACK === '1'
   || process.env.LIVE_NOTE_ALLOW_APPROVAL_FALLBACK === '1';
+const IGNORE_HTTPS_ERRORS = process.env.LIVE_NOTE_E2E_IGNORE_HTTPS_ERRORS === '1'
+  || process.env.VERANOTE_LIVE_IGNORE_HTTPS_ERRORS === '1';
 
 function getGenerationModeIssue(meta) {
   const mode = meta?.pathUsed === 'live' ? 'live' : 'fallback';
@@ -844,6 +846,7 @@ async function main() {
     browser = await chromium.launch({ headless: true });
     const appUrl = new URL(APP_URL);
     const context = await browser.newContext({
+      ignoreHTTPSErrors: IGNORE_HTTPS_ERRORS,
       permissions: ['clipboard-read', 'clipboard-write'],
       viewport: { width: 1440, height: 960 },
     });

@@ -19,6 +19,8 @@ const APP_URL = process.env.LIVE_ASSISTANT_DRAFT_REWRITE_URL || 'http://localhos
 const AUTH_COOKIE = process.env.LIVE_ASSISTANT_QA_AUTH_COOKIE || 'veranote-provider-token';
 const QA_EMAIL = process.env.LIVE_ASSISTANT_QA_EMAIL || 'daniel.hale@veranote-beta.local';
 const SHOULD_START_SERVER = process.env.LIVE_ASSISTANT_QA_START_SERVER !== '0';
+const IGNORE_HTTPS_ERRORS = process.env.LIVE_ASSISTANT_QA_IGNORE_HTTPS_ERRORS === '1'
+  || process.env.VERANOTE_LIVE_IGNORE_HTTPS_ERRORS === '1';
 
 const ACTIVE_DRAFT = [
   'HPI:',
@@ -302,7 +304,10 @@ async function main() {
 
   const serverProcess = await ensureServer(APP_URL);
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 940 } });
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: IGNORE_HTTPS_ERRORS,
+    viewport: { width: 1440, height: 940 },
+  });
   const appUrl = new URL(APP_URL);
   await context.addCookies([{
     name: 'veranote-auth',
