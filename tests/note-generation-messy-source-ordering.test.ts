@@ -10,6 +10,10 @@ const MESSY_ORDERING_CASE_IDS = [
   'messy-out-of-order-followup-provider-story-prompt',
   'wellsky-inpatient-followup-scrambled-risk-mse-plan',
   'generic-previous-provider-referral-ocr-disputed-medical-psych-history',
+  'paragraph-dump-followup-misspelled-two-paragraph-prompt',
+  'ocr-referral-med-list-lab-conflict-no-clearance',
+  'run-on-ambient-inpatient-followup-risk-mse-gaps',
+  'therapy-dictation-scattered-social-history-homework-risk',
 ];
 
 describe('note generation messy source ordering', () => {
@@ -30,9 +34,10 @@ describe('note generation messy source ordering', () => {
     ].join('\n')).join('\n\n');
 
     expect(combinedText).toMatch(/out of order|wrong order|chaotic|pasted/i);
-    expect(combinedText).toMatch(/parag|irratated|concetration|anxity|slep|Side efects/i);
+    expect(combinedText).toMatch(/parag|irratated|concetration|anxity|slep|deprssion|embrassed|lithum|depokte|Side efects/i);
     expect(combinedText).toMatch(/scanned|OCR|previous provider|copied forward|referral/i);
-    expect(combinedText).toMatch(/Preferred prompt name|Named prompt|Story Follow-Up/i);
+    expect(combinedText).toMatch(/Preferred prompt name|Named prompt|Story Follow-Up|two paragraph story/i);
+    expect(combinedText).toMatch(/going to snap|med clear\?|one thought record|bus did not come/i);
 
     for (const item of cases) {
       const sourceInput = buildSourceInputFromSections(item.sourceSections);
