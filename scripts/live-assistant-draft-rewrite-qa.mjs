@@ -239,7 +239,7 @@ async function askAssistant(page, prompt) {
   const send = page.getByTestId('assistant-send-button');
   await input.waitFor({ state: 'visible', timeout: 15000 });
   await send.waitFor({ state: 'visible', timeout: 15000 });
-  const beforeText = await page.locator('[data-testid="assistant-message"][data-assistant-message-latest="true"] [data-testid="assistant-message-body"]').innerText().catch(() => '');
+  const beforeAssistantCount = await page.locator('[data-testid="assistant-message"]').count();
   await input.fill(prompt);
   await page.waitForFunction(
     () => {
@@ -251,15 +251,16 @@ async function askAssistant(page, prompt) {
   );
   await send.click();
   await page.waitForFunction(
-    (previous) => {
-      const latest = document.querySelector('[data-testid="assistant-message"][data-assistant-message-latest="true"] [data-testid="assistant-message-body"]');
-      const text = latest?.textContent || '';
-      return text && text !== previous;
+    (previousCount) => {
+      const assistantMessages = document.querySelectorAll('[data-testid="assistant-message"]');
+      const latest = assistantMessages.item(assistantMessages.length - 1);
+      const latestBody = latest?.querySelector('[data-testid="assistant-message-body"]');
+      return assistantMessages.length > previousCount && Boolean(latestBody?.textContent?.trim());
     },
-    beforeText,
+    beforeAssistantCount,
     { timeout: 30000 },
   );
-  const latest = page.locator('[data-testid="assistant-message"][data-assistant-message-latest="true"]');
+  const latest = page.locator('[data-testid="assistant-message"]').last();
   await latest.scrollIntoViewIfNeeded();
   return latest.locator('[data-testid="assistant-message-body"]').innerText();
 }
