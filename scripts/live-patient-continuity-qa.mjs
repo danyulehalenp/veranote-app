@@ -11,15 +11,45 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import http from 'node:http';
+import https from 'node:https';
 import path from 'node:path';
 
 const APP_ORIGIN = process.env.LIVE_PATIENT_CONTINUITY_ORIGIN || 'http://localhost:3001';
+const QA_EMAIL = process.env.LIVE_PATIENT_CONTINUITY_QA_EMAIL || 'daniel.hale@veranote-beta.local';
 const OUTPUT_DIR = process.env.LIVE_PATIENT_CONTINUITY_OUTPUT_DIR || 'test-results';
 const SHOULD_START_SERVER = process.env.LIVE_PATIENT_CONTINUITY_START_SERVER !== '0';
+const IGNORE_HTTPS_ERRORS = process.env.LIVE_PATIENT_CONTINUITY_IGNORE_HTTPS_ERRORS === '1'
+  || process.env.VERANOTE_LIVE_IGNORE_HTTPS_ERRORS === '1';
+
+let browserPage = null;
+
+async function readLocalEnvValue(key) {
+  if (process.env[key]) {
+    return process.env[key];
+  }
+
+  try {
+    const contents = await fs.readFile(path.resolve('.env.local'), 'utf8');
+    const line = contents
+      .split(/\r?\n/)
+      .find((entry) => entry.trim().startsWith(`${key}=`));
+    if (!line) {
+      return null;
+    }
+
+    return line
+      .slice(line.indexOf('=') + 1)
+      .trim()
+      .replace(/^['"]|['"]$/g, '') || null;
+  } catch {
+    return null;
+  }
+}
 
 function requestUrl(url) {
   return new Promise((resolve) => {
-    const request = http.get(url, (response) => {
+    const client = url.startsWith('https:') ? https : http;
+    const request = client.get(url, (response) => {
       response.resume();
       resolve(Boolean(response.statusCode && response.statusCode < 500));
     });
@@ -99,7 +129,91 @@ async function ensureServer() {
   return child;
 }
 
+async function waitForVisible(locator, timeout = 2500) {
+  try {
+    await locator.waitFor({ state: 'visible', timeout });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function signInForQa(page, targetUrl) {
+  const accessCode = process.env.LIVE_PATIENT_CONTINUITY_ACCESS_CODE || await readLocalEnvValue('VERANOTE_BETA_ACCESS_CODE');
+  if (!accessCode) {
+    throw new Error('Live patient continuity QA reached sign-in. Set LIVE_PATIENT_CONTINUITY_ACCESS_CODE or VERANOTE_BETA_ACCESS_CODE.');
+  }
+
+  await page.locator('input[type="email"]').first().waitFor({ state: 'visible', timeout: 15000 });
+  await page.locator('input[type="password"]').first().waitFor({ state: 'visible', timeout: 15000 });
+  await page.locator('input[type="email"]').first().fill(QA_EMAIL);
+  await page.locator('input[type="password"]').first().fill(accessCode);
+  await page.getByRole('button', { name: /sign in/i }).click();
+  await page.waitForURL((url) => !url.pathname.includes('/sign-in'), { timeout: 30000 });
+  await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+}
+
+async function ensureBrowserAuth() {
+  let chromium;
+  try {
+    ({ chromium } = await import('playwright'));
+  } catch {
+    throw new Error('Playwright is required for authenticated production continuity QA.');
+  }
+
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: IGNORE_HTTPS_ERRORS,
+    viewport: { width: 1360, height: 900 },
+  });
+  const page = await context.newPage();
+  const targetUrl = `${APP_ORIGIN}/dashboard/new-note?fresh=live-patient-continuity-qa`;
+  await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+
+  if (page.url().includes('/sign-in')) {
+    await signInForQa(page, targetUrl);
+  }
+
+  const ready = await waitForVisible(page.locator('body'), 15000);
+  if (!ready || page.url().includes('/sign-in')) {
+    await browser.close();
+    throw new Error(`Unable to authenticate live patient continuity QA at ${APP_ORIGIN}.`);
+  }
+
+  browserPage = page;
+  return browser;
+}
+
 async function api(pathname, options = {}) {
+  if (browserPage) {
+    return browserPage.evaluate(async ({ pathname: requestPath, options: requestOptions }) => {
+      const response = await fetch(requestPath, {
+        method: requestOptions.method || 'GET',
+        headers: {
+          'content-type': 'application/json',
+          ...(requestOptions.headers || {}),
+        },
+        credentials: 'include',
+        body: requestOptions.body,
+      });
+      const text = await response.text();
+      let body = null;
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {
+        body = { raw: text.slice(0, 240) };
+      }
+
+      return {
+        response: {
+          ok: response.ok,
+          status: response.status,
+        },
+        body,
+      };
+    }, { pathname, options });
+  }
+
   const response = await fetch(`${APP_ORIGIN}${pathname}`, {
     ...options,
     headers: {
@@ -150,6 +264,7 @@ async function writeReport(report) {
 
 async function main() {
   const server = await ensureServer();
+  const browser = APP_ORIGIN.startsWith('https:') ? await ensureBrowserAuth() : null;
   const now = new Date();
   const qaSuffix = now.getTime();
   const patientLabel = `QA continuity patient ${qaSuffix}`;
@@ -272,6 +387,9 @@ async function main() {
       process.exit(1);
     }
   } finally {
+    if (browser) {
+      await browser.close();
+    }
     if (server) {
       server.kill('SIGTERM');
     }
