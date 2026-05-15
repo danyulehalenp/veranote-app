@@ -2942,6 +2942,30 @@ export function ReviewWorkspace({
       });
     });
 
+    if (!rows.length && draftSections.length && sourceBlocks.length) {
+      const fallbackSection = draftSections.find((section) => section.body.trim()) || draftSections[0];
+      const fallbackBlock = sourceBlocks.find((block) => block.text.trim()) || sourceBlocks[0];
+
+      if (fallbackSection && fallbackBlock) {
+        rows.push({
+          id: `${fallbackSection.anchor}-draft-trace-source-packet-fallback`,
+          sectionAnchor: fallbackSection.anchor,
+          sectionHeading: fallbackSection.heading,
+          sentence: extractFirstReviewSentence(fallbackSection.body)
+            || 'No sentence-level match was found yet. Open a source block to inspect the source packet before approving this wording.',
+          linkedBlocks: [{
+            link: {
+              blockId: fallbackBlock.id,
+              score: 0,
+              overlapTerms: [],
+              signal: 'weak-overlap' as const,
+            },
+            block: fallbackBlock,
+          }],
+        });
+      }
+    }
+
     return rows
       .sort((left, right) => (right.linkedBlocks[0]?.link.score || 0) - (left.linkedBlocks[0]?.link.score || 0))
       .slice(0, 8);
@@ -4020,7 +4044,18 @@ export function ReviewWorkspace({
                   sectionHeading: section.heading,
                   sentence: extractFirstReviewSentence(section.body) || 'Section-level source support available. Open a source chip to inspect the likely supporting source block.',
                   links: evidence.links,
-                }] : []);
+                }] : (sourceBlocks.length ? [{
+                  id: `${section.anchor}-section-source-packet-fallback`,
+                  sectionAnchor: section.anchor,
+                  sectionHeading: section.heading,
+                  sentence: extractFirstReviewSentence(section.body) || 'No sentence-level match was found yet. Open a source block to inspect the source packet before approving this wording.',
+                  links: [{
+                    blockId: sourceBlocks[0].id,
+                    score: 0,
+                    overlapTerms: [],
+                    signal: 'weak-overlap' as const,
+                  }],
+                }] : []));
               const isFirstOpenSection = firstOpenReviewSection?.anchor === section.anchor;
               const firstEvidenceLink = evidence?.links[0];
               const firstEvidenceBlock = firstEvidenceLink
@@ -4966,7 +5001,18 @@ export function ReviewWorkspace({
                       sectionHeading: section.heading,
                       sentence: extractFirstReviewSentence(section.body) || 'Section-level source support available. Open a source chip to inspect the likely supporting source block.',
                       links: evidence.links,
-                    }] : []);
+                    }] : (sourceBlocks.length ? [{
+                      id: `${section.anchor}-embedded-section-source-packet-fallback`,
+                      sectionAnchor: section.anchor,
+                      sectionHeading: section.heading,
+                      sentence: extractFirstReviewSentence(section.body) || 'No sentence-level match was found yet. Open a source block to inspect the source packet before approving this wording.',
+                      links: [{
+                        blockId: sourceBlocks[0].id,
+                        score: 0,
+                        overlapTerms: [],
+                        signal: 'weak-overlap' as const,
+                      }],
+                    }] : []));
                   const isFirstOpenSection = firstOpenReviewSection?.anchor === section.anchor;
                   const isActiveReviewTarget = isFirstOpenSection && hasOpenReviewSections;
                   const embeddedReviewPrompt = !hasOpenReviewSections
