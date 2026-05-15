@@ -419,13 +419,29 @@ function preservePatientContinuityBoundaries(note: string, sourceInput: string) 
  return `${cleaned.trim()}\n\nContinuity / Prior Context:\n${continuityLines.join(' ')}`;
 }
 
-function preserveDiagnosticUncertainty(note: string, sourceInput: string) {
- const sourceHasDiagnosticUncertaintyCue = /\b(?:psychosis concern|past psychosis|past concern about psychosis|differential|rule[-\s]?out|r\/o|diagnostic uncertainty|medical red flags?|medical contributor|substance timing|stimulant|no confirmed prior .*diagnosis|manic-like|cannabis use)\b/i.test(sourceInput)
-  && /\b(?:psychosis|diagnos|differential|rule[-\s]?out|medical|substance|stimulant|insomnia|bipolar|manic|cannabis)\b/i.test(sourceInput);
- if (!sourceHasDiagnosticUncertaintyCue) return note;
- if (/\b(?:differential|diagnostic uncertainty|uncertain|uncertainty|not established|not enough|cannot determine|reassess|rule[-\s]?out)\b/i.test(note)) return note;
+function hardenMedicationAdherenceWording(note: string, sourceInput: string) {
+ const sourceHasMissedDoseCue = /\b(?:miss(?:ed|ing)?|forgot|forget|rushed|remember)\b.{0,80}\b(?:dose|doses|medicine|medication|medications|propranolol|sertraline|escitalopram|lexapro)\b|\b(?:dose|doses|medicine|medication|medications|propranolol|sertraline|escitalopram|lexapro)\b.{0,80}\b(?:miss(?:ed|ing)?|forgot|forget|rushed|remember)\b/i.test(sourceInput);
+ if (!sourceHasMissedDoseCue) return note;
 
- return `${note.trim()}\n\nDiagnostic Uncertainty / Source Limitation:\nDiagnostic uncertainty remains from the provided source; mixed cues such as past psychosis concern, insomnia, stimulant request, medical factors, or substance factors should not be converted into a confirmed diagnosis.`;
+ return note
+  .replace(/\bwhen\s+propranolol\s+is\s+taken\s+as\s+prescribed\b/gi, 'when propranolol is remembered/taken, while missed morning doses are also documented')
+  .replace(/\bpropranolol\s+is\s+taken\s+as\s+prescribed\b/gi, 'propranolol is remembered/taken, with missed doses also documented')
+  .replace(/\btaking\s+(?:medications|medicine|propranolol|sertraline|escitalopram|Lexapro)\s+as\s+prescribed\b/gi, 'taking medication as reported, with missed doses also documented')
+  .replace(/\btaking\s+as\s+prescribed\b/gi, 'taking as reported, with missed doses also documented')
+  .replace(/\bfully\s+adherent\b/gi, 'missed doses documented')
+  .replace(/\bperfect\s+adherence\b/gi, 'missed doses documented')
+  .replace(/\badherence\s+is\s+good\b/gi, 'adherence includes documented missed doses')
+  .replace(/\bgood\s+adherence\b/gi, 'adherence includes documented missed doses')
+  .replace(/\badherent\s+with\s+([A-Za-z][\w-]*)\b/gi, 'taking $1 as reported, with missed doses also documented');
+}
+
+function preserveDiagnosticUncertainty(note: string, sourceInput: string) {
+ const sourceHasDiagnosticUncertaintyCue = /\b(?:psychosis concern|past psychosis|past concern about psychosis|differential|rule[-\s]?out|r\/o|diagnostic uncertainty|diagnos(?:is|tic).{0,80}(?:uncertain|not confirmed|not established)|medical red flags?|medical contributor|substance timing|stimulant|no confirmed prior .*diagnosis|no formal diagnostic assessment|without formal diagnostic assessment|do not diagnose|do not want .*label unless .*sure|not enough to diagnose|manic-like|cannabis use)\b/i.test(sourceInput)
+  && /\b(?:psychosis|diagnos|differential|rule[-\s]?out|medical|substance|stimulant|insomnia|bipolar|manic|cannabis|ptsd|trauma|audit-c|alcohol)\b/i.test(sourceInput);
+ if (!sourceHasDiagnosticUncertaintyCue) return note;
+ if (/\b(?:differential|diagnostic uncertainty|uncertain|uncertainty|not confirmed|not established|not enough|cannot determine|reassess|rule[-\s]?out|no formal diagnostic assessment)\b/i.test(note)) return note;
+
+ return `${note.trim()}\n\nDiagnostic Uncertainty / Source Limitation:\nDiagnostic uncertainty remains from the provided source; diagnostic labels, trauma-related impressions, substance-related diagnoses, and medical or substance confounders should not be converted into confirmed diagnoses without source-supported assessment.`;
 }
 
 function preservePsychosisObservationConflict(note: string, sourceInput: string) {
@@ -536,7 +552,8 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withMatDoseDecisionLimit = preservePendingMatDoseDecision(withLabLimitsPreserved, input.sourceInput);
  const withSourceBoundRisk = hardenSourceBoundRiskWording(withMatDoseDecisionLimit, input.sourceInput);
  const withContinuityBoundaries = preservePatientContinuityBoundaries(withSourceBoundRisk, input.sourceInput);
- const withDiagnosticUncertainty = preserveDiagnosticUncertainty(withContinuityBoundaries, input.sourceInput);
+ const withMedicationAdherenceHardened = hardenMedicationAdherenceWording(withContinuityBoundaries, input.sourceInput);
+ const withDiagnosticUncertainty = preserveDiagnosticUncertainty(withMedicationAdherenceHardened, input.sourceInput);
  const withPsychosisConflictPreserved = preservePsychosisObservationConflict(withDiagnosticUncertainty, input.sourceInput);
  const withRestraintSourceStatus = preserveRestraintSourceStatus(withPsychosisConflictPreserved, input.sourceInput);
  const withoutUnsupportedMedicationAction = removeUnsupportedMedicationActionPlan(withRestraintSourceStatus, input.sourceInput);
