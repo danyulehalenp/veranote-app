@@ -6079,6 +6079,23 @@ export function NewNoteForm() {
 
             {sourceWorkspaceMode === 'manual' || sourceWorkspaceMode === 'dictation' || sourceWorkspaceMode === 'transcript' ? (
               <div className="grid gap-3">
+                <details className="workspace-subpanel workspace-expandable rounded-[20px] p-3.5">
+                  <summary className="cursor-pointer">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Optional source helpers</div>
+                        <div className="mt-1 text-sm font-semibold text-white">Documents and prior notes live here when you need them.</div>
+                        <p className="mt-1 text-xs leading-5 text-cyan-50/64">
+                          Keep this closed for a cleaner workspace. Open it to import OCR/referral text or pull a prior continuity snapshot into Box 1.
+                        </p>
+                      </div>
+                      <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
+                        Open helpers
+                      </div>
+                    </div>
+                  </summary>
+
+                  <div className="mt-3 grid gap-3">
                 <div id="document-source-intake">
                   <DocumentSourceIntake onCommitToSource={handleReviewedDocumentSourceCommit} />
                 </div>
@@ -6338,6 +6355,8 @@ export function NewNoteForm() {
                     </div>
                   ) : null}
                 </div>
+                  </div>
+                </details>
 
                 <div className="workspace-subpanel rounded-[20px] p-3">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">

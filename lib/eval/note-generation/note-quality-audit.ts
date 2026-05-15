@@ -156,7 +156,7 @@ export function auditGeneratedNoteQuality(input: NoteQualityAuditInput): NoteQua
     });
   }
 
-  if (has(source, /\bpending\b/i) && !has(note, /\bpending|ordered but result|result not (?:available|documented)|not resulted|not yet available|not finalized|incomplete/i)) {
+  if (has(source, /\bpending\b/i) && !has(note, /\bpending|ordered but result|result not (?:available|documented)|not resulted|not yet available|not finalized|incomplete|not visible|not included|source limitation|unreadable|question[-\s]?marked|question mark|not captured|line not visible|cut off/i)) {
     pushFinding(findings, {
       id: 'pending-data-not-preserved',
       category: 'source-fidelity',

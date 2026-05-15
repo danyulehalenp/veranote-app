@@ -28,6 +28,8 @@ describe('post-note CPT recommendation regression', () => {
     expect(caseText).toMatch(/Medical decision-making/i);
     expect(caseText).toMatch(/Audio-only telehealth/i);
     expect(caseText).toMatch(/Patient education/i);
+    expect(caseText).toMatch(/Family Therapy Progress Note/i);
+    expect(caseText).toMatch(/Group Therapy Progress Note/i);
     expect(caseText).toMatch(/CPT preference 99214/i);
     expect(caseText).toMatch(/EHR destination: Tebra\/Kareo/i);
     expect(caseText).toMatch(/too thin|doing okay/i);

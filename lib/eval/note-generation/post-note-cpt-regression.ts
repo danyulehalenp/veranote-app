@@ -303,6 +303,66 @@ export const postNoteCptRegressionCases: PostNoteCptRegressionCase[] = [
     forbiddenText: [/automatically pair/i, /guaranteed/i],
   },
   {
+    id: 'family-therapy-with-parent-present-review-only',
+    title: 'Family therapy content produces a family-psychotherapy review candidate without final code certainty',
+    noteType: 'Family Therapy Progress Note',
+    completedNoteText: [
+      'Family psychotherapy session with patient and mother present.',
+      'Session addressed communication patterns, safety-plan support, and boundary setting.',
+      'Family therapy time: 50 minutes.',
+      'No medication management was provided.',
+    ].join(' '),
+    expectedCandidates: [
+      { family: 'Family psychotherapy review', strength: 'stronger-documentation-support', candidateCode: '90847' },
+    ],
+    forbiddenCandidates: [
+      { family: 'Office / outpatient E/M family' },
+      { family: 'Psychotherapy add-on with E/M family' },
+    ],
+    requiredText: [/Family-therapy timing is visible/i, /patient was present/i, /not definitive billing recommendations/i],
+    forbiddenText: [/must bill 90847/i, /guaranteed/i],
+  },
+  {
+    id: 'collateral-only-family-presence-no-family-therapy-forcing',
+    title: 'Collateral gathering with family present does not force family psychotherapy support',
+    noteType: 'Outpatient Psych Follow-Up',
+    completedNoteText: [
+      'Mother provided collateral only and was not present for therapy.',
+      'Medication adherence and side effects reviewed with patient.',
+      'No distinct family therapy intervention or family-therapy minutes were documented.',
+      'Total time: 22 minutes.',
+    ].join(' '),
+    expectedCandidates: [
+      { family: 'Office / outpatient E/M family', strength: 'stronger-documentation-support' },
+    ],
+    forbiddenCandidates: [
+      { family: 'Family psychotherapy review' },
+      { family: 'Psychotherapy add-on with E/M family' },
+      { family: 'Psychotherapy-only family' },
+    ],
+    requiredText: [/Medication-management or prescribing work appears documented/i, /not definitive billing recommendations/i],
+    forbiddenText: [/90846/i, /90847/i, /must bill/i, /guaranteed/i],
+  },
+  {
+    id: 'group-therapy-skills-session-review-only',
+    title: 'Group therapy content produces a group-psychotherapy review candidate while attendance-only remains guarded',
+    noteType: 'Group Therapy Progress Note',
+    completedNoteText: [
+      'DBT skills group psychotherapy session focused on distress tolerance and interpersonal effectiveness.',
+      'Client practiced skill rehearsal and identified homework.',
+      'Group therapy time: 60 minutes.',
+    ].join(' '),
+    expectedCandidates: [
+      { family: 'Group psychotherapy review', strength: 'stronger-documentation-support', candidateCode: '90853' },
+    ],
+    forbiddenCandidates: [
+      { family: 'Office / outpatient E/M family' },
+      { family: 'Psychotherapy add-on with E/M family' },
+    ],
+    requiredText: [/Group-therapy timing is visible/i, /group psychotherapy rather than attendance only/i, /not definitive billing recommendations/i],
+    forbiddenText: [/must bill 90853/i, /guaranteed/i],
+  },
+  {
     id: 'thin-completed-note-no-family-forcing',
     title: 'Thin completed note does not force a CPT-support family',
     noteType: 'Outpatient Psych Follow-Up',

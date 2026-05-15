@@ -795,6 +795,153 @@ const THERAPYNOTES_NOTE_FOCUS_TARGETS: Partial<Record<OutputNoteFocus, OutputFie
   ],
 };
 
+const SIMPLEPRACTICE_NOTE_FOCUS_TARGETS: Partial<Record<OutputNoteFocus, OutputFieldTarget[]>> = {
+  'outpatient-evaluation': [
+    {
+      id: 'simplepractice-intake-presenting-concerns',
+      label: 'Presenting concerns / HPI',
+      aliases: ['presenting problem', 'chief complaint', 'chief concern', 'hpi', 'reason for visit'],
+      note: 'Use for the intake narrative, chief concern, and current symptom story.',
+    },
+    {
+      id: 'simplepractice-intake-history',
+      label: 'History / biopsychosocial',
+      aliases: ['psychiatric history', 'social history', 'family history', 'trauma history', 'substance history', 'prior treatment'],
+      note: 'Use for background history and copied/referral material that remains source-attributed.',
+    },
+    {
+      id: 'simplepractice-intake-mse-risk',
+      label: 'MSE / risk',
+      aliases: ['mental status', 'objective', 'observations', 'risk assessment', 'safety'],
+      note: 'Use for source-supported observations, mental status, and risk wording.',
+    },
+    {
+      id: 'simplepractice-intake-assessment-plan',
+      label: 'Assessment / plan',
+      aliases: ['assessment', 'diagnosis', 'clinical impression', 'plan', 'recommendations'],
+      note: 'Use for diagnostic framing, treatment recommendations, safety planning, and follow-up.',
+    },
+  ],
+  'outpatient-follow-up': [
+    {
+      id: 'simplepractice-progress-data',
+      label: 'Data / subjective',
+      aliases: ['data', 'subjective', 'interval update', 'hpi', 'symptom review'],
+      note: 'Use for DAP/SOAP-style session data, interval course, and patient-reported symptoms.',
+    },
+    {
+      id: 'simplepractice-progress-assessment',
+      label: 'Assessment',
+      aliases: ['assessment', 'clinical status', 'response', 'progress'],
+      note: 'Use for source-supported response to treatment, diagnosis framing, and current clinical status.',
+    },
+    {
+      id: 'simplepractice-progress-plan',
+      label: 'Plan / homework',
+      aliases: ['plan', 'interventions', 'homework', 'next steps', 'safety plan'],
+      note: 'Use for interventions, homework, follow-up, safety actions, and medication/therapy next steps.',
+    },
+  ],
+};
+
+const VALANT_NOTE_FOCUS_TARGETS: Partial<Record<OutputNoteFocus, OutputFieldTarget[]>> = {
+  'outpatient-evaluation': [
+    {
+      id: 'valant-intake-presenting-problem',
+      label: 'Presenting problem / HPI',
+      aliases: ['presenting problem', 'chief complaint', 'chief concern', 'hpi', 'interval update'],
+      note: 'Use for the intake story and current presenting concern.',
+    },
+    {
+      id: 'valant-intake-psych-history',
+      label: 'Psych / social history',
+      aliases: ['psychiatric history', 'psych history', 'social history', 'family psychiatric', 'trauma', 'substance history'],
+      note: 'Use for historical and collateral material, keeping source limitations explicit.',
+    },
+    {
+      id: 'valant-intake-mse-risk',
+      label: 'MSE / risk',
+      aliases: ['mental status', 'observations', 'risk assessment', 'safety'],
+      note: 'Use for observable MSE findings and risk/protective-factor wording.',
+    },
+    {
+      id: 'valant-intake-assessment-plan',
+      label: 'Assessment / treatment plan',
+      aliases: ['assessment', 'diagnosis', 'formulation', 'plan', 'treatment plan'],
+      note: 'Use for formulation, diagnosis framing, treatment plan, and next steps.',
+    },
+  ],
+  'outpatient-follow-up': [
+    {
+      id: 'valant-progress-interval',
+      label: 'Interval / symptoms',
+      aliases: ['interval update', 'subjective', 'hpi', 'symptom review'],
+      note: 'Use for interval symptom course, medication response, and functional update.',
+    },
+    {
+      id: 'valant-progress-mse-risk',
+      label: 'MSE / risk update',
+      aliases: ['mental status', 'observations', 'risk assessment', 'safety'],
+      note: 'Use for updated MSE and risk details.',
+    },
+    {
+      id: 'valant-progress-assessment-plan',
+      label: 'Assessment / plan',
+      aliases: ['assessment', 'diagnosis', 'clinical status', 'plan'],
+      note: 'Use for clinical status, medication/therapy plan, follow-up, and safety planning.',
+    },
+  ],
+};
+
+const ICANOTES_NOTE_FOCUS_TARGETS: Partial<Record<OutputNoteFocus, OutputFieldTarget[]>> = {
+  'inpatient-psych-evaluation': [
+    {
+      id: 'icanotes-initial-narrative',
+      label: 'Narrative / chief concern',
+      aliases: ['narrative', 'chief complaint', 'chief concern', 'hpi', 'admission reason'],
+      note: 'Use for the admission story and chief concern before template-driven detail entry.',
+    },
+    {
+      id: 'icanotes-initial-history',
+      label: 'History fields',
+      aliases: ['psychiatric history', 'medical history', 'social history', 'family history', 'substance history'],
+      note: 'Use for history-heavy portions, preserving source attribution for referral/collateral facts.',
+    },
+    {
+      id: 'icanotes-initial-mse-risk',
+      label: 'MSE / risk',
+      aliases: ['mental status', 'risk assessment', 'safety', 'observations'],
+      note: 'Use for mental status, risk, and safety wording that should remain source-faithful.',
+    },
+    {
+      id: 'icanotes-initial-assessment-plan',
+      label: 'Assessment / plan',
+      aliases: ['assessment', 'diagnosis', 'plan', 'intervention'],
+      note: 'Use for formulation and plan language after source conflicts are preserved.',
+    },
+  ],
+  'inpatient-psych-follow-up': [
+    {
+      id: 'icanotes-progress-narrative',
+      label: 'Progress narrative',
+      aliases: ['interval update', 'symptom review', 'follow up', 'hpi'],
+      note: 'Use for the day-to-day progress narrative beside template-driven ICANotes fields.',
+    },
+    {
+      id: 'icanotes-progress-mse-risk',
+      label: 'MSE / safety update',
+      aliases: ['mental status', 'risk assessment', 'safety', 'observations'],
+      note: 'Use for updated MSE and safety observations.',
+    },
+    {
+      id: 'icanotes-progress-plan',
+      label: 'Intervention / plan',
+      aliases: ['intervention', 'plan', 'medications', 'proposed discharge'],
+      note: 'Use for interventions, medication plan language, discharge barriers, and follow-up.',
+    },
+  ],
+};
+
 function normalizeNoteFocusValue(value: string) {
   return value.trim().toLowerCase();
 }
@@ -900,6 +1047,18 @@ export function getOutputDestinationFieldTargets(destination: OutputDestination,
 
   if (destination === 'TherapyNotes' && THERAPYNOTES_NOTE_FOCUS_TARGETS[noteFocus]) {
     return THERAPYNOTES_NOTE_FOCUS_TARGETS[noteFocus] || OUTPUT_DESTINATION_META[destination].fieldTargets;
+  }
+
+  if (destination === 'SimplePractice' && SIMPLEPRACTICE_NOTE_FOCUS_TARGETS[noteFocus]) {
+    return SIMPLEPRACTICE_NOTE_FOCUS_TARGETS[noteFocus] || OUTPUT_DESTINATION_META[destination].fieldTargets;
+  }
+
+  if (destination === 'Valant' && VALANT_NOTE_FOCUS_TARGETS[noteFocus]) {
+    return VALANT_NOTE_FOCUS_TARGETS[noteFocus] || OUTPUT_DESTINATION_META[destination].fieldTargets;
+  }
+
+  if (destination === 'ICANotes' && ICANOTES_NOTE_FOCUS_TARGETS[noteFocus]) {
+    return ICANOTES_NOTE_FOCUS_TARGETS[noteFocus] || OUTPUT_DESTINATION_META[destination].fieldTargets;
   }
 
   return OUTPUT_DESTINATION_META[destination].fieldTargets;

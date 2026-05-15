@@ -64,6 +64,30 @@ function hasCrisisWork(text: string) {
   ]);
 }
 
+function hasFamilyTherapyContent(text: string) {
+  if (/\b(?:family|parent|caregiver|guardian)\b.{0,80}\b(?:only provided collateral|history only|not present|was not present)\b/i.test(text)) {
+    return false;
+  }
+
+  return hasMatch(text, [
+    /\b(?:family|parent|caregiver|guardian)\s+(?:psychotherapy|therapy|session|intervention)\b/i,
+    /\b(?:family|parent|caregiver|guardian)\b.{0,80}\b(?:communication|conflict|support plan|boundary|safety plan|coping skills|psychoeducation)\b.{0,80}\b(?:processed|reframed|practiced|reviewed|developed|addressed)\b/i,
+    /\b(?:90846|90847)\b/,
+  ]);
+}
+
+function hasGroupTherapyContent(text: string) {
+  if (/\bgroup\b.{0,80}\b(?:not attended|did not attend|attendance not documented|no group)\b/i.test(text)) {
+    return false;
+  }
+
+  return hasMatch(text, [
+    /\bgroup\s+(?:psychotherapy|therapy|session|intervention)\b/i,
+    /\b(?:process|skills|dbt|cbt|psychoeducation)\s+group\b/i,
+    /\b(?:90853)\b/,
+  ]);
+}
+
 function hasCommunicationComplexity(text: string) {
   return hasMatch(text, [
     /\b(interpreter|translator|guardian conflict|caregiver conflict|third party|reportable|sentinel event|communication barrier|maladaptive communication|disruptive communication)\b/,
@@ -72,6 +96,7 @@ function hasCommunicationComplexity(text: string) {
 
 function stripExplicitMissingCptSignals(text: string) {
   return text
+    .replace(/\b(?:no|without)\b[^.]{0,140}\b(?:medication[-\s]management|prescribing|psychotherapy|therapy|family[-\s]therapy|group[-\s]therapy|therapy intervention)\b[^.]{0,100}\b(?:provided|performed|occurred|done|completed|documented|visible|present)\b/gi, ' ')
     .replace(/\bno\b[^.]{0,180}\b(?:encounter time|total time|time|mdm|medical decision[-\s]making|psychotherapy|therapy|psychotherapy intervention|medication[-\s]management|prescribing|risk complexity|medical decision[-\s]making details?)\b[^.]{0,100}\b(?:visible|documented|available|present|listed|noted|details?|work|support)\b/gi, ' ')
     .replace(/\bwithout\b[^.]{0,140}\b(?:time|mdm|medical decision[-\s]making|psychotherapy|therapy|medication[-\s]management|prescribing|risk complexity)\b[^.]{0,80}\b(?:visible|documented|available|present|listed|noted|details?|work|support)\b/gi, ' ')
     .replace(/\b(?:time|mdm|medical decision[-\s]making|psychotherapy|therapy|medication[-\s]management|prescribing|risk complexity)\b[^.]{0,80}\b(?:is|are)\s+not\s+(?:visible|documented|available|present|listed|noted)\b/gi, ' ')
@@ -208,6 +233,8 @@ export function evaluatePostNoteCptRecommendations(
   const continuityOnlyReview = continuityRecallContext && !hasCurrentEncounterCodingSupport(evidenceNote);
 
   const psychotherapyContent = hasPsychotherapyContent(evidenceNote);
+  const familyTherapyContent = hasFamilyTherapyContent(evidenceNote);
+  const groupTherapyContent = hasGroupTherapyContent(evidenceNote);
   const medicationManagement = hasMedicationManagement(evidenceNote);
   const mdmSupport = hasMdmSupport(evidenceNote);
   const crisisWork = hasCrisisWork(evidenceNote) || /crisis/i.test(noteType);
@@ -218,6 +245,12 @@ export function evaluatePostNoteCptRecommendations(
     || Boolean(encounterSupport?.telehealthModality && encounterSupport.telehealthModality !== 'not-applicable');
   const psychotherapyTimeDocumented = Boolean(compact(encounterSupport?.psychotherapyMinutes))
     || /\b(psychotherapy|therapy)\s*(?:time|minutes|min)?[:\s-]*\d{1,3}\s*(?:min|mins|minute|minutes)\b/i.test(completedNoteText);
+  const familyTherapyTimeDocumented = psychotherapyTimeDocumented
+    || /\b(?:family|parent|caregiver|guardian)\s+(?:psychotherapy|therapy|session)\b.{0,80}\b\d{1,3}\s*(?:min|mins|minute|minutes)\b/i.test(completedNoteText)
+    || /\b\d{1,3}\s*(?:min|mins|minute|minutes)\b.{0,80}\b(?:family|parent|caregiver|guardian)\s+(?:psychotherapy|therapy|session)\b/i.test(completedNoteText);
+  const groupTherapyTimeDocumented = psychotherapyTimeDocumented
+    || /\bgroup\s+(?:psychotherapy|therapy|session)\b.{0,80}\b\d{1,3}\s*(?:min|mins|minute|minutes)\b/i.test(completedNoteText)
+    || /\b\d{1,3}\s*(?:min|mins|minute|minutes)\b.{0,80}\bgroup\s+(?:psychotherapy|therapy|session)\b/i.test(completedNoteText);
   const totalTimeDocumented = Boolean(compact(encounterSupport?.totalMinutes)) || timeSignals.length > 0;
 
   if (!completedNoteText) {
@@ -335,7 +368,49 @@ export function evaluatePostNoteCptRecommendations(
     });
   }
 
-  if (!medicationManagement && (psychotherapyContent || /therapy/i.test(normalizedNoteType))) {
+  if (!medicationManagement && familyTherapyContent) {
+    addCandidate(candidates, {
+      family: 'Family psychotherapy review',
+      candidateCodes: ['90846', '90847'],
+      strength: familyTherapyTimeDocumented ? 'stronger-documentation-support' : 'possible-review',
+      why: [
+        'Family, parent, caregiver, or guardian therapy content appears documented.',
+        familyTherapyTimeDocumented
+          ? 'Family-therapy timing appears visible for coding review.'
+          : 'Family-therapy timing is not clearly documented yet.',
+      ],
+      missingElements: [
+        ...(!familyTherapyTimeDocumented ? ['Family-therapy minutes should be documented if using family psychotherapy review.'] : []),
+        'Confirm whether the patient was present and whether the payer/facility treats the service as family psychotherapy, collateral contact, or another service family.',
+      ],
+      cautions: [
+        'Collateral gathering or family presence alone should not create a family psychotherapy candidate.',
+      ],
+    });
+  }
+
+  if (!medicationManagement && groupTherapyContent) {
+    addCandidate(candidates, {
+      family: 'Group psychotherapy review',
+      candidateCodes: ['90853'],
+      strength: groupTherapyTimeDocumented ? 'stronger-documentation-support' : 'possible-review',
+      why: [
+        'Group psychotherapy or therapy-group content appears documented.',
+        groupTherapyTimeDocumented
+          ? 'Group-therapy timing appears visible for coding review.'
+          : 'Group-therapy timing is not clearly documented yet.',
+      ],
+      missingElements: [
+        ...(!groupTherapyTimeDocumented ? ['Group-therapy minutes should be documented if using group psychotherapy review.'] : []),
+        'Confirm payer/facility rules and whether the note documents actual group psychotherapy rather than attendance only.',
+      ],
+      cautions: [
+        'Group attendance alone should not create a group psychotherapy candidate.',
+      ],
+    });
+  }
+
+  if (!medicationManagement && !familyTherapyContent && !groupTherapyContent && (psychotherapyContent || /therapy/i.test(normalizedNoteType))) {
     addCandidate(candidates, {
       family: 'Psychotherapy-only family',
       candidateCodes: ['90832', '90834', '90837'],
@@ -438,7 +513,11 @@ export function evaluatePostNoteCptRecommendations(
     medicationManagement ? 'Medication-management or prescribing work is visible.' : '',
     mdmSupport ? 'Medical decision-making support cues are visible.' : '',
     psychotherapyContent ? 'Distinct psychotherapy or therapy content is visible.' : '',
+    familyTherapyContent ? 'Family/caregiver therapy content is visible.' : '',
+    groupTherapyContent ? 'Group therapy content is visible.' : '',
     psychotherapyTimeDocumented ? 'Separate psychotherapy time is visible.' : '',
+    familyTherapyTimeDocumented && familyTherapyContent ? 'Family-therapy timing is visible.' : '',
+    groupTherapyTimeDocumented && groupTherapyContent ? 'Group-therapy timing is visible.' : '',
     totalTimeDocumented ? 'Total encounter time is visible.' : '',
     crisisWork ? 'Crisis or acute-risk content is visible.' : '',
     communicationComplexity ? 'Interactive complexity or communication-barrier context is visible.' : '',
@@ -451,6 +530,8 @@ export function evaluatePostNoteCptRecommendations(
     ...(!totalTimeDocumented ? ['Total encounter time is not clearly documented if time-based review is intended.'] : []),
     ...(medicationManagement && !mdmSupport ? ['Medical decision-making support is not clearly documented if MDM-based review is intended.'] : []),
     ...(psychotherapyContent && !psychotherapyTimeDocumented ? ['Separate psychotherapy minutes are not clearly documented.'] : []),
+    ...(familyTherapyContent && !familyTherapyTimeDocumented ? ['Family-therapy minutes are not clearly documented.'] : []),
+    ...(groupTherapyContent && !groupTherapyTimeDocumented ? ['Group-therapy minutes are not clearly documented.'] : []),
     ...(crisisWork && !timeSignals.some((item) => /crisis/i.test(item)) && !compact(encounterSupport?.crisisStartTime) && !compact(encounterSupport?.crisisEndTime)
       ? ['Crisis timing is not clearly documented if crisis psychotherapy family review is intended.']
       : []),

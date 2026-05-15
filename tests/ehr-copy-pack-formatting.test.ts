@@ -51,6 +51,36 @@ describe('EHR copy-pack formatting', () => {
     expect(labels).toMatch(/Diagnosis \/ assessment \/ plan/i);
   });
 
+  it('returns SimplePractice outpatient evaluation paste targets for intake, MSE/risk, and plan fields', () => {
+    const targets = getOutputDestinationFieldTargets('SimplePractice', 'outpatient-evaluation');
+    const labels = targets.map((target) => target.label).join(' | ');
+    const aliases = targets.flatMap((target) => target.aliases).join(' | ');
+
+    expect(labels).toMatch(/Presenting concerns \/ HPI/i);
+    expect(labels).toMatch(/History \/ biopsychosocial/i);
+    expect(labels).toMatch(/MSE \/ risk/i);
+    expect(labels).toMatch(/Assessment \/ plan/i);
+    expect(aliases).toMatch(/risk assessment/i);
+  });
+
+  it('returns Valant outpatient follow-up paste targets that keep MSE/risk separate from interval and plan', () => {
+    const targets = getOutputDestinationFieldTargets('Valant', 'outpatient-follow-up');
+    const labels = targets.map((target) => target.label).join(' | ');
+
+    expect(labels).toMatch(/Interval \/ symptoms/i);
+    expect(labels).toMatch(/MSE \/ risk update/i);
+    expect(labels).toMatch(/Assessment \/ plan/i);
+  });
+
+  it('returns ICANotes inpatient copy targets for narrative, MSE/risk, and intervention/plan workflows', () => {
+    const targets = getOutputDestinationFieldTargets('ICANotes', 'inpatient-psych-follow-up');
+    const labels = targets.map((target) => target.label).join(' | ');
+
+    expect(labels).toMatch(/Progress narrative/i);
+    expect(labels).toMatch(/MSE \/ safety update/i);
+    expect(labels).toMatch(/Intervention \/ plan/i);
+  });
+
   it('keeps expanded EHR destination coverage available for psych and medical workflows', () => {
     expect(OUTPUT_DESTINATIONS).toEqual(expect.arrayContaining([
       'WellSky',

@@ -380,6 +380,23 @@ function hardenSourceBoundRiskWording(note: string, sourceInput: string) {
   .replace(/\bno\s+safety\s+concerns?\b/gi, 'safety risk is not fully established from the provided source');
 }
 
+function preservePriorCurrentRiskTimeline(note: string, sourceInput: string) {
+ const sourceHasDatedPriorRiskDenial = /\bprior note\b[\s\S]{0,260}\b(?:denied|denies)\s+(?:SI\/HI|suicidal|homicidal)\b/i.test(sourceInput)
+  || /\byesterday\b[\s\S]{0,180}\b(?:denied|denies)\s+(?:SI\/HI|suicidal|homicidal)\b/i.test(sourceInput)
+  || /\b(?:denied|denies)\s+(?:SI\/HI|suicidal|homicidal)\b[\s\S]{0,140}\byesterday\b/i.test(sourceInput);
+ const sourceHasCurrentCollateralRiskConcern = /\b(?:today|this morning|overnight|collateral|sister|mother|family|staff|nursing)\b[\s\S]{0,320}\b(?:suicid|cannot keep doing this|texted|text message|threat|self-harm|safety|risk)\b/i.test(sourceInput);
+
+ if (!sourceHasDatedPriorRiskDenial || !sourceHasCurrentCollateralRiskConcern) {
+  return note;
+ }
+
+ if (/\b(?:prior note|yesterday)\b[\s\S]{0,220}\b(?:denied|denial|denies)\b[\s\S]{0,120}\b(?:SI\/HI|suicid|homicid)\b/i.test(note)) {
+  return note;
+ }
+
+ return `${note.trim()}\n\nRisk Source Timeline:\nPrior note/yesterday source documented SI/HI denial. Current/today collateral or staff source documents a new risk concern; current risk context remains unresolved from the provided source.`;
+}
+
 function preservePatientContinuityBoundaries(note: string, sourceInput: string) {
  const hasContinuityContext = /Patient Continuity Context - Veranote recall layer|Use this as prior context only|Continuity safety rule/i.test(sourceInput);
  if (!hasContinuityContext) return note;
@@ -551,7 +568,8 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withLabLimitsPreserved = preservePendingOrUnclearLabSourceLimits(withMedicalClearancePreserved, input.sourceInput);
  const withMatDoseDecisionLimit = preservePendingMatDoseDecision(withLabLimitsPreserved, input.sourceInput);
  const withSourceBoundRisk = hardenSourceBoundRiskWording(withMatDoseDecisionLimit, input.sourceInput);
- const withContinuityBoundaries = preservePatientContinuityBoundaries(withSourceBoundRisk, input.sourceInput);
+ const withPriorCurrentRiskTimeline = preservePriorCurrentRiskTimeline(withSourceBoundRisk, input.sourceInput);
+ const withContinuityBoundaries = preservePatientContinuityBoundaries(withPriorCurrentRiskTimeline, input.sourceInput);
  const withMedicationAdherenceHardened = hardenMedicationAdherenceWording(withContinuityBoundaries, input.sourceInput);
  const withDiagnosticUncertainty = preserveDiagnosticUncertainty(withMedicationAdherenceHardened, input.sourceInput);
  const withPsychosisConflictPreserved = preservePsychosisObservationConflict(withDiagnosticUncertainty, input.sourceInput);
