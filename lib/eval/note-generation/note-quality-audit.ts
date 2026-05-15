@@ -102,6 +102,20 @@ export function auditGeneratedNoteQuality(input: NoteQualityAuditInput): NoteQua
     });
   }
 
+  const veryLongLineCount = input.note
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 1800).length;
+
+  if (veryLongLineCount > 0) {
+    pushFinding(findings, {
+      id: 'very-long-ehr-copy-line',
+      category: 'ehr-copy-hygiene',
+      severity: 'blocking',
+      message: 'Generated note contains an overly long line that is difficult to copy into EHR fields.',
+    });
+  }
+
   if (has(note, /\b(?:Veranote|Atlas)\b|(?:^|\n)\s*Assistant:|Clinical Assistant|source-packet regression|review once for source fidelity|apply to draft|verified by veranote/i)) {
     pushFinding(findings, {
       id: 'assistant-ui-leakage',

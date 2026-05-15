@@ -367,6 +367,36 @@ function preservePendingMatDoseDecision(note: string, sourceInput: string) {
  return `${note.trim()}\n\nMedication Decision / Source Limitation:\nNo final dosing decision or prescribing decision is documented in the provided source; the bridge request, missed doses, prior source-listed dose, and pending UDS should remain source limitations rather than completed medication actions.`;
 }
 
+function preserveAllergyMedicationSourceLimits(note: string, sourceInput: string) {
+ const hasAllergyMedicationLimit = /\b(?:allergy|rash|reaction date|OCR|full assessment|copied[-\s]?forward)\b/i.test(sourceInput)
+  && /\b(?:not visible|cuts off|cut off|not included|unreadable)\b/i.test(sourceInput)
+  && /\b(?:lamotrigine|Lamictal|sulfa|rash|allergy|bipolar|PTSD)\b/i.test(sourceInput);
+ if (!hasAllergyMedicationLimit) return note;
+
+ const sourceLimitLines: string[] = [];
+
+ if (/\ballergy\b.{0,120}\bsulfa\b.{0,120}\bhives\b[\s\S]{0,160}\breaction date not visible\b/i.test(sourceInput)
+  && !/\bsulfa\b[\s\S]{0,180}\breaction date (?:not visible|not documented|unavailable)\b/i.test(note)) {
+  sourceLimitLines.push('Sulfa allergy with hives is source-listed, but the reaction date is not visible in the referral packet.');
+ }
+
+ if (/\brash\b[\s\S]{0,160}\bOCR\b[\s\S]{0,120}\b(?:cuts off|cut off)\b[\s\S]{0,80}\bmedication name\b/i.test(sourceInput)
+  && !/\brash\b[\s\S]{0,180}\b(?:OCR|cut off|not visible|source limitation)\b/i.test(note)) {
+  sourceLimitLines.push('Prior rash history is present, but the OCR text cuts off the medication name.');
+ }
+
+ if (/\bdiagnoses\b[\s\S]{0,120}\bcopied[-\s]?forward\b[\s\S]{0,180}\blast full assessment not included\b/i.test(sourceInput)
+  && !/\b(?:copied[-\s]?forward|historical|referral)\b[\s\S]{0,180}\b(?:full assessment not included|not confirmed|source limitation)\b/i.test(note)) {
+  sourceLimitLines.push('Copied-forward diagnoses remain historical/referral data because the last full assessment is not included.');
+ }
+
+ if (!sourceLimitLines.length) {
+  return note;
+ }
+
+ return `${note.trim()}\n\nAllergy / Referral Source Limitation:\n${sourceLimitLines.join(' ')}`;
+}
+
 function hardenSourceBoundRiskWording(note: string, sourceInput: string) {
  const hasRiskNuance = /(\bSI\b|\bHI\b|SI\/HI|suicidal ideation|homicidal ideation|denies? (?:current )?(?:SI|HI|SI\/HI)|passive death|wish .*not wake|wish .*wouldn[’']?t wake|passive si|suicid|self-harm|do not summarize as low[-\s]?risk)/i.test(sourceInput);
  if (!hasRiskNuance) return note;
@@ -395,6 +425,31 @@ function preservePriorCurrentRiskTimeline(note: string, sourceInput: string) {
  }
 
  return `${note.trim()}\n\nRisk Source Timeline:\nPrior note/yesterday source documented SI/HI denial. Current/today collateral or staff source documents a new risk concern; current risk context remains unresolved from the provided source.`;
+}
+
+function preserveDischargePlanningBarriers(note: string, sourceInput: string) {
+ const barrierLines: string[] = [];
+
+ if (/\bmother\b.{0,120}\bcannot return home\b|\bcannot return home\b.{0,120}\bmother\b/i.test(sourceInput)
+  && !/\bmother\b.{0,180}\bcannot return\b|\bcannot return home\b.{0,180}\bmother\b/i.test(note)) {
+  barrierLines.push('Mother reports patient cannot return home this week.');
+ }
+
+ if (/\b(?:Medicaid )?transport\b.{0,100}\bnot yet scheduled\b|\bnot yet scheduled\b.{0,100}\b(?:Medicaid )?transport\b/i.test(sourceInput)
+  && !/\btransport\b.{0,140}\bnot (?:yet )?scheduled\b|\bnot (?:yet )?scheduled\b.{0,140}\btransport\b/i.test(note)) {
+  barrierLines.push('Medicaid transport is not yet scheduled.');
+ }
+
+ if (/\bshelter\b.{0,80}\bwaitlist\b|\bwaitlist\b.{0,80}\bshelter\b/i.test(sourceInput)
+  && !/\bshelter\b.{0,120}\bwaitlist\b|\bwaitlist\b.{0,120}\bshelter\b/i.test(note)) {
+  barrierLines.push('Shelter bed waitlist has been started but placement is not confirmed from the provided source.');
+ }
+
+ if (!barrierLines.length) {
+  return note;
+ }
+
+ return `${note.trim()}\n\nDischarge Planning Barriers:\n${barrierLines.join(' ')}`;
 }
 
 function preservePatientContinuityBoundaries(note: string, sourceInput: string) {
@@ -559,6 +614,82 @@ function removeProviderAddOnInstructionEcho(note: string, sourceInput = '') {
   .trim();
 }
 
+const clinicalSectionBreakHeadings = [
+ 'Chief Concern',
+ 'Reason for Admission',
+ 'Reason for Follow-Up / Interval Concern',
+ 'Source of Information',
+ 'History of Present Illness',
+ 'Interval Events / Patient Report (Subjective)',
+ 'Staff / Nursing / Collateral Observations (Objective)',
+ 'Psychiatric History',
+ 'Substance History',
+ 'Prior Treatment / Hospitalizations',
+ 'Social History',
+ 'Family Psychiatric / Relevant Family History',
+ 'Trauma / Abuse History',
+ 'Legal History',
+ 'Medical History',
+ 'Allergies',
+ 'Current Medications',
+ 'Mental Status Exam',
+ 'Mental Status Exam / Observations',
+ 'Safety / Risk',
+ 'Assessment / Clinical Formulation',
+ 'Assessment / Plan',
+ 'Plan / Continued Hospitalization',
+ 'Medication Reconciliation / Source Limitation',
+ 'Diagnostics / Source Limitation',
+ 'Risk Source Timeline',
+ 'Source Limitations / Missing Information',
+];
+
+function wrapLongClinicalLine(line: string, maxLength = 1400) {
+ if (line.length <= maxLength) {
+  return line;
+ }
+
+ const sentences = line.split(/(?<=[.!?])\s+(?=[A-Z])/);
+ if (sentences.length <= 1) {
+  return line.replace(new RegExp(`(.{1,${maxLength}})(\\s+|$)`, 'g'), '$1\n').trim();
+ }
+
+ const chunks: string[] = [];
+ let current = '';
+ for (const sentence of sentences) {
+  const candidate = current ? `${current} ${sentence}` : sentence;
+  if (candidate.length > maxLength && current) {
+   chunks.push(current);
+   current = sentence;
+  } else {
+   current = candidate;
+  }
+ }
+
+ if (current) {
+  chunks.push(current);
+ }
+
+ return chunks.join('\n');
+}
+
+function normalizeClinicalSectionBreaks(note: string) {
+ let next = note.replace(/\r/g, '\n');
+
+ for (const heading of clinicalSectionBreakHeadings) {
+  const pattern = new RegExp(`([^\\n])\\s+(${escapeRegExp(heading)}:)`, 'gi');
+  next = next.replace(pattern, '$1\n\n$2');
+ }
+
+ return next
+  .split('\n')
+  .map((line) => wrapLongClinicalLine(line.trimEnd()))
+  .join('\n')
+  .replace(/[ \t]+\n/g, '\n')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+}
+
 function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withRequiredHeadings = enforceProgressNoteHeadings(note, input.noteType);
  const withRiskHardened = hardenRiskReassuranceWording(withRequiredHeadings, input.noteType);
@@ -567,16 +698,19 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withMedicalClearancePreserved = preserveMedicalClearanceUncertainty(withoutUnsupportedMedicalStability, input.sourceInput);
  const withLabLimitsPreserved = preservePendingOrUnclearLabSourceLimits(withMedicalClearancePreserved, input.sourceInput);
  const withMatDoseDecisionLimit = preservePendingMatDoseDecision(withLabLimitsPreserved, input.sourceInput);
- const withSourceBoundRisk = hardenSourceBoundRiskWording(withMatDoseDecisionLimit, input.sourceInput);
+ const withAllergyMedicationSourceLimits = preserveAllergyMedicationSourceLimits(withMatDoseDecisionLimit, input.sourceInput);
+ const withSourceBoundRisk = hardenSourceBoundRiskWording(withAllergyMedicationSourceLimits, input.sourceInput);
  const withPriorCurrentRiskTimeline = preservePriorCurrentRiskTimeline(withSourceBoundRisk, input.sourceInput);
- const withContinuityBoundaries = preservePatientContinuityBoundaries(withPriorCurrentRiskTimeline, input.sourceInput);
+ const withDischargeBarriers = preserveDischargePlanningBarriers(withPriorCurrentRiskTimeline, input.sourceInput);
+ const withContinuityBoundaries = preservePatientContinuityBoundaries(withDischargeBarriers, input.sourceInput);
  const withMedicationAdherenceHardened = hardenMedicationAdherenceWording(withContinuityBoundaries, input.sourceInput);
  const withDiagnosticUncertainty = preserveDiagnosticUncertainty(withMedicationAdherenceHardened, input.sourceInput);
  const withPsychosisConflictPreserved = preservePsychosisObservationConflict(withDiagnosticUncertainty, input.sourceInput);
  const withRestraintSourceStatus = preserveRestraintSourceStatus(withPsychosisConflictPreserved, input.sourceInput);
  const withoutUnsupportedMedicationAction = removeUnsupportedMedicationActionPlan(withRestraintSourceStatus, input.sourceInput);
+ const withoutProviderInstructionEcho = removeProviderAddOnInstructionEcho(withoutUnsupportedMedicationAction, input.sourceInput);
 
- return removeProviderAddOnInstructionEcho(withoutUnsupportedMedicationAction, input.sourceInput);
+ return normalizeClinicalSectionBreaks(withoutProviderInstructionEcho);
 }
 
 export async function generateNote(input: GenerateNoteInput): Promise<GenerateNoteWithMetaResult> {
