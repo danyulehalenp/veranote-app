@@ -516,6 +516,16 @@ function preserveDiagnosticUncertainty(note: string, sourceInput: string) {
  return `${note.trim()}\n\nDiagnostic Uncertainty / Source Limitation:\nDiagnostic uncertainty remains from the provided source; diagnostic labels, trauma-related impressions, substance-related diagnoses, and medical or substance confounders should not be converted into confirmed diagnoses without source-supported assessment.`;
 }
 
+function preserveBipolarReferralUncertainty(note: string, sourceInput: string) {
+ const sourceHasBipolarUncertainty = /\b(?:r\/o|rule[-\s]?out|maybe|might have|told.{0,50}|old note|previous provider|referral|historical|prior)\b.{0,120}\bbipolar\b|\bbipolar\b.{0,120}\b(?:r\/o|rule[-\s]?out|maybe|might have|old note|previous provider|referral|historical|prior|unclear|not confirmed|uncertain)\b/i.test(sourceInput);
+ if (!sourceHasBipolarUncertainty) return note;
+
+ const noteKeepsBipolarUncertainty = /\b(?:r\/o|rule[-\s]?out|maybe|might have|told.{0,50}|old note|previous provider|referral|historical|prior)\b.{0,120}\bbipolar\b|\bbipolar\b.{0,120}\b(?:unclear|not confirmed|uncertain|differential|past|historical|referral|prior|old note|previous provider|rule[-\s]?out)\b/i.test(note);
+ if (noteKeepsBipolarUncertainty) return note;
+
+ return `${note.trim()}\n\nDiagnostic Uncertainty / Source Limitation:\nBipolar disorder appears only as historical/referral or rule-out language in the provided source and is not confirmed by the current assessment material. Keep this as diagnostic uncertainty rather than a settled diagnosis.`;
+}
+
 function preservePsychosisObservationConflict(note: string, sourceInput: string) {
  const sourceHasPsychosisObservationConflict = /((denies ah\/vh|no, i['’]m not hearing voices|denies hallucinations?|denies auditory|denies visual)[\s\S]*(internally preoccupied|laughing to self|staring intermittently|look(?:ed|ing)? toward the corner|responding to internal stimuli))/i.test(sourceInput)
   || /((internally preoccupied|laughing to self|staring intermittently|look(?:ed|ing)? toward the corner|responding to internal stimuli)[\s\S]*(denies ah\/vh|no, i['’]m not hearing voices|denies hallucinations?|denies auditory|denies visual))/i.test(sourceInput);
@@ -705,7 +715,8 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withContinuityBoundaries = preservePatientContinuityBoundaries(withDischargeBarriers, input.sourceInput);
  const withMedicationAdherenceHardened = hardenMedicationAdherenceWording(withContinuityBoundaries, input.sourceInput);
  const withDiagnosticUncertainty = preserveDiagnosticUncertainty(withMedicationAdherenceHardened, input.sourceInput);
- const withPsychosisConflictPreserved = preservePsychosisObservationConflict(withDiagnosticUncertainty, input.sourceInput);
+ const withBipolarReferralUncertainty = preserveBipolarReferralUncertainty(withDiagnosticUncertainty, input.sourceInput);
+ const withPsychosisConflictPreserved = preservePsychosisObservationConflict(withBipolarReferralUncertainty, input.sourceInput);
  const withRestraintSourceStatus = preserveRestraintSourceStatus(withPsychosisConflictPreserved, input.sourceInput);
  const withoutUnsupportedMedicationAction = removeUnsupportedMedicationActionPlan(withRestraintSourceStatus, input.sourceInput);
  const withoutProviderInstructionEcho = removeProviderAddOnInstructionEcho(withoutUnsupportedMedicationAction, input.sourceInput);

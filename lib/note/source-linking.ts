@@ -37,6 +37,21 @@ export type SectionSentenceEvidence = {
 
 export type SectionSentenceEvidenceMap = Record<string, SectionSentenceEvidence[]>;
 
+export type SourceTraceSummary = {
+  sectionCount: number;
+  linkedSectionCount: number;
+  linkedSentenceCount: number;
+  strongSentenceCount: number;
+  possibleSentenceCount: number;
+  weakSentenceCount: number;
+  unsupportedSectionCount: number;
+  linkedSourceLabels: string[];
+  sourceUsage: Array<{
+    sourceLabel: string;
+    count: number;
+  }>;
+};
+
 const SOURCE_LABELS: Record<keyof SourceSections, string> = {
   intakeCollateral: 'Pre-Visit Data',
   clinicianNotes: 'Live Visit Notes',
@@ -293,6 +308,63 @@ export function getSignalLabel(signal: SectionEvidenceLink['signal']) {
     return 'Possible support';
   }
   return 'Weak clue only';
+}
+
+export function buildSourceTraceSummary(
+  sections: ParsedDraftSection[],
+  sourceSections: SourceSections,
+): SourceTraceSummary {
+  const sourceBlocks = buildSourceBlocks(sourceSections);
+  const sectionMap = buildSectionEvidenceMap(sections, sourceSections);
+  const sentenceMap = buildSectionSentenceEvidenceMap(sections, sourceSections, 8);
+  const sourceCounts = new Map<string, number>();
+  let linkedSentenceCount = 0;
+  let strongSentenceCount = 0;
+  let possibleSentenceCount = 0;
+  let weakSentenceCount = 0;
+
+  for (const rows of Object.values(sentenceMap)) {
+    for (const row of rows) {
+      const primary = row.links[0];
+      if (!primary) {
+        continue;
+      }
+
+      linkedSentenceCount += 1;
+      if (primary.signal === 'strong-overlap') {
+        strongSentenceCount += 1;
+      } else if (primary.signal === 'possible-overlap') {
+        possibleSentenceCount += 1;
+      } else {
+        weakSentenceCount += 1;
+      }
+
+      for (const link of row.links) {
+        const block = sourceBlocks.find((item) => item.id === link.blockId);
+        if (block) {
+          sourceCounts.set(block.sourceLabel, (sourceCounts.get(block.sourceLabel) || 0) + 1);
+        }
+      }
+    }
+  }
+
+  const linkedSectionCount = sections.filter((section) => (sectionMap[section.anchor]?.links.length || 0) > 0).length;
+  const unsupportedSectionCount = sections.filter((section) => section.body.trim() && !(sectionMap[section.anchor]?.links.length)).length;
+  const sourceUsage = Array.from(sourceCounts.entries())
+    .map(([sourceLabel, count]) => ({ sourceLabel, count }))
+    .sort((left, right) => right.count - left.count || left.sourceLabel.localeCompare(right.sourceLabel));
+
+  return {
+    sectionCount: sections.length,
+    linkedSectionCount,
+    linkedSentenceCount,
+    strongSentenceCount,
+    possibleSentenceCount,
+    weakSentenceCount,
+    unsupportedSectionCount,
+    linkedSourceLabels: sourceUsage.map((item) => item.sourceLabel),
+    sourceUsage,
+  };
 }
 
 export function highlightTermsInText(text: string, terms: string[]) {

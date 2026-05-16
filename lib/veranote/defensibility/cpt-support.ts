@@ -97,6 +97,7 @@ function hasCommunicationComplexity(text: string) {
 function stripExplicitMissingCptSignals(text: string) {
   return text
     .replace(/\b(?:no|without)\b[^.]{0,140}\b(?:medication[-\s]management|prescribing|psychotherapy|therapy|family[-\s]therapy|group[-\s]therapy|therapy intervention)\b[^.]{0,100}\b(?:provided|performed|occurred|done|completed|documented|visible|present)\b/gi, ' ')
+    .replace(/\b(?:no|without)\b[^.]{0,140}\b(?:medication[-\s]management|prescribing|psychotherapy|therapy|family[-\s]therapy|group[-\s]therapy|therapy intervention)\b[^.]{0,100}\b(?:finalized|finalised|committed|reviewed|approved)\b/gi, ' ')
     .replace(/\bno\b[^.]{0,180}\b(?:encounter time|total time|time|mdm|medical decision[-\s]making|psychotherapy|therapy|psychotherapy intervention|medication[-\s]management|prescribing|risk complexity|medical decision[-\s]making details?)\b[^.]{0,100}\b(?:visible|documented|available|present|listed|noted|details?|work|support)\b/gi, ' ')
     .replace(/\bwithout\b[^.]{0,140}\b(?:time|mdm|medical decision[-\s]making|psychotherapy|therapy|medication[-\s]management|prescribing|risk complexity)\b[^.]{0,80}\b(?:visible|documented|available|present|listed|noted|details?|work|support)\b/gi, ' ')
     .replace(/\b(?:time|mdm|medical decision[-\s]making|psychotherapy|therapy|medication[-\s]management|prescribing|risk complexity)\b[^.]{0,80}\b(?:is|are)\s+not\s+(?:visible|documented|available|present|listed|noted)\b/gi, ' ')

@@ -942,6 +942,55 @@ const ICANOTES_NOTE_FOCUS_TARGETS: Partial<Record<OutputNoteFocus, OutputFieldTa
   ],
 };
 
+const ENTERPRISE_BEHAVIORAL_NOTE_FOCUS_TARGETS: Partial<Record<OutputNoteFocus, OutputFieldTarget[]>> = {
+  'inpatient-psych-follow-up': [
+    {
+      id: 'enterprise-bh-progress-narrative',
+      label: 'Progress narrative / service note',
+      aliases: ['interval update', 'follow up', 'progress note', 'service note', 'subjective', 'symptom review'],
+      note: 'Use for source-close progress wording, response to treatment, and day-to-day service-note narrative.',
+    },
+    {
+      id: 'enterprise-bh-mse-risk',
+      label: 'MSE / risk / safety',
+      aliases: ['mental status', 'risk assessment', 'safety', 'observations', 'protective factors'],
+      note: 'Use for observed MSE, risk, protective factors, and contradiction-preserving safety wording.',
+    },
+    {
+      id: 'enterprise-bh-interventions',
+      label: 'Interventions / response',
+      aliases: ['intervention', 'response to intervention', 'progress toward goals', 'service plan', 'goals'],
+      note: 'Use for interventions provided, patient response, and goal or service-plan updates.',
+    },
+    {
+      id: 'enterprise-bh-plan-disposition',
+      label: 'Plan / disposition',
+      aliases: ['plan', 'proposed discharge', 'follow-up', 'barriers', 'medications'],
+      note: 'Use for next steps, medication-plan wording, discharge barriers, and follow-up planning.',
+    },
+  ],
+  'outpatient-follow-up': [
+    {
+      id: 'enterprise-bh-outpatient-data',
+      label: 'Data / narrative',
+      aliases: ['data', 'subjective', 'interval update', 'session narrative', 'symptom review'],
+      note: 'Use for the outpatient session narrative and patient-reported interval course.',
+    },
+    {
+      id: 'enterprise-bh-outpatient-assessment',
+      label: 'Assessment / progress',
+      aliases: ['assessment', 'clinical status', 'response', 'progress toward goals'],
+      note: 'Use for source-supported assessment, progress, and response-to-intervention language.',
+    },
+    {
+      id: 'enterprise-bh-outpatient-plan',
+      label: 'Plan / interventions',
+      aliases: ['plan', 'intervention', 'homework', 'goals', 'follow-up', 'safety plan'],
+      note: 'Use for interventions, homework, goals, safety planning, and follow-up.',
+    },
+  ],
+};
+
 function normalizeNoteFocusValue(value: string) {
   return value.trim().toLowerCase();
 }
@@ -1059,6 +1108,16 @@ export function getOutputDestinationFieldTargets(destination: OutputDestination,
 
   if (destination === 'ICANotes' && ICANOTES_NOTE_FOCUS_TARGETS[noteFocus]) {
     return ICANOTES_NOTE_FOCUS_TARGETS[noteFocus] || OUTPUT_DESTINATION_META[destination].fieldTargets;
+  }
+
+  if (
+    (destination === 'Welligent'
+      || destination === 'Netsmart myAvatar'
+      || destination === 'Qualifacts/CareLogic'
+      || destination === 'Credible')
+    && ENTERPRISE_BEHAVIORAL_NOTE_FOCUS_TARGETS[noteFocus]
+  ) {
+    return ENTERPRISE_BEHAVIORAL_NOTE_FOCUS_TARGETS[noteFocus] || OUTPUT_DESTINATION_META[destination].fieldTargets;
   }
 
   return OUTPUT_DESTINATION_META[destination].fieldTargets;

@@ -12,9 +12,11 @@ import { countWords, parseDraftSections, reconcileSectionReviewState, type Parse
 import {
   buildSectionEvidenceMap,
   buildSectionSentenceEvidenceMap,
+  buildSourceTraceSummary,
   buildSourceBlocks,
   getSignalLabel,
   highlightTermsInText,
+  type SourceTraceSummary,
   type SectionEvidenceLink,
   type SourceBlock,
 } from '@/lib/note/source-linking';
@@ -74,7 +76,7 @@ function sanitizeFileName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'note-draft';
 }
 
-type RewriteMode = 'more-concise' | 'more-formal' | 'closer-to-source' | 'regenerate-full-note';
+type RewriteMode = 'more-concise' | 'more-formal' | 'closer-to-source' | 'regenerate-full-note' | 'one-paragraph' | 'two-paragraph-hpi-mse-plan' | 'story-flow';
 
 function splitFlags(flags: string[]) {
   const contradictionFlags = flags.filter((flag) => /^Possible contradiction:/i.test(flag));
@@ -2898,6 +2900,10 @@ export function ReviewWorkspace({
     () => buildSectionSentenceEvidenceMap(draftSections, sourceSections),
     [draftSections, sourceSections],
   );
+  const sourceTraceSummary = useMemo<SourceTraceSummary>(
+    () => buildSourceTraceSummary(draftSections, sourceSections),
+    [draftSections, sourceSections],
+  );
   const clickableSentenceTraceRows = useMemo(() => {
     const rows: Array<{
       id: string;
@@ -3962,7 +3968,29 @@ export function ReviewWorkspace({
           </div>
         ) : null}
         {renderDraftVersionHistory(currentSession)}
-        {renderClickableDraftTracePanel('full')}
+        {clickableSentenceTraceRows.length ? (
+          <details data-testid="draft-source-trace-collapsible" className="workspace-subpanel workspace-expandable mt-4 rounded-[22px] border border-sky-300/18 bg-[rgba(56,189,248,0.06)] p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-sky-50">
+              Source trace · {sourceTraceSummary.linkedSentenceCount} linked sentence{sourceTraceSummary.linkedSentenceCount === 1 ? '' : 's'} · {sourceTraceSummary.linkedSourceLabels.length || 0} source box{sourceTraceSummary.linkedSourceLabels.length === 1 ? '' : 'es'}
+            </summary>
+            <p className="mt-2 text-xs leading-5 text-sky-50/68">
+              Open only when you want click-to-source support. Weak or unsupported sections stay visible in the review checklist.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {sourceTraceSummary.linkedSourceLabels.map((label) => (
+                <span key={label} className="rounded-full border border-sky-200/20 bg-white/8 px-2.5 py-1 text-[11px] font-semibold text-sky-50">
+                  {label}
+                </span>
+              ))}
+              {sourceTraceSummary.unsupportedSectionCount ? (
+                <span className="rounded-full border border-amber-200/24 bg-amber-300/12 px-2.5 py-1 text-[11px] font-semibold text-amber-100">
+                  {sourceTraceSummary.unsupportedSectionCount} section{sourceTraceSummary.unsupportedSectionCount === 1 ? '' : 's'} need source check
+                </span>
+              ) : null}
+            </div>
+            {renderClickableDraftTracePanel('embedded')}
+          </details>
+        ) : null}
         <div className="workspace-subpanel mt-4 rounded-[22px] p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Section navigator</div>
@@ -4942,8 +4970,48 @@ export function ReviewWorkspace({
 
           <PostNoteCptSupportPanel assessment={postNoteCptRecommendations} variant="embedded" />
 
+          <div id="embedded-rewrite-tools" className="workspace-subpanel mt-4 rounded-[22px] border border-cyan-200/12 bg-[rgba(255,255,255,0.05)] p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Draft shaping</div>
+                <p className="mt-1 text-sm leading-6 text-cyan-50/72">
+                  Rewrite the Draft format without adding unsupported facts.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => handleRewrite('more-concise')} disabled={isRewriting !== null} className="workspace-action-pill rounded-full border border-cyan-200/16 bg-white/8 px-3 py-1.5 text-xs font-semibold text-cyan-50 disabled:opacity-60">{isRewriting === 'more-concise' ? 'Rewriting...' : 'Shorter'}</button>
+                <button onClick={() => handleRewrite('one-paragraph')} disabled={isRewriting !== null} className="workspace-action-pill rounded-full border border-cyan-200/16 bg-white/8 px-3 py-1.5 text-xs font-semibold text-cyan-50 disabled:opacity-60">{isRewriting === 'one-paragraph' ? 'Rewriting...' : 'One paragraph'}</button>
+                <button onClick={() => handleRewrite('two-paragraph-hpi-mse-plan')} disabled={isRewriting !== null} className="workspace-action-pill rounded-full border border-cyan-200/16 bg-white/8 px-3 py-1.5 text-xs font-semibold text-cyan-50 disabled:opacity-60">{isRewriting === 'two-paragraph-hpi-mse-plan' ? 'Rewriting...' : 'HPI then MSE/Plan'}</button>
+                <button onClick={() => handleRewrite('story-flow')} disabled={isRewriting !== null} className="workspace-action-pill rounded-full border border-cyan-200/16 bg-white/8 px-3 py-1.5 text-xs font-semibold text-cyan-50 disabled:opacity-60">{isRewriting === 'story-flow' ? 'Rewriting...' : 'Story flow'}</button>
+                <button onClick={() => handleRewrite('closer-to-source')} disabled={isRewriting !== null} className="workspace-action-pill rounded-full border border-cyan-200/16 bg-white/8 px-3 py-1.5 text-xs font-semibold text-cyan-50 disabled:opacity-60">{isRewriting === 'closer-to-source' ? 'Rewriting...' : 'Closer to source'}</button>
+              </div>
+            </div>
+          </div>
+
           {renderDraftVersionHistory(session)}
-          {renderClickableDraftTracePanel('embedded')}
+          {clickableSentenceTraceRows.length ? (
+            <details data-testid="draft-source-trace-collapsible" className="workspace-subpanel workspace-expandable mt-4 rounded-[22px] border border-sky-300/18 bg-[rgba(56,189,248,0.06)] p-4">
+              <summary className="cursor-pointer text-sm font-semibold text-sky-50">
+                Source trace · {sourceTraceSummary.linkedSentenceCount} linked sentence{sourceTraceSummary.linkedSentenceCount === 1 ? '' : 's'} · {sourceTraceSummary.linkedSourceLabels.length || 0} source box{sourceTraceSummary.linkedSourceLabels.length === 1 ? '' : 'es'}
+              </summary>
+              <p className="mt-2 text-xs leading-5 text-sky-50/68">
+                Open only when you want click-to-source support. Weak or unsupported sections stay visible in the review checklist.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {sourceTraceSummary.linkedSourceLabels.map((label) => (
+                  <span key={label} className="rounded-full border border-sky-200/20 bg-white/8 px-2.5 py-1 text-[11px] font-semibold text-sky-50">
+                    {label}
+                  </span>
+                ))}
+                {sourceTraceSummary.unsupportedSectionCount ? (
+                  <span className="rounded-full border border-amber-200/24 bg-amber-300/12 px-2.5 py-1 text-[11px] font-semibold text-amber-100">
+                    {sourceTraceSummary.unsupportedSectionCount} section{sourceTraceSummary.unsupportedSectionCount === 1 ? '' : 's'} need source check
+                  </span>
+                ) : null}
+              </div>
+              {renderClickableDraftTracePanel('embedded')}
+            </details>
+          ) : null}
 
           <textarea ref={draftTextareaRef} value={draftText} onChange={(event) => setDraftText(event.target.value)} className="workspace-control mt-4 min-h-[780px] w-full rounded-[24px] p-4 text-sm leading-7" />
 
@@ -7085,6 +7153,9 @@ export function ReviewWorkspace({
                 <button onClick={() => handleRewrite('more-concise')} disabled={isRewriting !== null} className="rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:opacity-60">{isRewriting === 'more-concise' ? 'Rewriting...' : 'More concise'}</button>
                 <button onClick={() => handleRewrite('more-formal')} disabled={isRewriting !== null} className="rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:opacity-60">{isRewriting === 'more-formal' ? 'Rewriting...' : 'More formal'}</button>
                 <button onClick={() => handleRewrite('closer-to-source')} disabled={isRewriting !== null} className="rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:opacity-60">{isRewriting === 'closer-to-source' ? 'Rewriting...' : 'Closer to source'}</button>
+                <button onClick={() => handleRewrite('one-paragraph')} disabled={isRewriting !== null} className="rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:opacity-60">{isRewriting === 'one-paragraph' ? 'Rewriting...' : 'One paragraph'}</button>
+                <button onClick={() => handleRewrite('two-paragraph-hpi-mse-plan')} disabled={isRewriting !== null} className="rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:opacity-60">{isRewriting === 'two-paragraph-hpi-mse-plan' ? 'Rewriting...' : 'HPI then MSE/Plan'}</button>
+                <button onClick={() => handleRewrite('story-flow')} disabled={isRewriting !== null} className="rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:opacity-60">{isRewriting === 'story-flow' ? 'Rewriting...' : 'Story flow'}</button>
                 <button onClick={() => handleRewrite('regenerate-full-note')} disabled={isRewriting !== null} className="rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:opacity-60">{isRewriting === 'regenerate-full-note' ? 'Rewriting...' : 'Regenerate full note'}</button>
               </div>
             </div>

@@ -437,6 +437,26 @@ export const postNoteCptRegressionCases: PostNoteCptRegressionCase[] = [
     requiredText: [/Prior continuity context alone is too thin/i, /copied-forward or recalled prior-note content alone/i, /prior continuity context/i],
     forbiddenText: [/bill this code/i, /guaranteed/i, /stronger-documentation-support/i, /must bill/i],
   },
+  {
+    id: 'unreviewed-ambient-raw-text-no-family-forcing',
+    title: 'Unreviewed ambient transcript text alone cannot create post-note CPT support',
+    noteType: 'Outpatient Psych Follow-Up',
+    completedNoteText: [
+      'Ambient Transcript - unreviewed raw capture.',
+      'Transcript review status: not committed as final clinician note.',
+      'Speaker labels are uncertain and no completed assessment, plan, encounter time, medication-management work, or psychotherapy intervention is finalized.',
+    ].join(' '),
+    expectedCandidates: [],
+    forbiddenCandidates: [
+      { family: 'Office / outpatient E/M family' },
+      { family: 'Psychotherapy add-on with E/M family' },
+      { family: 'Psychotherapy-only family' },
+      { family: 'Psychotherapy for crisis family' },
+      { family: 'Interactive complexity add-on review' },
+    ],
+    requiredText: [/too thin for meaningful CPT-support candidates/i, /Encounter family is not clear/i],
+    forbiddenText: [/bill this code/i, /guaranteed/i, /stronger-documentation-support/i, /must bill/i],
+  },
 ];
 
 function stringifyAssessment(assessment: PostNoteCptRecommendationAssessment) {

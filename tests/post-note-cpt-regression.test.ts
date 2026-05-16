@@ -33,6 +33,7 @@ describe('post-note CPT recommendation regression', () => {
     expect(caseText).toMatch(/CPT preference 99214/i);
     expect(caseText).toMatch(/EHR destination: Tebra\/Kareo/i);
     expect(caseText).toMatch(/too thin|doing okay/i);
+    expect(caseText).toMatch(/unreviewed raw capture/i);
   });
 
   it('recommends only conservative CPT-support candidate families from completed notes', () => {

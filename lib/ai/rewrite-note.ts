@@ -1,7 +1,17 @@
 import OpenAI from 'openai';
 import { buildFidelityDirectives, extractExplicitDates, summarizeSourceConstraints } from '@/lib/ai/source-analysis';
 
-type RewriteMode = 'more-concise' | 'more-formal' | 'closer-to-source' | 'regenerate-full-note';
+export const REWRITE_MODES = [
+  'more-concise',
+  'more-formal',
+  'closer-to-source',
+  'regenerate-full-note',
+  'one-paragraph',
+  'two-paragraph-hpi-mse-plan',
+  'story-flow',
+] as const;
+
+export type RewriteMode = (typeof REWRITE_MODES)[number];
 
 type RewriteInput = {
   sourceInput: string;
@@ -15,6 +25,74 @@ export type RewriteResult = {
   mode: 'live' | 'fallback';
   warning?: string;
 };
+
+function isLikelyHeading(line: string) {
+  return /^[A-Z][A-Za-z0-9 /&(),'-]{1,70}:$/.test(line.trim());
+}
+
+function splitDraftIntoSectionBodies(draft: string) {
+  const lines = draft.replace(/\r\n/g, '\n').split('\n');
+  const sections: Array<{ heading: string; body: string }> = [];
+  let currentHeading = 'Narrative';
+  let currentLines: string[] = [];
+
+  function flush() {
+    const body = currentLines.join(' ').replace(/\s+/g, ' ').trim();
+    if (body) {
+      sections.push({ heading: currentHeading, body });
+    }
+    currentLines = [];
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+
+    if (isLikelyHeading(line)) {
+      flush();
+      currentHeading = line.replace(/:$/, '');
+      continue;
+    }
+
+    currentLines.push(line.replace(/^[\t ]*[•▪◦●○-]\s+/, '').replace(/^[\t ]*\d+\.\s+/, ''));
+  }
+
+  flush();
+  return sections.length ? sections : [{ heading: 'Narrative', body: draft.replace(/\s+/g, ' ').trim() }];
+}
+
+function toOneParagraph(draft: string) {
+  return splitDraftIntoSectionBodies(draft)
+    .map((section) => section.body)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function toTwoParagraphHpiMsePlan(draft: string) {
+  const sections = splitDraftIntoSectionBodies(draft);
+  const firstParagraph = sections
+    .filter((section) => /hpi|subjective|interval|history|chief|reason|narrative/i.test(section.heading))
+    .map((section) => section.body);
+  const secondParagraph = sections
+    .filter((section) => /mse|mental|risk|assessment|impression|plan|medication|follow|safety/i.test(section.heading))
+    .map((section) => section.body);
+  const used = new Set([...firstParagraph, ...secondParagraph]);
+  const remaining = sections.map((section) => section.body).filter((body) => !used.has(body));
+
+  const first = (firstParagraph.length ? firstParagraph : remaining.splice(0, Math.ceil(remaining.length / 2)))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const second = [...secondParagraph, ...remaining]
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return [first, second].filter(Boolean).join('\n\n');
+}
 
 function fallbackRewrite(input: RewriteInput): string {
   switch (input.rewriteMode) {
@@ -32,6 +110,12 @@ function fallbackRewrite(input: RewriteInput): string {
         .replace(/\bHI\b/g, 'homicidal ideation');
     case 'closer-to-source':
       return `Source-shaped draft:\n\n${input.sourceInput}`;
+    case 'one-paragraph':
+      return toOneParagraph(input.currentDraft);
+    case 'two-paragraph-hpi-mse-plan':
+      return toTwoParagraphHpiMsePlan(input.currentDraft);
+    case 'story-flow':
+      return toOneParagraph(input.currentDraft);
     case 'regenerate-full-note':
     default:
       return input.currentDraft;
@@ -46,6 +130,12 @@ function instructionForMode(mode: RewriteMode) {
       return 'Rewrite the note to sound slightly more formal and clinically polished while preserving all supported facts, direct source meaning, dates, and uncertainty. Do not add new content.';
     case 'closer-to-source':
       return 'Rewrite the note so it stays much closer to the original source wording and structure while remaining readable. Reduce interpretation, preserve direct phrasing where usable, and do not add new content.';
+    case 'one-paragraph':
+      return 'Rewrite the current draft into one coherent clinical paragraph. Remove section headings, preserve all source-supported facts and uncertainty, and do not add new clinical content.';
+    case 'two-paragraph-hpi-mse-plan':
+      return 'Rewrite the draft into exactly two paragraphs when possible: paragraph one for HPI/interval narrative, paragraph two for MSE, assessment, risk, and plan. Preserve source-supported facts and uncertainty only.';
+    case 'story-flow':
+      return 'Rewrite the draft so it flows like a clinical story while staying concise, source-faithful, and chart-ready. Remove bulky section scaffolding unless headings are necessary for safety.';
     case 'regenerate-full-note':
     default:
       return 'Regenerate the note as a cleaner full draft using only the supported facts from the source input. Preserve dates, preserve uncertainty, and do not invent content. If the current draft contains unsupported statements, remove them rather than replacing them with new inference.';

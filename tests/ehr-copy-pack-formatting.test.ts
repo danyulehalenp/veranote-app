@@ -96,4 +96,18 @@ describe('EHR copy-pack formatting', () => {
       'Qualifacts/CareLogic',
     ]));
   });
+
+  it('returns enterprise behavioral-health paste targets for agency and facility EHRs', () => {
+    for (const destination of ['Welligent', 'Netsmart myAvatar', 'Qualifacts/CareLogic', 'Credible'] as const) {
+      const targets = getOutputDestinationFieldTargets(destination, 'inpatient-psych-follow-up');
+      const labels = targets.map((target) => target.label).join(' | ');
+      const notes = targets.map((target) => target.note).join(' | ');
+
+      expect(labels).toMatch(/Progress narrative \/ service note/i);
+      expect(labels).toMatch(/MSE \/ risk \/ safety/i);
+      expect(labels).toMatch(/Interventions \/ response/i);
+      expect(labels).toMatch(/Plan \/ disposition/i);
+      expect(notes).toMatch(/source-close|contradiction-preserving/i);
+    }
+  });
 });
