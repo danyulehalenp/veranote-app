@@ -27,7 +27,6 @@ import { DictationCommandManager } from '@/components/note/dictation/dictation-c
 import { DictationTranscriptPanel } from '@/components/note/dictation/dictation-transcript-panel';
 import { CombinedView } from '@/components/veranote/input/CombinedView';
 import { SourceInput } from '@/components/veranote/input/SourceInput';
-import { SourceIntegrity } from '@/components/veranote/input/SourceIntegrity';
 import type { SourceTabKey } from '@/components/veranote/input/SourceTabs';
 import { StatusStrip, type StatusStripItem } from '@/components/veranote/ui/StatusStrip';
 import { getDifferentialCautionForDiagnosis, getTimeframeRuleForDiagnosis, listDiagnosisCategoryQuickPicks, listDiagnosisSuggestions } from '@/lib/psychiatry-diagnosis/seed-loader';
@@ -4984,14 +4983,13 @@ export function NewNoteForm() {
   if (!draftHydrationComplete) {
     return (
       <div className="grid gap-4">
-        <div className="workspace-shell overflow-visible rounded-[34px] p-[1px]">
-          <div className="rounded-[33px] bg-[linear-gradient(180deg,rgba(10,23,39,0.94),rgba(9,18,31,0.9))] p-6 shadow-[0_28px_70px_rgba(2,8,18,0.34)]">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100/66">Veranote workspace</div>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-white">Preparing your note workspace</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-cyan-50/72">
-              Checking for a saved draft or compose checkpoint so the page opens in the right place without jumping.
+        <div className="workspace-shell overflow-visible rounded-[24px] p-[1px]">
+          <div className="rounded-[23px] bg-[linear-gradient(180deg,rgba(10,23,39,0.92),rgba(9,18,31,0.88))] p-4 shadow-[0_18px_46px_rgba(2,8,18,0.26)]">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100/58">Preparing your note workspace</div>
+            <p className="mt-1 text-sm leading-6 text-cyan-50/72">
+              Checking saved work so the page opens in the right place.
             </p>
-            <div className="mt-5 h-2 overflow-hidden rounded-full border border-cyan-200/12 bg-[rgba(255,255,255,0.06)]">
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full border border-cyan-200/10 bg-[rgba(255,255,255,0.06)]">
               <div className="h-full w-1/2 rounded-full bg-[linear-gradient(90deg,rgba(103,232,249,0.2),rgba(103,232,249,0.92),rgba(45,212,191,0.72))]" />
             </div>
           </div>
@@ -5900,33 +5898,21 @@ export function NewNoteForm() {
               <div className="grid gap-4 2xl:pr-2">
 
       {showUnifiedWorkspace || activeComposeLane === 'source' ? (
-	      <div id="source-panel" ref={registerComposeSection('source-input')} className="workspace-panel flex flex-col rounded-[30px] p-3 text-white sm:p-4 xl:min-h-[560px]">
-	        <div className="mb-3 grid gap-3 rounded-[24px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] p-3.5 2xl:grid-cols-[minmax(0,1.55fr)_minmax(220px,0.45fr)]">
+	      <div id="source-panel" ref={registerComposeSection('source-input')} className="workspace-panel flex flex-col rounded-[28px] p-2.5 text-white sm:p-3 xl:min-h-[560px]">
+	        <div className="mb-2 flex flex-col gap-2 rounded-[20px] border border-cyan-200/10 bg-[rgba(255,255,255,0.035)] px-3 py-2.5 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-100/70">Source</div>
-            <h2 className="mt-1.5 text-[1.24rem] font-semibold tracking-[-0.03em] text-white">Paste or dictate source, then generate a draft.</h2>
-            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-cyan-50/74">
-              Pre-visit data, live notes, transcript, and add-ons can stay rough.
-            </p>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Source</div>
+            <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-white">Paste or dictate source.</h2>
           </div>
-	          <div className="workspace-subpanel hidden gap-2.5 rounded-[20px] p-3.5 sm:grid">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Coverage</div>
-                <div className="mt-0.5 text-lg font-semibold text-white">{sourceCompletionCount}/{sourceEntrySteps.length}</div>
-              </div>
-              <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
-                {sourceCompletionPercent}% ready
-              </div>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-white/10">
-              <div className="h-full rounded-full bg-[linear-gradient(90deg,rgba(56,189,248,0.78),rgba(34,211,238,0.92))]" style={{ width: `${sourceCompletionPercent}%` }} />
-            </div>
-            <SourceIntegrity
-              filledCount={sourceCompletionCount}
-              totalCount={sourceEntrySteps.length}
-              activeLabels={populatedSectionLabels}
-            />
+          <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.13em] text-cyan-50/78">
+            <span className="rounded-full border border-cyan-200/12 bg-white/[0.05] px-3 py-1">{sourceCompletionCount}/{sourceEntrySteps.length} fields</span>
+            {populatedSectionLabels.length ? (
+              <span className="rounded-full border border-cyan-200/12 bg-white/[0.05] px-3 py-1">
+                Active: {populatedSectionLabels[0]}
+              </span>
+            ) : (
+              <span className="rounded-full border border-cyan-200/12 bg-white/[0.05] px-3 py-1">Ready for source</span>
+            )}
           </div>
         </div>
 	        {(composeNudges.length || sectionExpectationSignals.length) ? (

@@ -15,10 +15,6 @@ const primaryLinks = [
   { href: '/dashboard/drafts', label: 'Saved Drafts', helper: 'Recover prior work' },
 ];
 
-const supportLinks = [
-  { href: '/dashboard/review', label: 'Deep Review', status: 'Secondary' },
-];
-
 const secondaryLinks = [
   { href: '/dashboard/internal', label: 'Internal Workbench', status: 'Internal' },
   { href: '/dashboard/connectivity', label: 'Connectivity', status: 'Internal' },
@@ -66,17 +62,15 @@ export function TopNav() {
   }, []);
 
   return (
-    <header className="z-40 border-b border-cyan-200/10 bg-[rgba(4,12,24,0.82)] backdrop-blur-xl md:sticky md:top-0">
-      <div className="flex w-full flex-col gap-2 px-3 py-2 md:px-4 lg:flex-row lg:items-center lg:justify-between lg:px-5">
+    <header className="z-40 border-b border-cyan-200/8 bg-[rgba(4,12,24,0.78)] backdrop-blur-xl md:sticky md:top-0">
+      <div className="flex w-full flex-col gap-1.5 px-3 py-1.5 md:px-4 lg:flex-row lg:items-center lg:justify-between lg:px-5">
         <div className="shrink-0">
           <Link href={workspacePath} className="inline-flex rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-300/40 focus:ring-offset-2 focus:ring-offset-[rgba(4,12,24,0.82)]">
-            <BrandLockup variant="nav" subtitle="Clinical Note Intelligence Workspace" />
+            <BrandLockup variant="nav" />
           </Link>
         </div>
-        <div className="flex flex-1 flex-col gap-2 lg:items-end">
-          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            {INTERNAL_MODE_ENABLED ? <ProviderIdentitySwitcher /> : null}
-            <AuthControls />
+        <div className="flex flex-1 flex-col gap-1.5 lg:items-end">
+          <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
             <nav className="flex flex-wrap gap-1.5 sm:gap-2" aria-label="Provider navigation">
               {primaryLinks.map((link) => (
                 <Link
@@ -90,66 +84,47 @@ export function TopNav() {
                   {link.label}
                 </Link>
               ))}
-            </nav>
-            <Link
-              href={feedbackHref}
-              className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.68)] px-3 py-1.5 text-sm font-medium text-ink transition hover:border-cyan-200/20 hover:bg-[rgba(18,181,208,0.12)] hover:text-cyan-50 sm:px-3.5 sm:py-2"
-            >
-              <span className="inline-flex items-center gap-2">
-                <span>Feedback</span>
-                {feedbackSummary?.newCount ? (
-                  <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-cyan-400 px-1.5 py-0.5 text-[10px] font-semibold text-slate-950">
-                    {feedbackSummary.newCount}
-                  </span>
-                ) : null}
-              </span>
-            </Link>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 rounded-[18px] border border-cyan-200/10 bg-[rgba(11,29,49,0.52)] px-3 py-2 text-xs text-muted">
-            <span className="font-semibold uppercase tracking-[0.18em] text-cyan-100/54">Main lane</span>
-            <span className="text-cyan-50/76">Workspace to Saved Drafts</span>
-            <span className="hidden text-cyan-50/48 sm:inline">Review stays inside Workspace unless you need the secondary screen.</span>
-            {supportLinks.map((link) => (
               <Link
-                key={link.href}
-                href={link.href}
-                className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${pathname === link.href
-                  ? 'border-cyan-200/34 bg-[rgba(18,181,208,0.16)] text-cyan-50'
-                  : 'border-cyan-200/14 bg-[rgba(13,30,50,0.72)] text-cyan-50/78 hover:border-cyan-200/28 hover:text-cyan-50'}`}
+                href={feedbackHref}
+                className="rounded-full border border-cyan-200/10 bg-[rgba(13,30,50,0.68)] px-3 py-1.5 text-sm font-medium text-ink transition hover:border-cyan-200/20 hover:bg-[rgba(18,181,208,0.12)] hover:text-cyan-50 sm:px-3.5 sm:py-2"
               >
-                <span>{link.label}</span>
-                <span className="text-[9px] uppercase tracking-[0.14em] text-cyan-100/58">{link.status}</span>
+                <span className="inline-flex items-center gap-2">
+                  <span>Feedback</span>
+                  {feedbackSummary?.newCount ? (
+                    <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-cyan-400 px-1.5 py-0.5 text-[10px] font-semibold text-slate-950">
+                      {feedbackSummary.newCount}
+                    </span>
+                  ) : null}
+                </span>
               </Link>
-            ))}
+            </nav>
+            <AuthControls />
+            {INTERNAL_MODE_ENABLED ? <div className="hidden xl:block"><ProviderIdentitySwitcher /></div> : null}
           </div>
           {INTERNAL_MODE_ENABLED ? (
-            <div className="flex flex-wrap items-center gap-3 rounded-[18px] border border-cyan-200/10 bg-[rgba(11,29,49,0.72)] px-4 py-2.5 text-xs text-muted shadow-[0_10px_30px_rgba(4,12,24,0.28)]">
-              <span className="font-semibold uppercase tracking-[0.18em] text-slate-500">Internal tools</span>
-              {secondaryLinks.map((link) => (
-                link.href ? (
-                  <Link
-                    key={link.label}
-                    href={link.href}
-                    className="inline-flex items-center gap-2 rounded-full border border-cyan-200/20 bg-[rgba(13,30,50,0.88)] px-3 py-1 text-cyan-50 transition hover:border-cyan-200/30 hover:bg-[rgba(18,181,208,0.12)]"
-                  >
-                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-cyan-500 text-[10px] font-bold text-slate-950">i</span>
-                    <span>{link.label}</span>
-                    {link.href === '/dashboard/internal' && feedbackSummary?.newCount ? (
-                      <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-cyan-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-950">
-                        {feedbackSummary.newCount}
-                      </span>
-                    ) : null}
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100/80">{link.status}</span>
-                  </Link>
-                ) : (
-                  <span key={link.label} className="inline-flex items-center gap-2 rounded-full border border-rose-200/20 bg-[rgba(79,22,46,0.92)] px-3 py-1 text-rose-100">
-                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[10px] font-bold text-white">X</span>
-                    <span>{link.label}</span>
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-200">{link.status}</span>
-                  </span>
-                )
-              ))}
-            </div>
+            <details className="group rounded-[14px] border border-cyan-200/8 bg-[rgba(11,29,49,0.42)] px-3 py-1.5 text-xs text-muted">
+              <summary className="cursor-pointer list-none font-semibold uppercase tracking-[0.16em] text-cyan-100/50">
+                Internal tools
+              </summary>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {secondaryLinks.map((link) => (
+                  link.href ? (
+                    <Link
+                      key={link.label}
+                      href={link.href}
+                      className="inline-flex items-center gap-2 rounded-full border border-cyan-200/16 bg-[rgba(13,30,50,0.72)] px-2.5 py-1 text-cyan-50 transition hover:border-cyan-200/30 hover:bg-[rgba(18,181,208,0.12)]"
+                    >
+                      <span>{link.label}</span>
+                      {link.href === '/dashboard/internal' && feedbackSummary?.newCount ? (
+                        <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-cyan-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-950">
+                          {feedbackSummary.newCount}
+                        </span>
+                      ) : null}
+                    </Link>
+                  ) : null
+                ))}
+              </div>
+            </details>
           ) : null}
         </div>
       </div>
