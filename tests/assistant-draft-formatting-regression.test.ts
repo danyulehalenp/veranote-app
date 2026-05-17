@@ -82,9 +82,24 @@ describe('assistant draft formatting regression', () => {
     expect(payload.message).not.toMatch(/What should I focus on|How should I move through/i);
 
     const action = payload.actions?.find((item) => item.type === 'apply-draft-rewrite');
-    expect(action?.draftText).toMatch(/HPI: Patient reports panic/i);
+    expect(action?.draftText).toMatch(/^Patient reports panic/i);
+    expect(action?.draftText).not.toMatch(/\bHPI:|\bMental Status Exam:|\bAssessment:|\bPlan:/);
     expect(action?.draftText).not.toMatch(/\n\nPlan:/);
     expect(action?.rewriteLabel).toMatch(/one-paragraph/i);
+  });
+
+  it('understands single-paragraph phrasing and removes visible headings from the applied draft', async () => {
+    const payload = await askFormatting('combine everything into a single paragraph without sections');
+
+    expect(payload.answerMode).toBe('chart_ready_wording');
+    expect(payload.message).toMatch(/one-paragraph format/i);
+
+    const action = payload.actions?.find((item) => item.type === 'apply-draft-rewrite');
+    const draftText = action?.draftText || '';
+    expect(draftText).toMatch(/^Patient reports panic/i);
+    expect(draftText).toMatch(/No final medication change is documented/i);
+    expect(draftText).not.toMatch(/\n\n/);
+    expect(draftText).not.toMatch(/\bHPI:|\bMental Status Exam:|\bAssessment:|\bPlan:/);
   });
 
   it('formats HPI first and MSE/Plan second even with misspelled provider wording', async () => {
@@ -177,6 +192,16 @@ describe('assistant draft formatting regression', () => {
 
     expect(payload.answerMode).toMatch(/reference|medication/i);
     expect(payload.message).toMatch(/Lamictal|lamotrigine|rash/i);
+    expect(payload.actions?.some((item) => item.type === 'apply-draft-rewrite')).not.toBe(true);
+  });
+
+  it('topic-switches to a new medication interaction question instead of using stale draft context', async () => {
+    const payload = await askFormatting('can wellbutrin be taken with paxil?');
+
+    expect(payload.answerMode).toMatch(/reference|medication|clinical/i);
+    expect(payload.message).toMatch(/bupropion|Wellbutrin/i);
+    expect(payload.message).toMatch(/paroxetine|Paxil|SSRI/i);
+    expect(payload.message).not.toMatch(/Chart-ready wording/i);
     expect(payload.actions?.some((item) => item.type === 'apply-draft-rewrite')).not.toBe(true);
   });
 });

@@ -26,8 +26,85 @@ export type RewriteResult = {
   warning?: string;
 };
 
+const COMMON_DRAFT_HEADINGS = [
+  /^hpi$/i,
+  /^history of present illness$/i,
+  /^interval(?: history| update)?$/i,
+  /^subjective$/i,
+  /^objective$/i,
+  /^mse$/i,
+  /^mental status(?: exam(?:ination)?)?$/i,
+  /^assessment$/i,
+  /^plan$/i,
+  /^assessment\s*(?:and|&|\/)\s*plan$/i,
+  /^a\/p$/i,
+  /^risk(?: assessment)?$/i,
+  /^safety(?: \/ risk| and risk)?$/i,
+  /^diagnos(?:is|es)$/i,
+  /^impression$/i,
+];
+
+function normalizePotentialHeading(line: string) {
+  return line
+    .trim()
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/^[\t ]*[•▪◦●○*-]\s+/, '')
+    .replace(/^[\t ]*\d+[.)]\s+/, '')
+    .replace(/:$/, '')
+    .trim();
+}
+
 function isLikelyHeading(line: string) {
-  return /^[A-Z][A-Za-z0-9 /&(),'-]{1,70}:$/.test(line.trim());
+  const trimmed = line.trim();
+  const normalized = normalizePotentialHeading(trimmed);
+  if (!normalized) {
+    return false;
+  }
+
+  if (COMMON_DRAFT_HEADINGS.some((pattern) => pattern.test(normalized))) {
+    return true;
+  }
+
+  if (/^#{1,6}\s+\S/.test(trimmed)) {
+    return normalized.split(/\s+/).length <= 8;
+  }
+
+  if (
+    trimmed.endsWith(':')
+    && /^[A-Z][A-Za-z0-9 /&(),'-]{1,80}:$/.test(trimmed.replace(/^#{1,6}\s+/, ''))
+    && !/[.!?]$/.test(normalized)
+  ) {
+    return true;
+  }
+
+  return normalized.length <= 60
+    && normalized.split(/\s+/).length <= 6
+    && normalized === normalized.toUpperCase()
+    && /[A-Z]/.test(normalized);
+}
+
+function stripListMarker(line: string) {
+  return line
+    .replace(/^[\t ]*[•▪◦●○*-]\s+/, '')
+    .replace(/^[\t ]*\d+[.)]\s+/, '')
+    .trim();
+}
+
+function splitInlineHeading(line: string) {
+  const match = line.match(/^(?:#{1,6}\s+)?([A-Za-z][A-Za-z0-9 /&(),'-]{1,60}):\s+(.+)$/);
+  if (!match?.[1] || !match[2]?.trim()) {
+    return null;
+  }
+
+  const heading = normalizePotentialHeading(match[1]);
+  if (!isLikelyHeading(`${heading}:`)) {
+    return null;
+  }
+
+  return {
+    heading,
+    body: stripListMarker(match[2]),
+  };
 }
 
 function splitDraftIntoSectionBodies(draft: string) {
@@ -50,13 +127,21 @@ function splitDraftIntoSectionBodies(draft: string) {
       continue;
     }
 
-    if (isLikelyHeading(line)) {
+    const inlineHeading = splitInlineHeading(line);
+    if (inlineHeading) {
       flush();
-      currentHeading = line.replace(/:$/, '');
+      currentHeading = inlineHeading.heading;
+      currentLines.push(inlineHeading.body);
       continue;
     }
 
-    currentLines.push(line.replace(/^[\t ]*[•▪◦●○-]\s+/, '').replace(/^[\t ]*\d+\.\s+/, ''));
+    if (isLikelyHeading(line)) {
+      flush();
+      currentHeading = normalizePotentialHeading(line);
+      continue;
+    }
+
+    currentLines.push(stripListMarker(line));
   }
 
   flush();

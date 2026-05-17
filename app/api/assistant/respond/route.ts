@@ -1061,8 +1061,8 @@ function normalizeDraftFormatMessage(message: string) {
 function classifyDraftFormatRequest(message: string): DraftFormatRequest | null {
   const normalized = normalizeDraftFormatMessage(message);
 
-  const hasDraftAnchor = /\b(note|draft|follow[-\s]?up|progress note|hpi|mse|plan|this|it)\b/.test(normalized);
-  const hasRewriteVerb = /\b(make|turn|convert|change|format|rewrite|put|collapse|flow|split|organize|reorganize|shape)\b/.test(normalized);
+  const hasDraftAnchor = /\b(note|draft|follow[-\s]?up|progress note|hpi|mse|plan|this|it|everything)\b/.test(normalized);
+  const hasRewriteVerb = /\b(make|turn|convert|change|format|rewrite|put|collapse|combine|merge|flow|split|organize|reorganize|shape)\b/.test(normalized);
   if (!hasDraftAnchor || !hasRewriteVerb) {
     return null;
   }
@@ -1083,7 +1083,8 @@ function classifyDraftFormatRequest(message: string): DraftFormatRequest | null 
     || /\bparagraph style\b/.test(normalized)
     || /\bin paragraph\b/.test(normalized)
     || /\bno sections?\b/.test(normalized)
-    || /\binstead of sections?\b/.test(normalized);
+    || /\binstead of sections?\b/.test(normalized)
+    || /\bwithout sections?\b/.test(normalized);
   if (asksForParagraph) {
     return {
       kind: 'one-paragraph',
@@ -1180,8 +1181,8 @@ function classifyContextualDraftFormatFollowup(message: string, context?: Assist
     };
   }
 
-  const visibleDraftAnchor = /\b(note|draft|follow[-\s]?up note|progress note|this|it|sections?|hpi|mse|plan)\b/.test(normalized);
-  if (/\b(one|single|1)\s+paragraph\b|\bparagraph form\b|\bparagraph style\b|\bin paragraph\b|\bno sections?\b|\binstead of sections?\b/.test(normalized)) {
+  const visibleDraftAnchor = /\b(note|draft|follow[-\s]?up note|progress note|this|it|everything|sections?|hpi|mse|plan)\b/.test(normalized);
+  if (/\b(one|single|1)\s+paragraph\b|\bparagraph form\b|\bparagraph style\b|\bin paragraph\b|\bno sections?\b|\binstead of sections?\b|\bwithout sections?\b/.test(normalized)) {
     if (!visibleDraftAnchor) {
       return null;
     }
@@ -1265,43 +1266,70 @@ function shouldSuppressDraftFormatContextFallback(message: string) {
     || /\b(voices?|hallucinations?|ah|vh|command|si|suicid|hi|homicid|risk|goodbye texts?|unsafe|psychosis|mania|manic|meth|withdrawal|intoxication|meds?|refus)\b/.test(normalized);
 }
 
+const COMMON_DRAFT_HEADING_PATTERNS = [
+  /^hpi$/,
+  /^history of present illness$/,
+  /^interval(?: history| update)?$/,
+  /^subjective$/,
+  /^objective$/,
+  /^mse$/,
+  /^mental status(?: exam(?:ination)?)?$/,
+  /^assessment$/,
+  /^plan$/,
+  /^assessment\s*(?:and|&|\/)\s*plan$/,
+  /^a\/p$/,
+  /^risk(?: assessment)?$/,
+  /^safety(?: \/ risk| and risk)?$/,
+  /^diagnos(?:is|es)$/,
+  /^impression$/,
+];
+
 function normalizeDraftHeading(value: string) {
   return value
     .replace(/^#{1,6}\s*/, '')
+    .replace(/^\s*[-*•▪◦●○]\s+/, '')
+    .replace(/^\s*\d+[.)]\s+/, '')
     .replace(/:$/, '')
     .trim();
 }
 
 function isLikelyDraftHeading(line: string) {
   const trimmed = line.trim();
+  const normalizedHeading = normalizeMessageForClinicalRouting(normalizeDraftHeading(trimmed));
   if (!trimmed) {
     return false;
   }
 
-  if (/^#{1,6}\s+\S/.test(trimmed)) {
+  if (COMMON_DRAFT_HEADING_PATTERNS.some((pattern) => pattern.test(normalizedHeading))) {
     return true;
+  }
+
+  if (/^#{1,6}\s+\S/.test(trimmed)) {
+    return normalizedHeading.split(/\s+/).length <= 8;
   }
 
   if (
     /^[A-Z][A-Za-z0-9 /&(),'-]{1,60}:$/.test(trimmed)
-    && !/[.!?]$/.test(trimmed.replace(/:$/, ''))
+    && !/[.!?]$/.test(normalizeDraftHeading(trimmed))
   ) {
     return true;
   }
 
-  return false;
+  return normalizedHeading.length <= 60
+    && normalizedHeading.split(/\s+/).length <= 6
+    && normalizeDraftHeading(trimmed) === normalizeDraftHeading(trimmed).toUpperCase()
+    && /[A-Z]/.test(normalizeDraftHeading(trimmed));
 }
 
 function stripListMarker(line: string) {
   return line
-    .replace(/^\s*[-*]\s+/, '')
+    .replace(/^\s*[-*•▪◦●○]\s+/, '')
     .replace(/^\s*\d+[.)]\s+/, '')
     .trim();
 }
 
 function collapseDraftToOneParagraph(draftText: string) {
   const chunks: string[] = [];
-  let pendingHeading = '';
 
   for (const rawLine of draftText.replace(/\r/g, '\n').split('\n')) {
     const line = rawLine.trim();
@@ -1310,15 +1338,18 @@ function collapseDraftToOneParagraph(draftText: string) {
     }
 
     if (isLikelyDraftHeading(line)) {
-      pendingHeading = normalizeDraftHeading(line);
       continue;
     }
 
     const inlineHeading = line.match(/^([A-Z][A-Za-z0-9 /&(),'-]{1,60}):\s+(.+)$/);
     if (inlineHeading && inlineHeading[2]?.trim()) {
       const heading = normalizeDraftHeading(inlineHeading[1]);
-      chunks.push(`${heading}: ${stripListMarker(inlineHeading[2])}`);
-      pendingHeading = '';
+      const normalizedHeading = normalizeMessageForClinicalRouting(heading);
+      chunks.push(
+        COMMON_DRAFT_HEADING_PATTERNS.some((pattern) => pattern.test(normalizedHeading))
+          ? stripListMarker(inlineHeading[2])
+          : `${heading}: ${stripListMarker(inlineHeading[2])}`,
+      );
       continue;
     }
 
@@ -1327,12 +1358,7 @@ function collapseDraftToOneParagraph(draftText: string) {
       continue;
     }
 
-    if (pendingHeading) {
-      chunks.push(`${pendingHeading}: ${cleaned}`);
-      pendingHeading = '';
-    } else {
-      chunks.push(cleaned);
-    }
+    chunks.push(cleaned);
   }
 
   return chunks

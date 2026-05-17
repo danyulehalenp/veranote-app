@@ -212,14 +212,16 @@ describe('assistant stale-context routing', () => {
     expect(payload.answerMode).toBe('chart_ready_wording');
     expect(payload.builderFamily).toBe('chart-wording');
     expect(payload.message).toContain('one-paragraph format');
-    expect(payload.message).toContain('Subjective: Patient reports mood is depressed');
-    expect(payload.message).toContain('Objective: Patient was observed withdrawn');
-    expect(payload.message).toContain('Plan: Continue current safety monitoring');
+    expect(payload.message).toContain('Patient reports mood is depressed');
+    expect(payload.message).toContain('Patient was observed withdrawn');
+    expect(payload.message).toContain('Continue current safety monitoring');
     expect(payload.message).not.toContain('Source-supported MSE findings');
     expect(payload.message).not.toContain('Leave these domains unfilled');
+    expect(payload.message).not.toMatch(/\bSubjective:|\bObjective:|\bPlan:/);
     expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
     expect(payload.actions?.[0]?.label).toBe('Apply to Draft');
-    expect(payload.actions?.[0]?.draftText).toContain('Subjective: Patient reports mood is depressed');
+    expect(payload.actions?.[0]?.draftText).toContain('Patient reports mood is depressed');
+    expect(payload.actions?.[0]?.draftText).not.toMatch(/\bSubjective:|\bObjective:|\bPlan:/);
     expect(payload.actions?.[0]?.rewriteLabel).toBe('one-paragraph format');
   });
 
@@ -253,9 +255,10 @@ describe('assistant stale-context routing', () => {
     expect(payload.answerMode).toBe('chart_ready_wording');
     expect(payload.message).toContain('one-paragraph format');
     expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
-    expect(payload.actions?.[0]?.draftText).toContain('HPI: Patient reports mood is improving');
-    expect(payload.actions?.[0]?.draftText).toContain('MSE: Mood anxious');
-    expect(payload.actions?.[0]?.draftText).toContain('Plan: Continue source-supported follow-up plan');
+    expect(payload.actions?.[0]?.draftText).toContain('Patient reports mood is improving');
+    expect(payload.actions?.[0]?.draftText).toContain('Mood anxious');
+    expect(payload.actions?.[0]?.draftText).toContain('Continue source-supported follow-up plan');
+    expect(payload.actions?.[0]?.draftText).not.toMatch(/\bHPI:|\bMSE:|\bPlan:/);
   });
 
   it('handles follow-up-note paragraph requests that say instead of sections', async () => {
@@ -302,12 +305,14 @@ describe('assistant stale-context routing', () => {
     expect(payload.eval?.routePriority).toBe('note-format-draft-shape');
     expect(payload.answerMode).toBe('chart_ready_wording');
     expect(payload.message).toContain('one-paragraph format');
-    expect(payload.message).toContain('HPI: Patient reports anxiety remains present');
-    expect(payload.message).toContain('MSE: Mood anxious');
-    expect(payload.message).toContain('Plan: Continue source-supported treatment plan');
+    expect(payload.message).toContain('Patient reports anxiety remains present');
+    expect(payload.message).toContain('Mood anxious');
+    expect(payload.message).toContain('Continue source-supported treatment plan');
     expect(payload.message).not.toContain('Source-supported MSE findings');
+    expect(payload.message).not.toMatch(/\bHPI:|\bMSE:|\bAssessment:|\bPlan:/);
     expect(payload.actions?.[0]?.type).toBe('apply-draft-rewrite');
     expect(payload.actions?.[0]?.draftText).not.toContain('\n\nMSE:');
+    expect(payload.actions?.[0]?.draftText).not.toMatch(/\bHPI:|\bMSE:|\bAssessment:|\bPlan:/);
   });
 
   it('supports two-paragraph HPI plus MSE/plan draft shape requests', async () => {
