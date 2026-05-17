@@ -7722,7 +7722,11 @@ export function NewNoteForm() {
 
               <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                 <div className="grid gap-4">
-                  <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+                  <details className="workspace-utility-details rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-3">
+                    <summary className="text-sm font-semibold text-slate-950">
+                      Partner setup
+                    </summary>
+                    <div className="mt-4">
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div>
                         <div className="text-sm font-semibold text-slate-950">Partner Setup</div>
@@ -7814,9 +7818,14 @@ export function NewNoteForm() {
                         </div>
                       </div>
                     </div>
-                  </div>
+                    </div>
+                  </details>
 
-                  <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+                  <details className="workspace-utility-details rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-3">
+                    <summary className="text-sm font-semibold text-slate-950">
+                      Provider memory and preferences
+                    </summary>
+                    <div className="mt-4">
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div>
                         <div className="text-sm font-semibold text-slate-950">Provider memory and preferences</div>
@@ -7868,7 +7877,8 @@ export function NewNoteForm() {
                         {assistantPersona.name} has not learned many explicit workflow notes yet. As repeated habits show up, they will appear here and in {assistantPersona.name}’s memory center.
                       </div>
                     )}
-                  </div>
+                    </div>
+                  </details>
 
                   <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -8053,9 +8063,12 @@ export function NewNoteForm() {
                       </div>
                     </div>
 
-                    <div className="mt-4 rounded-[18px] border border-cyan-200/14 bg-[rgba(255,255,255,0.06)] p-3 text-xs leading-5 text-cyan-50/76">
-                      <span className="font-semibold text-white">How generation uses this:</span> when you click Generate Draft, Veranote sends this prompt as provider-specific saved preferences along with Role, Field, EHR, Note Type, and the four source boxes. It guides structure, tone, sections, and destination formatting, but it does not replace the patient source.
-                    </div>
+                    <details className="workspace-utility-details mt-4 rounded-[18px] border border-cyan-200/14 bg-[rgba(255,255,255,0.06)] px-3 py-2.5">
+                      <summary className="text-sm font-semibold text-cyan-50">How generation uses this prompt</summary>
+                      <p className="mt-3 text-xs leading-5 text-cyan-50/76">
+                        Veranote sends this prompt as provider-specific saved preferences along with Role, Field, EHR, Note Type, and the four source boxes. It guides structure, tone, sections, and destination formatting, but it does not replace the patient source.
+                      </p>
+                    </details>
 
                     {lanePreferenceSuggestion ? (
                       <div className="mt-4 rounded-[20px] border border-cyan-200/12 bg-[rgba(255,255,255,0.05)] p-4">
@@ -8191,7 +8204,11 @@ export function NewNoteForm() {
                       </div>
                     ) : null}
 
-                    <div data-testid="prompt-builder-coach" className="mt-4 rounded-[20px] border border-slate-200 bg-white p-4">
+                    <details data-testid="prompt-builder-coach" className="workspace-utility-details mt-4 rounded-[20px] border border-slate-200 bg-white px-4 py-3">
+                      <summary className="text-sm font-semibold text-slate-950">
+                        Prompt Studio Coach
+                      </summary>
+                      <div className="mt-4">
                       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                         <div>
                           <div className="text-sm font-semibold text-slate-950">Prompt Studio Coach</div>
@@ -8315,7 +8332,8 @@ export function NewNoteForm() {
                           ) : null}
                         </div>
                       ) : null}
-                    </div>
+                      </div>
+                    </details>
 
                     <div className="rounded-[20px] border border-slate-200 bg-white p-4">
                       <Field label="Prompt name">

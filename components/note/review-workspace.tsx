@@ -902,6 +902,83 @@ function SourceFidelityPulse(props: {
     .filter((item) => item.reviewStatus !== 'dismissed')
     .slice(0, props.compact ? 3 : 5);
 
+  if (props.compact) {
+    return (
+      <section
+        data-testid="source-fidelity-pulse"
+        className="workspace-subpanel rounded-[20px] border border-cyan-200/12 bg-[rgba(10,28,46,0.52)] px-3.5 py-3"
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">
+              Source fidelity
+            </div>
+            <div className="mt-1 text-sm font-semibold text-white">{props.summary.statusLabel}</div>
+            <div className="mt-1 line-clamp-2 text-xs leading-5 text-cyan-50/68">{props.summary.statusDetail}</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <InlineMetric label="linked" value={`${props.summary.linkedSections}/${props.summary.totalSections || 0}`} />
+            <InlineMetric label="open" value={props.summary.openReviewItems} />
+            <InlineMetric label="blocks" value={props.summary.totalSourceBlocks} />
+          </div>
+        </div>
+
+        {visibleItems.length ? (
+          <details className="workspace-utility-details mt-3 rounded-[16px] border border-cyan-200/10 bg-white/[0.035] px-3 py-2">
+            <summary className="text-sm font-semibold text-cyan-50">
+              Source items needing review · {visibleItems.length}
+            </summary>
+            <div data-testid="conflict-gap-panel" className="mt-3 grid gap-2">
+              {visibleItems.map((reviewItem) => (
+                <div
+                  key={reviewItem.id}
+                  data-testid="conflict-gap-item"
+                  className={`rounded-[14px] border px-3 py-2 ${sourceFidelityToneClasses[reviewItem.severity]}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => revealReviewTarget(reviewItem.targetId)}
+                    className="w-full text-left"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-white/14 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                        {reviewItem.category}
+                      </span>
+                      <span className="text-sm font-semibold">{reviewItem.label}</span>
+                    </div>
+                    <div className="mt-1 text-xs leading-5 opacity-86">{reviewItem.detail}</div>
+                  </button>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      data-testid="source-fidelity-review-action"
+                      onClick={() => props.onReviewItemStatusChange?.(reviewItem.id, 'reviewed')}
+                      className="rounded-full border border-emerald-300/24 bg-[rgba(16,185,129,0.14)] px-2.5 py-1 text-[11px] font-semibold text-emerald-50"
+                    >
+                      Reviewed
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="source-fidelity-review-action"
+                      onClick={() => props.onReviewItemStatusChange?.(reviewItem.id, 'needs-revision')}
+                      className="rounded-full border border-amber-300/24 bg-[rgba(245,158,11,0.14)] px-2.5 py-1 text-[11px] font-semibold text-amber-50"
+                    >
+                      Needs revision
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : (
+          <div className="mt-3 rounded-[14px] border border-emerald-300/18 bg-[rgba(16,185,129,0.08)] px-3 py-2 text-xs text-emerald-50">
+            No source-fidelity conflicts or gaps are currently surfaced. Still do the final clinician read before export.
+          </div>
+        )}
+      </section>
+    );
+  }
+
   return (
     <section
       data-testid="source-fidelity-pulse"
@@ -5246,18 +5323,15 @@ export function ReviewWorkspace({
         </div>
       ) : null}
 
-      <div className="workspace-command-bar mb-6 rounded-[28px] p-4 sm:p-5">
+      <div className="workspace-command-bar mb-5 rounded-[28px] p-4">
         <div className="grid gap-3 2xl:grid-cols-[minmax(0,1.48fr)_minmax(280px,0.52fr)]">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-100/64">Review workspace</div>
             <h1 className="mt-2 text-[1.55rem] font-semibold tracking-[-0.04em] text-white sm:text-[1.88rem]">
-              Review wording, preserve uncertainty, and finish with less friction.
+              Review Draft.
             </h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-cyan-50/70">
-              The top strip is only for orientation. The main work stays in the draft, section review, evidence, and finish controls below.
-            </p>
             {firstOpenReviewSection ? (
-              <div className="mt-4 inline-flex flex-wrap items-center gap-3 rounded-[18px] border border-cyan-200/12 bg-[rgba(13,30,50,0.48)] px-4 py-3 text-sm text-cyan-50/78">
+              <div className="mt-3 inline-flex flex-wrap items-center gap-3 rounded-[18px] border border-cyan-200/12 bg-[rgba(13,30,50,0.48)] px-4 py-2.5 text-sm text-cyan-50/78">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Start with</span>
                 <span className="font-semibold text-white">{firstOpenReviewSection.heading}</span>
                 <button
@@ -5272,7 +5346,7 @@ export function ReviewWorkspace({
                 </button>
               </div>
             ) : null}
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               <div className="workspace-badge-static rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50">
                 {session.noteType}
               </div>
@@ -5284,35 +5358,33 @@ export function ReviewWorkspace({
               </div>
             </div>
           </div>
-          <div className="grid gap-3">
-            <div className="workspace-card-static rounded-[20px] p-4">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Session status</div>
-              <div className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-white">
-                {exportReadiness.ready ? 'Ready to finish' : 'Review in progress'}
-              </div>
-              <p className="mt-2 text-sm leading-6 text-cyan-50/70">
-                {reviewCounts.unreviewed + reviewCounts.needsReview} section{reviewCounts.unreviewed + reviewCounts.needsReview === 1 ? '' : 's'} still open across this draft.
-              </p>
+          <div className="workspace-card-static rounded-[20px] p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Status</div>
+            <div className="mt-2 text-xl font-semibold tracking-[-0.03em] text-white">
+              {exportReadiness.ready ? 'Ready to finish' : 'Review in progress'}
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <CompactMetric label="Approved" value={reviewCounts.approved} />
-              <CompactMetric label="Needs review" value={reviewCounts.needsReview} />
-              <CompactMetric label="Evidence" value={reviewCounts.confirmedEvidence} />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <InlineMetric label="open" value={reviewCounts.unreviewed + reviewCounts.needsReview} />
+              <InlineMetric label="approved" value={reviewCounts.approved} />
+              <InlineMetric label="evidence" value={reviewCounts.confirmedEvidence} />
             </div>
           </div>
         </div>
-        <div className="mt-4 grid gap-2 lg:grid-cols-4">
-          {reviewStageItems.map((item, index) => (
-            <div key={item.id} className={`rounded-[18px] border px-4 py-3 ${getReviewStageTone(item.status)}`}>
-              <div className="flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em]">
-                <span>Step {index + 1}</span>
-                <span>{item.status}</span>
+        <details className="workspace-utility-details mt-4 rounded-[18px] border border-cyan-200/10 bg-white/[0.035] px-3.5 py-2.5">
+          <summary className="text-sm font-semibold text-cyan-50">Workflow steps</summary>
+          <div className="mt-3 grid gap-2 lg:grid-cols-4">
+            {reviewStageItems.map((item, index) => (
+              <div key={item.id} className={`rounded-[16px] border px-3 py-2.5 ${getReviewStageTone(item.status)}`}>
+                <div className="flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  <span>Step {index + 1}</span>
+                  <span>{item.status}</span>
+                </div>
+                <div className="mt-1.5 text-sm font-semibold">{item.label}</div>
+                <div className="mt-1 text-xs leading-5 opacity-80">{item.detail}</div>
               </div>
-              <div className="mt-1.5 text-sm font-semibold">{item.label}</div>
-              <div className="mt-1 text-xs leading-5 opacity-80">{item.detail}</div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </details>
         {providerSettings.outputProfiles.length ? (
           <label className="mt-4 grid gap-2 text-sm font-medium text-cyan-50/82 lg:max-w-md">
             <span>Switch site / EHR preset</span>
@@ -5335,6 +5407,7 @@ export function ReviewWorkspace({
       <div className="mb-6">
         <SourceFidelityPulse
           summary={sourceFidelitySummary}
+          compact
           onReviewItemStatusChange={handleSourceFidelityReviewStatusChange}
         />
       </div>
