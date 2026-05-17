@@ -95,9 +95,9 @@ async function gotoWorkspace(page, appUrl) {
     await signInForQa(page, appUrl);
   }
 
-  const clinicalFieldSelect = page.locator('select[aria-label="Select clinical field"]').first();
-  const hasClinicalFieldSelect = await waitForVisible(clinicalFieldSelect, 5000);
-  if (!hasClinicalFieldSelect) {
+  const sourceField = page.locator('#source-field-intakeCollateral textarea').first();
+  const hasSourceField = await waitForVisible(sourceField, 5000);
+  if (!hasSourceField) {
     const backToCompose = page.getByText('Back to Compose', { exact: true }).first();
     const hasBackToCompose = await waitForVisible(backToCompose, 5000);
     if (hasBackToCompose) {
@@ -106,18 +106,27 @@ async function gotoWorkspace(page, appUrl) {
     }
   }
 
-  await clinicalFieldSelect.waitFor({ state: 'visible', timeout: 30000 });
+  await sourceField.waitFor({ state: 'visible', timeout: 30000 });
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(1200);
 
-  if (!await clinicalFieldSelect.isVisible().catch(() => false)) {
+  if (!await sourceField.isVisible().catch(() => false)) {
     const backToCompose = page.getByText('Back to Compose', { exact: true }).first();
     if (await waitForVisible(backToCompose, 5000)) {
       await backToCompose.click();
-      await clinicalFieldSelect.waitFor({ state: 'visible', timeout: 30000 });
+      await sourceField.waitFor({ state: 'visible', timeout: 30000 });
       await page.waitForTimeout(500);
     }
   }
+
+  await page.evaluate(() => {
+    document.querySelectorAll('details').forEach((details) => {
+      if (details.querySelector('select[aria-label="Select clinical field"]')) {
+        details.open = true;
+      }
+    });
+  });
+  await page.waitForTimeout(200);
 }
 
 async function selectFirstVisible(page, selector, value) {

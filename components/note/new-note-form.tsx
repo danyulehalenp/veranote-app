@@ -5054,10 +5054,7 @@ export function NewNoteForm() {
               <div id="source-panel" className="workspace-panel grid gap-4 rounded-[30px] p-4 text-white 2xl:sticky 2xl:top-4 2xl:max-h-[calc(100vh-10rem)] 2xl:overflow-y-auto">
                 <div className="rounded-[22px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] p-4">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/68">Source packet</div>
-                  <div className="mt-1 text-lg font-semibold tracking-[-0.02em] text-white">Edit source while reviewing the draft</div>
-                  <p className="mt-2 text-sm leading-6 text-cyan-50/72">
-                    These are the same four source fields used to generate the draft. Keep them editable so review can stay source-close.
-                  </p>
+                  <div className="mt-1 text-lg font-semibold tracking-[-0.02em] text-white">Edit source beside the draft</div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <span className="rounded-full border border-cyan-200/14 bg-white/[0.06] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
                       {sourceCompletionCount}/{sourceEntrySteps.length} fields loaded
@@ -6313,10 +6310,10 @@ export function NewNoteForm() {
                 </details>
 
                 <div className="workspace-subpanel workspace-source-entry-card rounded-[20px] p-3">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Source</div>
-                      <div className="mt-1 text-sm font-semibold text-white">Paste, type, dictate, or review ambient source.</div>
+                      <div className="mt-1 text-sm font-semibold text-white">Add source in one of four fields.</div>
                     </div>
                     <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
                       {sourceCompletionCount}/{sourceEntrySteps.length} fields loaded
@@ -6379,30 +6376,24 @@ export function NewNoteForm() {
                   ))}
                 </div>
 
-                <div className="workspace-source-next-action rounded-[20px] border border-cyan-200/16 bg-[linear-gradient(145deg,rgba(4,12,24,0.88),rgba(8,32,58,0.9))] px-4 py-3 shadow-[0_10px_30px_rgba(4,12,24,0.22)] backdrop-blur-xl">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="workspace-source-next-action rounded-[18px] border border-cyan-200/12 bg-white/[0.035] px-3.5 py-2.5">
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Next action</div>
-                <div className="mt-1 text-sm font-semibold text-white">
-                        {isLoading ? 'Generating draft...' : hasSource ? 'Generate Draft from Source.' : 'Paste, dictate, or upload source to start.'}
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/54">Source status</div>
+                      <div className="mt-1 text-sm font-semibold text-white">
+                        {isLoading ? 'Generating draft...' : hasSource ? 'Source ready for draft.' : 'Paste, dictate, or upload source to start.'}
                       </div>
                       <div className="mt-1 text-xs text-cyan-50/66">
-                        {sourceCompletionCount}/{sourceEntrySteps.length} source steps loaded • {composeNudges.filter((item) => item.tone === 'warning' || item.tone === 'danger').length} attention item{composeNudges.filter((item) => item.tone === 'warning' || item.tone === 'danger').length === 1 ? '' : 's'}
+                        {sourceCompletionCount}/{sourceEntrySteps.length} fields loaded • Generate in the draft pane.
                       </div>
                     </div>
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          scrollToDraftControls();
-                          void handleGenerate();
-                        }}
-                        disabled={isLoading || sourceCompletionCount === 0}
-                        className="aurora-primary-button rounded-xl px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isLoading ? 'Generating draft...' : 'Generate Draft from Source'}
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={scrollToDraftControls}
+                      className="workspace-action-pill rounded-full border border-cyan-200/14 bg-white/[0.05] px-3 py-1.5 text-xs font-semibold text-cyan-50/74 transition hover:border-cyan-200/26 hover:text-white"
+                    >
+                      Go to draft
+                    </button>
                   </div>
                 </div>
               </div>
@@ -6761,7 +6752,7 @@ export function NewNoteForm() {
               </h2>
               <p className="mt-2 max-w-xl text-sm leading-6 text-cyan-50/70">
                 {hasSource
-                  ? 'Generate from the source on the left, then review the note here.'
+                  ? 'Generate from the source on the left.'
                   : 'Paste, dictate, or upload source on the left to begin.'}
               </p>
             </div>
@@ -6794,37 +6785,41 @@ export function NewNoteForm() {
             >
               Edit source
             </button>
-            <button
-              type="button"
-              onClick={scrollToDraftControls}
-              className="aurora-secondary-button rounded-xl px-4 py-2.5 text-sm font-medium"
-            >
-              Draft settings
-            </button>
-            <button
-              type="button"
-              onClick={handleLoadExample}
-              className="aurora-secondary-button rounded-xl px-4 py-2.5 text-sm font-medium"
-            >
-              Load example
-            </button>
           </div>
         </div>
 
-        <div className="mt-4 rounded-[20px] border border-cyan-200/10 bg-[rgba(255,255,255,0.035)] p-4">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/60">{assistantPersona.name} Review</div>
-          <div className="mt-1 text-base font-semibold text-white">{atlasStatusLabel}</div>
-          <p className="mt-2 text-sm leading-6 text-cyan-50/68">
-            {assistantPersona.name} becomes useful after a draft exists. Until then, keep the source clean and generate when the left pane reflects the encounter.
-          </p>
+        <div className="mt-3 rounded-[18px] border border-cyan-200/10 bg-white/[0.03] px-3.5 py-2.5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/54">{assistantPersona.name} Review</div>
+              <div className="mt-1 text-sm font-semibold text-white">{hasSource ? 'Waiting for draft' : 'Inactive until source exists'}</div>
+            </div>
+            <span className="rounded-full border border-cyan-200/12 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-50/62">
+              {atlasStatusLabel}
+            </span>
+          </div>
         </div>
 
-        <details className="mt-4 rounded-[20px] border border-cyan-200/10 bg-[rgba(255,255,255,0.03)] p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-cyan-50">What happens after generation?</summary>
-          <div className="mt-3 grid gap-2 text-sm leading-6 text-cyan-50/70">
-            <p>1. The generated note appears in this right pane.</p>
-            <p>2. Source remains scrollable on the left for comparison.</p>
-            <p>3. {assistantPersona.name} review and copy/export actions stay with the draft.</p>
+        <details className="mt-3 rounded-[18px] border border-cyan-200/10 bg-white/[0.025] px-3.5 py-2.5">
+          <summary className="cursor-pointer text-sm font-semibold text-cyan-50">Options & help</summary>
+          <div className="mt-3 grid gap-3 text-sm leading-6 text-cyan-50/70">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={scrollToDraftControls}
+                className="aurora-secondary-button rounded-xl px-3.5 py-2 text-sm font-medium"
+              >
+                Draft settings
+              </button>
+              <button
+                type="button"
+                onClick={handleLoadExample}
+                className="aurora-secondary-button rounded-xl px-3.5 py-2 text-sm font-medium"
+              >
+                Load example
+              </button>
+            </div>
+            <p>After generation, the draft replaces this panel and stays beside the source for review, copy, and export.</p>
           </div>
         </details>
       </div>
