@@ -472,11 +472,23 @@ export function AssistantShell() {
         <button
           type="button"
           data-testid="assistant-open-button"
+          data-assistant-edge-dock="true"
+          aria-label={`Ask ${assistantPersona.name}`}
           onClick={openPanel}
-          className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-full border border-cyan-200/22 bg-[rgba(4,12,24,0.94)] p-2.5 text-sm font-semibold text-cyan-50 shadow-[0_20px_50px_rgba(4,12,24,0.42)] backdrop-blur-xl transition hover:border-cyan-200/34 hover:bg-[rgba(18,181,208,0.18)] sm:bottom-10 sm:right-6 sm:px-5 sm:py-3"
+          className={`fixed z-50 flex items-center gap-3 border border-cyan-200/22 bg-[rgba(4,12,24,0.94)] p-2.5 text-sm font-semibold text-cyan-50 shadow-[0_20px_50px_rgba(4,12,24,0.42)] backdrop-blur-xl transition hover:border-cyan-200/34 hover:bg-[rgba(18,181,208,0.18)] ${
+            isCompactViewport
+              ? 'bottom-4 right-4 rounded-full sm:bottom-10 sm:right-6 sm:px-5 sm:py-3'
+              : 'right-0 top-1/2 -translate-y-1/2 flex-col rounded-l-[22px] border-r-0 px-2 py-3'
+          }`}
         >
           <AssistantPersonaAvatar avatar={assistantPersona.avatar} label={assistantPersona.name} size="sm" />
-          <span className="hidden sm:inline">Ask {assistantPersona.name}</span>
+          {isCompactViewport ? (
+            <span className="hidden sm:inline">Ask {assistantPersona.name}</span>
+          ) : (
+            <span className="hidden sm:block [writing-mode:vertical-rl] rotate-180 text-[10px] uppercase tracking-[0.16em] text-cyan-100/74">
+              Assistant
+            </span>
+          )}
         </button>
       ) : null}
 
@@ -522,7 +534,7 @@ export function AssistantShell() {
                 expandPanel();
               }
             }}
-            className="flex h-full items-center gap-2 rounded-full border border-cyan-200/18 bg-[rgba(4,12,24,0.94)] p-2.5 shadow-[0_22px_60px_rgba(4,12,24,0.4)] backdrop-blur-xl transition sm:gap-3 sm:px-4"
+            className="flex h-full items-center gap-2 rounded-[24px] border border-cyan-200/18 bg-[rgba(4,12,24,0.94)] p-2.5 shadow-[0_22px_60px_rgba(4,12,24,0.4)] backdrop-blur-xl transition sm:gap-3 sm:px-4"
           >
             <AssistantPersonaAvatar avatar={assistantPersona.avatar} label={assistantPersona.name} size="sm" />
             <div className="hidden min-w-0 sm:block">
