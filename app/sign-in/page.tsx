@@ -7,7 +7,10 @@ import { BrandLockup } from '@/components/veranote/BrandLockup';
 import { normalizeSafeCallbackPath } from '@/lib/veranote/auth-redirect';
 import { getMarketingSiteUrl } from '@/lib/veranote/domain-config';
 
-const marketingSiteUrl = getMarketingSiteUrl();
+const resolvedMarketingSiteUrl = getMarketingSiteUrl();
+const marketingSiteUrl = /(?:localhost|127\.0\.0\.1)(?::\d+)?/i.test(resolvedMarketingSiteUrl)
+  ? 'https://veranote.org'
+  : resolvedMarketingSiteUrl;
 
 function SignInCard() {
   const router = useRouter();

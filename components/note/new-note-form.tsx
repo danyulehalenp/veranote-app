@@ -5118,21 +5118,11 @@ export function NewNoteForm() {
 	    <div ref={composeWorkspaceRef} className="workspace-left-shell">
 	      <aside className="workspace-left-rail">
 	        <div className="workspace-left-rail-header">
-	          <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-100/54">Veranote</div>
-          <div className="mt-1 text-lg font-semibold leading-tight tracking-[-0.03em] text-white">Main workflow</div>
-          <p className="mt-1 text-xs leading-5 text-cyan-50/60">One path: set up, add source, generate, review, then finish.</p>
-	        </div>
-
-	        <div className="workspace-rail-flow" aria-label="Primary note workflow">
-	          <div className="workspace-rail-flow-title">Airplane view</div>
-	          <div className="workspace-rail-flow-steps">
-	            <span>Setup</span>
-	            <span>Source</span>
-	            <span>Draft</span>
-	            <span>Review</span>
-	            <span>Finish</span>
-	          </div>
-	          <p>Deep Review is optional. Saved Drafts is where completed or paused work lives.</p>
+	          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100/54">Veranote</div>
+          <div className="mt-1 text-lg font-semibold leading-tight tracking-[-0.03em] text-white">New note</div>
+          <p className="mt-1 text-xs leading-5 text-cyan-50/60">
+            {noteType} • {sourceCompletionCount}/{sourceEntrySteps.length} source fields
+          </p>
 	        </div>
 
 	        <div className="workspace-rail-search" data-testid="workspace-quick-find">
@@ -5154,7 +5144,7 @@ export function NewNoteForm() {
 	                runWorkspaceQuickFind(workspaceQuickFindResults[0]);
 	              }
 	            }}
-	            placeholder="Try paste, dictation, ambient, CPT..."
+	            placeholder="Search actions..."
 	            aria-label="Find in workspace"
 	          />
 	          {workspaceFindFocused || workspaceFindQuery.trim() ? (
@@ -5181,7 +5171,7 @@ export function NewNoteForm() {
 	              )}
 	            </div>
 	          ) : (
-	            <div className="workspace-rail-search-hint">Search obscure actions fast: paste, dictation, ambient, CPT, prompt, EHR, export.</div>
+	            <div className="workspace-rail-search-hint">Find source, dictation, prompt, EHR, CPT, or saved drafts.</div>
 	          )}
 	        </div>
 
@@ -5191,7 +5181,7 @@ export function NewNoteForm() {
 	            onClick={handlePasteSourceJump}
 	            className="workspace-rail-primary"
 	          >
-	            Paste Source Here
+	            Paste Source
 	          </button>
 	          <button
 	            type="button"
@@ -5206,14 +5196,6 @@ export function NewNoteForm() {
 	          </button>
 	          <button
 	            type="button"
-	            data-testid="workspace-assistant-open-button"
-	            onClick={openAtlasAssistant}
-	            className="workspace-rail-assistant"
-	          >
-	            Ask {assistantPersona.name}
-	          </button>
-	          <button
-	            type="button"
 	            onClick={() => router.push('/dashboard/drafts')}
 	            className="workspace-rail-tab"
 	          >
@@ -5222,13 +5204,12 @@ export function NewNoteForm() {
 	        </div>
 
 	        <div className="workspace-rail-section">
-	          <div className="workspace-rail-section-title">Main workflow</div>
+	          <div className="workspace-rail-section-title">Workflow</div>
 	          <div className="grid gap-1.5">
 	            {[
-	              { label: '1 Setup', lane: 'setup' as const },
-	              { label: '2 Source Packet', lane: 'source' as const },
-	              { label: '3 Review Draft', lane: 'finish' as const },
-	              { label: 'Support Tools', lane: 'support' as const },
+	              { label: 'Setup', lane: 'setup' as const },
+	              { label: 'Source', lane: 'source' as const },
+	              { label: 'Review Draft', lane: 'finish' as const },
 	            ].map((item) => (
 	              <button
 	                key={item.lane}
@@ -5239,38 +5220,14 @@ export function NewNoteForm() {
 	                {item.label}
 	              </button>
 	            ))}
-	            <button
-	              type="button"
-	              onClick={scrollToMyNotePrompt}
-	              className="workspace-rail-tab"
-	            >
-	              My Note Prompt
-	            </button>
 	          </div>
 	        </div>
 
-	        <div className="workspace-rail-section">
-	          <div className="workspace-rail-section-title">Capture</div>
-	          <div className="grid gap-1.5">
-	            <button
-	              type="button"
-	              onClick={() => handleCaptureOptionToggle('dictation')}
-	              className={`workspace-rail-tab ${sourceWorkspaceMode === 'dictation' ? 'workspace-rail-tab-active' : ''}`}
-	            >
-	              Dictation {sourceWorkspaceMode === 'dictation' ? 'On' : 'Off'}
-	            </button>
-	            <button
-	              type="button"
-	              onClick={() => handleCaptureOptionToggle('transcript')}
-	              className={`workspace-rail-tab ${sourceWorkspaceMode === 'transcript' ? 'workspace-rail-tab-active' : ''}`}
-	            >
-	              Ambient {sourceWorkspaceMode === 'transcript' ? 'On' : 'Off'}
-	            </button>
-	          </div>
-	        </div>
-
-	        <div className="workspace-rail-section">
-	          <div className="workspace-rail-section-title">Setup</div>
+	        <details className="workspace-rail-section workspace-rail-details">
+	          <summary>
+	            <span>Setup</span>
+	            <small>{role} • {providerSettings.outputDestination}</small>
+	          </summary>
 	          <div className="grid gap-2">
 	            <label className="workspace-rail-field">
 	              <span>Role</span>
@@ -5311,18 +5268,22 @@ export function NewNoteForm() {
 	              </select>
 	            </label>
 	          </div>
-	        </div>
+	        </details>
 
-	        <div className="workspace-rail-section">
-	          <div className="workspace-rail-section-title">Secondary links</div>
+	        <details className="workspace-rail-section workspace-rail-details">
+	          <summary>
+	            <span>Options</span>
+	            <small>Documents, prompt, review</small>
+	          </summary>
 	          <div className="grid gap-1.5">
 	            <button type="button" onClick={handleDocumentSourceJump} className="workspace-rail-tab">Source Documents</button>
 	            <button type="button" onClick={scrollToDraftControls} className="workspace-rail-tab">Draft Settings</button>
 	            <button type="button" onClick={scrollToMyNotePrompt} className="workspace-rail-tab">My Note Prompt</button>
 	            <button type="button" onClick={scrollToOutputPreferences} className="workspace-rail-tab">Preferences</button>
+	            <button type="button" onClick={() => scrollToComposeLane('support')} className="workspace-rail-tab">Support Tools</button>
 	            <button type="button" onClick={() => router.push('/dashboard/review')} className="workspace-rail-tab">Deep Review (optional)</button>
 	          </div>
-	        </div>
+	        </details>
 	      </aside>
 
 	      <div className="workspace-main-column grid gap-4">
@@ -6079,18 +6040,15 @@ export function NewNoteForm() {
 
             {sourceWorkspaceMode === 'manual' || sourceWorkspaceMode === 'dictation' || sourceWorkspaceMode === 'transcript' ? (
               <div className="grid gap-3">
-                <details className="workspace-subpanel workspace-expandable rounded-[20px] p-3.5">
+                <details className="workspace-subpanel workspace-expandable workspace-source-options rounded-[20px] p-3.5">
                   <summary className="cursor-pointer">
                     <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Optional source helpers</div>
-                        <div className="mt-1 text-sm font-semibold text-white">Documents and prior notes live here when you need them.</div>
-                        <p className="mt-1 text-xs leading-5 text-cyan-50/64">
-                          Keep this closed for a cleaner workspace. Open it to import OCR/referral text or pull a prior continuity snapshot into Box 1.
-                        </p>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Options</div>
+                        <div className="mt-1 text-sm font-semibold text-white">Documents and prior notes</div>
                       </div>
                       <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
-                        Open helpers
+                        Open
                       </div>
                     </div>
                   </summary>
@@ -6358,30 +6316,51 @@ export function NewNoteForm() {
                   </div>
                 </details>
 
-                <div className="workspace-subpanel rounded-[20px] p-3">
+                <div className="workspace-subpanel workspace-source-entry-card rounded-[20px] p-3">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Source packet</div>
-                      <div className="mt-1 text-sm font-semibold text-white">Fill any of the four fields Veranote should use for this note</div>
-                      <p className="mt-1 max-w-2xl text-xs leading-5 text-cyan-50/70">
-                        Box 1 is Paste Source Here: paste copied ER notes, referral notes, labs, nursing intake, chart review, or outside records into Pre-Visit Data first. Dictation can go into any box; ambient listening is reviewed before it commits into Ambient Transcript.
-                      </p>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Source</div>
+                      <div className="mt-1 text-sm font-semibold text-white">Paste, type, dictate, or review ambient source.</div>
                     </div>
                     <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
                       {sourceCompletionCount}/{sourceEntrySteps.length} fields loaded
                     </div>
                   </div>
-                  <div className="mt-3 grid gap-2 md:grid-cols-3">
-                    {captureFlowGuides.map((item) => (
-                      <div key={item.label} className="rounded-[16px] border border-cyan-200/12 bg-[rgba(7,18,32,0.52)] px-3 py-2.5">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100/70">{item.label}</div>
-                        <div className="mt-1 text-xs leading-5 text-cyan-50/66">{item.detail}</div>
+                  <div className="mt-3 flex flex-wrap gap-2" aria-label="Source entry mode">
+                    {sourceModeCards.map((modeCard) => {
+                      const isActive = sourceWorkspaceMode === modeCard.id;
+                      const shortLabel = modeCard.id === 'manual' ? 'Manual' : modeCard.id === 'dictation' ? 'Dictation' : 'Ambient';
+
+                      return (
+                        <button
+                          key={modeCard.id}
+                          type="button"
+                          onClick={() => handleSourceWorkspaceModeChange(modeCard.id)}
+                          className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
+                            isActive
+                              ? 'border-cyan-200/36 bg-cyan-300/14 text-white shadow-[0_10px_24px_rgba(34,211,238,0.12)]'
+                              : 'workspace-action-pill border-white/10 bg-white/5 text-cyan-50/74 hover:border-cyan-200/24 hover:text-white'
+                          }`}
+                        >
+                          {shortLabel}
+                        </button>
+                      );
+                    })}
+                    <details className="workspace-inline-details">
+                      <summary>What goes where?</summary>
+                      <div className="mt-2 grid gap-2 rounded-[16px] border border-cyan-200/12 bg-[rgba(7,18,32,0.68)] p-3 md:grid-cols-3">
+                        {captureFlowGuides.map((item) => (
+                          <div key={item.label}>
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100/70">{item.label}</div>
+                            <div className="mt-1 text-xs leading-5 text-cyan-50/66">{item.detail}</div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    </details>
                   </div>
                 </div>
 
-                <div className="grid gap-3 xl:grid-cols-2">
+                <div className="workspace-source-fields grid gap-3 xl:grid-cols-2">
                   {sourceEntrySteps.map((step) => (
                     <SourceInput
                       key={step.key}
@@ -6404,7 +6383,7 @@ export function NewNoteForm() {
                   ))}
                 </div>
 
-                <div className="sticky bottom-0 z-10 -mx-1 rounded-[20px] border border-cyan-200/16 bg-[linear-gradient(145deg,rgba(4,12,24,0.94),rgba(8,32,58,0.96))] px-4 py-3 shadow-[0_-12px_40px_rgba(4,12,24,0.34)] backdrop-blur-xl">
+                <div className="workspace-source-next-action rounded-[20px] border border-cyan-200/16 bg-[linear-gradient(145deg,rgba(4,12,24,0.88),rgba(8,32,58,0.9))] px-4 py-3 shadow-[0_10px_30px_rgba(4,12,24,0.22)] backdrop-blur-xl">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Next action</div>
@@ -6415,7 +6394,7 @@ export function NewNoteForm() {
                         {sourceCompletionCount}/{sourceEntrySteps.length} source steps loaded • {composeNudges.filter((item) => item.tone === 'warning' || item.tone === 'danger').length} attention item{composeNudges.filter((item) => item.tone === 'warning' || item.tone === 'danger').length === 1 ? '' : 's'}
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div>
                       <button
                         type="button"
                         onClick={() => {
@@ -6427,26 +6406,6 @@ export function NewNoteForm() {
                       >
                         {isLoading ? 'Generating draft...' : 'Generate Draft from Source'}
                       </button>
-                      <a
-                        href="#generate-note-panel"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          scrollToDraftControls();
-                        }}
-                        className="aurora-primary-button rounded-xl px-4 py-2.5 text-sm font-medium"
-                      >
-                        Open Draft Settings
-                      </a>
-                      <a
-                        href="#output-preferences-panel"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          scrollToOutputPreferences();
-                        }}
-                        className="aurora-secondary-button rounded-xl px-4 py-2.5 text-sm font-medium"
-                      >
-                        Preferences
-                      </a>
                     </div>
                   </div>
                 </div>

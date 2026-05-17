@@ -298,8 +298,9 @@ async function runLaptopRailScenario(browser) {
   assertState(/px/.test(initial.columns) && initial.columns.split(' ').length >= 2, `workspace shell did not expose two grid columns: ${initial.columns}`, failures);
   assertState(initial.scrollY <= 24, `workspace did not start near top; scrollY=${initial.scrollY}`, failures);
   assertState(await page.getByTestId('workspace-quick-find-input').isVisible().catch(() => false), 'workspace quick-find input was not visible in the rail', failures);
-  assertState(await page.getByText(/Dictation can go into any box/i).first().isVisible().catch(() => false), 'source packet did not explain dictation targets across the four boxes', failures);
-  assertState(await page.getByText(/consent -> listen -> review transcript -> commit/i).first().isVisible().catch(() => false), 'source packet did not explain ambient consent-to-commit flow', failures);
+  assertState(await page.getByRole('button', { name: /^Manual$/i }).first().isVisible().catch(() => false), 'source entry mode controls did not expose Manual near the source pane', failures);
+  assertState(await page.getByRole('button', { name: /^Dictation$/i }).first().isVisible().catch(() => false), 'source entry mode controls did not expose Dictation near the source pane', failures);
+  assertState(await page.getByRole('button', { name: /^Ambient$/i }).first().isVisible().catch(() => false), 'source entry mode controls did not expose Ambient near the source pane', failures);
 
   const actionCardCount = await page.locator('.workspace-action-card').count();
   const actionPillCount = await page.locator('.workspace-action-pill').count();
@@ -325,12 +326,12 @@ async function runLaptopRailScenario(browser) {
   assertState(await page.locator('#source-field-intakeCollateral textarea').first().isVisible().catch(() => false), 'Paste Source Here quick-find did not reveal the Pre-Visit Data source box', failures);
 
   await clickQuickFindResult(page, 'dictation', /Dictation/i, failures, 'workspace quick-find did not surface Dictation for dictation search');
-  assertState(await page.locator('.workspace-left-rail').getByRole('button', { name: /Dictation On/i }).first().isVisible().catch(() => false), 'Dictation quick-find did not switch the rail to Dictation On', failures);
+  assertState(await page.getByRole('button', { name: /^Dictation$/i }).first().isVisible().catch(() => false), 'Dictation quick-find did not keep the Dictation mode control visible', failures);
   assertState(await page.getByText(/Dictation source mode/i).first().isVisible().catch(() => false), 'Dictation quick-find did not reveal the dictation source mode panel', failures);
 
   await clickQuickFindResult(page, 'ambient', /Ambient Listening/i, failures, 'workspace quick-find did not surface Ambient Listening for ambient search');
-  assertState(await page.locator('.workspace-left-rail').getByRole('button', { name: /Ambient On/i }).first().isVisible().catch(() => false), 'Ambient quick-find did not switch the rail to Ambient On', failures);
-  assertState(await page.getByText(/consent -> listen -> review transcript -> commit/i).first().isVisible().catch(() => false), 'Ambient quick-find did not keep the consent-to-commit workflow visible', failures);
+  assertState(await page.getByRole('button', { name: /^Ambient$/i }).first().isVisible().catch(() => false), 'Ambient quick-find did not keep the Ambient mode control visible', failures);
+  assertState(await page.getByText(/Ambient/i).first().isVisible().catch(() => false), 'Ambient quick-find did not keep ambient source context visible', failures);
 
   await clickQuickFindResult(page, 'prompt', /My Note Prompt/i, failures, 'workspace quick-find did not surface My Note Prompt for prompt search');
   assertState(await page.getByTestId('my-note-prompt-panel').isVisible().catch(() => false), 'My Note Prompt quick-find did not reveal the named prompt panel', failures);
@@ -350,11 +351,11 @@ async function runLaptopRailScenario(browser) {
   assertState(/Review Draft/i.test(afterReview.active), `Review Draft tab did not become active; active=${afterReview.active}`, failures);
   assertState(afterReview.scrollY <= 180, `Review Draft click scrolled too far down; scrollY=${afterReview.scrollY}`, failures);
 
-  await page.locator('.workspace-left-rail').getByRole('button', { name: /Source Packet/i }).first().click();
+  await page.locator('.workspace-left-rail').getByRole('button', { name: /^Source$/i }).first().click();
   await page.waitForTimeout(700);
   const afterSource = await captureWorkspaceState(page);
-  assertState(/Source Packet/i.test(afterSource.active), `Source Packet tab did not become active; active=${afterSource.active}`, failures);
-  assertState(afterSource.scrollY <= 180, `Source Packet click scrolled too far down; scrollY=${afterSource.scrollY}`, failures);
+  assertState(/Source/i.test(afterSource.active), `Source tab did not become active; active=${afterSource.active}`, failures);
+  assertState(afterSource.scrollY <= 180, `Source click scrolled too far down; scrollY=${afterSource.scrollY}`, failures);
 
   await context.close();
   return {
