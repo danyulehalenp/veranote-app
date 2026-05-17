@@ -21,6 +21,7 @@ const supportLinks = [
 
 const secondaryLinks = [
   { href: '/dashboard/internal', label: 'Internal Workbench', status: 'Internal' },
+  { href: '/dashboard/connectivity', label: 'Connectivity', status: 'Internal' },
   { href: '/monitoring', label: 'Monitoring', status: 'Internal' },
   { href: '/dashboard/agent-factory', label: 'Agent Factory', status: 'Internal' },
 ];

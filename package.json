@@ -24,6 +24,7 @@
     "live:saved-drafts": "node scripts/live-saved-drafts-workflow-qa.mjs",
     "live:workspace-rail": "node scripts/live-workspace-rail-qa.mjs",
     "production:durable": "npx tsx scripts/production-durable-storage-qa.mjs",
+    "connectivity:health": "npx tsx scripts/connectivity-health-check.mjs",
     "storage:patient-continuity": "node scripts/verify-patient-continuity-storage.mjs",
     "production:smoke": "node scripts/production-smoke-qa.mjs",
     "release:gate": "node scripts/release-readiness-gate.mjs",
