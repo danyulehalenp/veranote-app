@@ -362,6 +362,14 @@ function preservePendingOrUnclearLabSourceLimits(note: string, sourceInput: stri
  return `${note.trim()}\n\nDiagnostics / Source Limitation:\n${labLimits.join(' ')}`;
 }
 
+function preserveMissingVitalsMedicalSourceLimits(note: string, sourceInput: string) {
+ const sourceCallsOutMissingVitals = /\b(?:no vitals provided|no vital signs provided|vitals? not provided|vitals? not documented|no vitals?)\b/i.test(sourceInput);
+ if (!sourceCallsOutMissingVitals) return note;
+ if (/\bmedical\b.{0,120}\b(?:vitals?|vital signs?|not provided|not documented|source limitation|limited)\b|\b(?:vitals?|vital signs?)\b.{0,120}\bmedical\b/i.test(note)) return note;
+
+ return `${note.trim()}\n\nMedical / Source Limitation:\nVital signs and broader medical data were not provided in the source, so medical contributors and monitoring limits remain source limitations.`;
+}
+
 function preservePendingMatDoseDecision(note: string, sourceInput: string) {
  const needsMatDecisionLimit = /\bbridge prescription\b|requests? bridge|miss(?:ed|ing) three days|UDS.*pending|pending.*UDS|do not state bridge|do not state dose unchanged|completed prescribing decision/i.test(sourceInput)
   && /\bbuprenorphine|naloxone|Suboxone|MAT\b/i.test(sourceInput);
@@ -716,7 +724,8 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withoutUnsupportedMedicalStability = removeUnsupportedMedicalStability(withSleepPreserved, input.sourceInput);
  const withMedicalClearancePreserved = preserveMedicalClearanceUncertainty(withoutUnsupportedMedicalStability, input.sourceInput);
  const withLabLimitsPreserved = preservePendingOrUnclearLabSourceLimits(withMedicalClearancePreserved, input.sourceInput);
- const withMatDoseDecisionLimit = preservePendingMatDoseDecision(withLabLimitsPreserved, input.sourceInput);
+ const withMissingVitalsMedicalLimits = preserveMissingVitalsMedicalSourceLimits(withLabLimitsPreserved, input.sourceInput);
+ const withMatDoseDecisionLimit = preservePendingMatDoseDecision(withMissingVitalsMedicalLimits, input.sourceInput);
  const withAllergyMedicationSourceLimits = preserveAllergyMedicationSourceLimits(withMatDoseDecisionLimit, input.sourceInput);
  const withSourceBoundRisk = hardenSourceBoundRiskWording(withAllergyMedicationSourceLimits, input.sourceInput);
  const withPriorCurrentRiskTimeline = preservePriorCurrentRiskTimeline(withSourceBoundRisk, input.sourceInput);

@@ -16,6 +16,9 @@ const MESSY_ORDERING_CASE_IDS = [
   'therapy-dictation-scattered-social-history-homework-risk',
   'provider-custom-prompt-chaotic-followup-no-prompt-leak',
   'four-box-ambient-dictation-med-risk-conflict-no-final-plan',
+  'multi-day-inpatient-followup-copy-forward-risk-med-misspellings',
+  'therapy-intake-scanned-referral-family-collateral-unsafe-summary',
+  'medical-psych-overlap-out-of-order-med-clearance-lab-followup',
 ];
 
 describe('note generation messy source ordering', () => {
@@ -41,6 +44,7 @@ describe('note generation messy source ordering', () => {
     expect(combinedText).toMatch(/Preferred prompt name|Named prompt|Story Follow-Up|two paragraph story/i);
     expect(combinedText).toMatch(/Prompt name: Hale concise narrative|Possible CPT 99214|Four-source-box|source box/i);
     expect(combinedText).toMatch(/going to snap|med clear\?|one thought record|bus did not come/i);
+    expect(combinedText).toMatch(/free T4 pendng|pregnancy test pendng|goodbye texts|family report|valproic lvl pendng/i);
 
     for (const item of cases) {
       const sourceInput = buildSourceInputFromSections(item.sourceSections);

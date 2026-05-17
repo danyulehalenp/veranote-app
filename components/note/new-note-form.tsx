@@ -2388,30 +2388,30 @@ export function NewNoteForm() {
     () => ([
       {
         key: 'intakeCollateral',
-        label: 'Pre-Visit Data / Paste Source Here',
+        label: 'Pre-Visit Data',
         shortLabel: 'Pre-Visit',
-        description: 'Paste, type, upload, or dictate labs, vitals, nursing intake, referrals, prior notes, chart review, collateral, rating scales, scanned/OCR summaries, or copied raw EHR data here.',
+        description: 'Labs, vitals, intake, referrals, prior notes, collateral, OCR text, or copied EHR data.',
         tone: 'previsit',
       },
       {
         key: 'clinicianNotes',
         label: 'Live Visit Notes',
         shortLabel: 'Live Visit',
-        description: 'Type or dictate during the visit: HPI, observed behavior, MSE impressions, risk language, medication discussion, clinical reasoning, and plan thoughts.',
+        description: 'Your typed or dictated HPI, MSE, risk language, med discussion, and plan thoughts.',
         tone: 'live',
       },
       {
         key: 'patientTranscript',
         label: 'Ambient Transcript',
         shortLabel: 'Ambient',
-        description: 'Ambient listening lands here after consent, transcript review, and provider correction. You can also paste, type, or dictate dialogue, direct quotes, and spoken-session material here.',
+        description: 'Reviewed transcript, direct quotes, dialogue, or spoken-session material.',
         tone: 'ambient',
       },
       {
         key: 'objectiveData',
         label: 'Provider Add-On',
         shortLabel: 'Add-On',
-        description: 'Type, paste, or dictate diagnosis/code preferences, named prompt instructions, preferred plan language, site-specific rules, discharge wording, or anything important that does not fit elsewhere.',
+        description: 'Prompt name, diagnosis/code preferences, plan wording, site rules, or special instructions.',
         tone: 'addon',
       },
     ]),
@@ -4847,7 +4847,7 @@ export function NewNoteForm() {
     {
       id: 'paste-source',
       label: 'Paste Source Here',
-      helper: 'Jump to box 1: Pre-Visit Data / Paste Source Here.',
+      helper: 'Jump to box 1: Pre-Visit Data.',
       keywords: ['source', 'paste', 'paste source', 'paste source here', 'previsit', 'pre-visit', 'intake', 'labs', 'nursing', 'collateral', 'raw data'],
       action: handlePasteSourceJump,
     },
@@ -5806,15 +5806,15 @@ export function NewNoteForm() {
                   <div className="grid gap-3">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Compose session</div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Setup</div>
                         <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <h2 className="text-lg font-semibold tracking-[-0.02em] text-white">Set the note lane, then work from source</h2>
+                          <h2 className="text-lg font-semibold tracking-[-0.02em] text-white">Set note basics.</h2>
                           <div className="workspace-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
                             {role}
                           </div>
                         </div>
                         <p className="mt-1 text-sm text-cyan-50/70">
-                          Keep this row quick. Choose the note frame here, then spend the rest of the workflow in the source and review panes below.
+                          Choose specialty, role, note type, and template. Then add source below.
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -5823,27 +5823,27 @@ export function NewNoteForm() {
                       </div>
                     </div>
 
-                    <StatusStrip items={workspaceStatusItems} />
-
-                    <div className="grid gap-2 rounded-[20px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] p-3 sm:grid-cols-2 xl:grid-cols-4">
-                      {[
-                        '1. Choose note type',
-                        '2. Paste source',
-                        '3. Generate draft',
-                        '4. Review before copy',
-                      ].map((step) => (
-                        <div
-                          key={step}
-                          className="rounded-[14px] border border-cyan-200/10 bg-[rgba(13,30,50,0.42)] px-3 py-2 text-sm font-medium text-cyan-50"
-                        >
-                          {step}
+                    <div className="rounded-[18px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] px-3.5 py-2.5">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="text-sm font-semibold text-white">
+                          Next: {hasGeneratedDraft ? `review the draft with ${assistantPersona.name}.` : hasSource ? 'generate a draft from source.' : 'paste, dictate, or commit source.'}
                         </div>
-                      ))}
+                        <button
+                          type="button"
+                          onClick={hasGeneratedDraft ? scrollToDraftControls : handlePasteSourceJump}
+                          className="workspace-action-pill rounded-full border border-cyan-200/18 bg-cyan-300/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-50 transition hover:border-cyan-100/38"
+                        >
+                          {hasGeneratedDraft ? 'Go to review' : hasSource ? 'Go to draft' : 'Paste source'}
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="rounded-[20px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] px-4 py-3 text-sm leading-6 text-cyan-50/78">
-                      Generate from source. Use {assistantPersona.name} after the draft exists.
-                    </div>
+                    <details className="workspace-inline-details">
+                      <summary>Setup status</summary>
+                      <div className="mt-2">
+                        <StatusStrip items={workspaceStatusItems} />
+                      </div>
+                    </details>
 
                     <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-4">
                       <Field label="Specialty">
@@ -5877,12 +5877,9 @@ export function NewNoteForm() {
                     </div>
                   </div>
 
-                  <div className="workspace-subpanel rounded-[24px] p-4">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Current frame</div>
+                  <div className="workspace-subpanel rounded-[24px] p-3.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Frame</div>
                     <div className="mt-1 text-base font-semibold text-white">{noteType}</div>
-                    <p className="mt-2 text-sm leading-6 text-cyan-50/72">
-                      {workflowGuidance?.intro || currentTemplateDescription}
-                    </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <div className="workspace-chip rounded-full px-3 py-1 text-xs font-medium text-cyan-50">
                         Template: {template}
@@ -5891,6 +5888,12 @@ export function NewNoteForm() {
                         Source coverage: {sourceCompletionCount}/{sourceEntrySteps.length}
                       </div>
                     </div>
+                    <details className="workspace-inline-details mt-3">
+                      <summary>Guidance</summary>
+                      <p className="mt-2 text-sm leading-6 text-cyan-50/72">
+                        {workflowGuidance?.intro || currentTemplateDescription}
+                      </p>
+                    </details>
                   </div>
                 </div>
               </div>
@@ -5908,7 +5911,7 @@ export function NewNoteForm() {
 	        <div className="mb-2 flex flex-col gap-2 rounded-[20px] border border-cyan-200/10 bg-[rgba(255,255,255,0.035)] px-3 py-2.5 2xl:flex-row 2xl:items-center 2xl:justify-between">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Source</div>
-            <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-white">Paste or dictate source.</h2>
+            <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-white">Paste, dictate, or commit transcript.</h2>
           </div>
           <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.13em] text-cyan-50/78">
             <span className="rounded-full border border-cyan-200/12 bg-white/[0.05] px-3 py-1">{sourceCompletionCount}/{sourceEntrySteps.length} fields</span>
@@ -6312,7 +6315,7 @@ export function NewNoteForm() {
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Source</div>
-                      <div className="mt-1 text-sm font-semibold text-white">Add source in one of four fields.</div>
+                      <div className="mt-1 text-sm font-semibold text-white">Four fields feed the draft.</div>
                     </div>
                     <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
                       {sourceCompletionCount}/{sourceEntrySteps.length} fields loaded
@@ -6339,7 +6342,7 @@ export function NewNoteForm() {
                       );
                     })}
                     <details className="workspace-inline-details">
-                      <summary>What goes where?</summary>
+                      <summary>Capture routing</summary>
                       <div className="mt-2 grid gap-2 rounded-[16px] border border-cyan-200/12 bg-[rgba(7,18,32,0.68)] p-3 md:grid-cols-3">
                         {captureFlowGuides.map((item) => (
                           <div key={item.label}>
@@ -6352,11 +6355,9 @@ export function NewNoteForm() {
                   </div>
                   <div
                     data-testid="source-capture-route-strip"
-                    className="mt-3 grid gap-2 rounded-[16px] border border-cyan-200/10 bg-[rgba(7,18,32,0.48)] p-2 text-[11px] leading-5 text-cyan-50/70 md:grid-cols-3"
+                    className="mt-3 rounded-[16px] border border-cyan-200/10 bg-[rgba(7,18,32,0.48)] px-3 py-2 text-[11px] leading-5 text-cyan-50/70"
                   >
-                    <div><span className="font-semibold text-cyan-50">Manual:</span> paste or type into any source field.</div>
-                    <div><span className="font-semibold text-cyan-50">Dictation:</span> choose a field, record, correct, insert.</div>
-                    <div><span className="font-semibold text-cyan-50">Ambient:</span> consent, listen, review, commit transcript.</div>
+                    <span className="font-semibold text-cyan-50">Manual, Dictation, and Ambient</span> all insert into a selected source field after review.
                   </div>
                 </div>
 
@@ -6371,12 +6372,12 @@ export function NewNoteForm() {
                       onChange={(value) => updateSourceSection(step.key, value)}
                       placeholder={
                         step.key === 'intakeCollateral'
-                          ? 'Paste labs, vitals, nursing intake, chart review, med list, collateral, or copied EHR data here.'
+                          ? 'Paste labs, vitals, intake, chart review, med list, collateral, or EHR data.'
                           : step.key === 'clinicianNotes'
-                            ? 'Type or dictate your live visit notes, HPI, MSE impressions, risk wording, and plan thoughts here.'
+                            ? 'Type or dictate HPI, MSE, risk wording, medication discussion, and plan thoughts.'
                             : step.key === 'patientTranscript'
-                              ? 'Ambient listening transcript, corrected dialogue, direct quotes, or spoken-session material can go here.'
-                              : 'Add diagnosis codes, billing code preference, plan language, discharge wording, or site-specific instructions here.'
+                              ? 'Reviewed transcript, corrected dialogue, direct quotes, or spoken-session material.'
+                              : 'Add prompt name, code preference, plan language, discharge wording, or site-specific instructions.'
 	                      }
 	                      tone={step.tone}
 	                    />
