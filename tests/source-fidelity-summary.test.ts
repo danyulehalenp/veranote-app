@@ -59,6 +59,28 @@ describe('source fidelity summary', () => {
     expect(summary.weakOnlySections).toBe(1);
     expect(summary.confirmedSections).toBe(1);
     expect(summary.openReviewItems).toBeGreaterThanOrEqual(6);
+    expect(summary.evidenceChecklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'supported-sections',
+        value: '1/3',
+        tone: 'review',
+      }),
+      expect.objectContaining({
+        id: 'source-gaps',
+        value: '3',
+        tone: 'review',
+      }),
+      expect.objectContaining({
+        id: 'source-conflicts',
+        value: '3',
+        tone: 'caution',
+      }),
+      expect.objectContaining({
+        id: 'safety-wording',
+        value: '3',
+        tone: 'caution',
+      }),
+    ]));
     expect(summary.reviewItems[0]?.severity).toBe('caution');
     expect(summary.reviewItems.map((item) => item.category)).toEqual(expect.arrayContaining([
       'Conflict',
@@ -97,6 +119,28 @@ describe('source fidelity summary', () => {
 
     expect(summary.statusLabel).toBe('Source trace ready');
     expect(summary.openReviewItems).toBe(0);
+    expect(summary.evidenceChecklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'supported-sections',
+        value: '1/1',
+        tone: 'supported',
+      }),
+      expect.objectContaining({
+        id: 'source-gaps',
+        value: '0',
+        tone: 'supported',
+      }),
+      expect.objectContaining({
+        id: 'source-conflicts',
+        value: '0',
+        tone: 'supported',
+      }),
+      expect.objectContaining({
+        id: 'safety-wording',
+        value: '0',
+        tone: 'supported',
+      }),
+    ]));
     expect(summary.reviewItems.every((item) => item.severity === 'info')).toBe(true);
   });
 

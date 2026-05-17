@@ -3371,6 +3371,10 @@ function referencesCurrentNote(message: string) {
 }
 
 function shouldIgnoreStaleClinicalContext(message: string) {
+  if (classifyDraftFormatRequest(message)) {
+    return false;
+  }
+
   const normalized = normalizeMessageForClinicalRouting(message);
   const medicationDocumentationWithoutExplicitCurrentNote = isStandaloneMedicationDocumentationPrompt(message);
   const directClinicalTermQuestion = looksLikeDirectClinicalTermDefinitionQuestion(normalized);

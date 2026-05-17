@@ -2439,8 +2439,8 @@ export function NewNoteForm() {
       },
       {
         id: 'transcript' as const,
-        label: 'Transcript',
-        detail: 'Review spoken source, queued dictation segments, and transcript history in one calmer workspace.',
+        label: 'Ambient review',
+        detail: 'Consent, listen, review the transcript, then commit corrected spoken source into the Ambient Transcript field.',
       },
     ]),
     [],
@@ -6350,6 +6350,14 @@ export function NewNoteForm() {
                       </div>
                     </details>
                   </div>
+                  <div
+                    data-testid="source-capture-route-strip"
+                    className="mt-3 grid gap-2 rounded-[16px] border border-cyan-200/10 bg-[rgba(7,18,32,0.48)] p-2 text-[11px] leading-5 text-cyan-50/70 md:grid-cols-3"
+                  >
+                    <div><span className="font-semibold text-cyan-50">Manual:</span> paste or type into any source field.</div>
+                    <div><span className="font-semibold text-cyan-50">Dictation:</span> choose a field, record, correct, insert.</div>
+                    <div><span className="font-semibold text-cyan-50">Ambient:</span> consent, listen, review, commit transcript.</div>
+                  </div>
                 </div>
 
                 <div className="workspace-source-fields grid gap-3">
@@ -6404,9 +6412,9 @@ export function NewNoteForm() {
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Dictation source mode</div>
-                      <div className="mt-1 text-base font-semibold text-white">Provider voice capture stays in source capture, not encounter control</div>
+                      <div className="mt-1 text-base font-semibold text-white">Dictate into any source field</div>
                       <p className="mt-1 max-w-2xl text-sm text-cyan-50/74">
-                        This lane stays focused on provider-directed insertion into note source sections. Ambient transcript review remains separate in Transcript mode.
+                        Pick Pre-Visit, Live Visit, Ambient Transcript, or Add-On, then review the transcript before insertion.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">

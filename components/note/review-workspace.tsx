@@ -773,6 +773,12 @@ const sourceFidelityStatusClasses = {
   dismissed: 'border-slate-300/18 bg-slate-500/12 text-slate-100/76',
 } satisfies Record<SourceFidelityReviewStatus, string>;
 
+const sourceFidelityChecklistToneClasses = {
+  supported: 'border-emerald-300/18 bg-[rgba(16,185,129,0.1)] text-emerald-50',
+  review: 'border-amber-300/18 bg-[rgba(245,158,11,0.12)] text-amber-50',
+  caution: 'border-rose-300/18 bg-[rgba(244,63,94,0.12)] text-rose-50',
+} as const;
+
 function revealReviewTarget(targetId: string) {
   const target = document.getElementById(targetId);
   if (!target) {
@@ -901,6 +907,7 @@ function SourceFidelityPulse(props: {
   const visibleItems = props.summary.reviewItems
     .filter((item) => item.reviewStatus !== 'dismissed')
     .slice(0, props.compact ? 3 : 5);
+  const checklist = props.summary.evidenceChecklist;
 
   if (props.compact) {
     return (
@@ -921,6 +928,19 @@ function SourceFidelityPulse(props: {
             <InlineMetric label="open" value={props.summary.openReviewItems} />
             <InlineMetric label="blocks" value={props.summary.totalSourceBlocks} />
           </div>
+        </div>
+        <div data-testid="source-evidence-checklist" className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {checklist.map((item) => (
+            <div
+              key={item.id}
+              data-testid="source-evidence-checklist-item"
+              className={`rounded-[14px] border px-3 py-2 ${sourceFidelityChecklistToneClasses[item.tone]}`}
+              title={item.detail}
+            >
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-75">{item.label}</div>
+              <div className="mt-1 text-sm font-semibold">{item.value}</div>
+            </div>
+          ))}
         </div>
 
         {visibleItems.length ? (
@@ -1012,6 +1032,19 @@ function SourceFidelityPulse(props: {
           <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/60">Open review items</div>
           <div className="mt-1 text-lg font-semibold text-white">{props.summary.openReviewItems}</div>
         </div>
+      </div>
+      <div data-testid="source-evidence-checklist" className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {checklist.map((item) => (
+          <div
+            key={item.id}
+            data-testid="source-evidence-checklist-item"
+            className={`rounded-[16px] border px-3 py-2 ${sourceFidelityChecklistToneClasses[item.tone]}`}
+          >
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-75">{item.label}</div>
+            <div className="mt-1 text-lg font-semibold">{item.value}</div>
+            <div className="mt-1 text-xs leading-5 opacity-82">{item.detail}</div>
+          </div>
+        ))}
       </div>
       {(props.summary.reviewedReviewItems || props.summary.dismissedReviewItems) ? (
         <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-medium text-cyan-50/70">
@@ -1185,7 +1218,7 @@ function PostNoteCptSupportPanel(props: {
   );
 
   return (
-    <div data-testid="post-note-cpt-support-panel" className={panelClassName}>
+    <div id="post-note-cpt-support" data-testid="post-note-cpt-support-panel" className={panelClassName}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className={headingClassName}>Post-note CPT support candidates</div>
@@ -4618,10 +4651,11 @@ export function ReviewWorkspace({
         </span>
       </div>
 
-      <div className="mt-4 grid gap-2 rounded-[20px] border border-cyan-200/10 bg-[rgba(255,255,255,0.04)] p-3 text-sm text-cyan-50/74 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 grid gap-2 rounded-[20px] border border-cyan-200/10 bg-[rgba(255,255,255,0.04)] p-3 text-sm text-cyan-50/74 sm:grid-cols-2 xl:grid-cols-5">
         <div><span className="font-semibold text-white">{reviewCounts.approved}</span> reviewed</div>
         <div><span className="font-semibold text-white">{reviewCounts.unreviewed + reviewCounts.needsReview}</span> open</div>
         <div><span className="font-semibold text-white">{reviewCounts.confirmedEvidence}</span> evidence links</div>
+        <div><span className="font-semibold text-white">{postNoteCptRecommendations.candidates.length}</span> CPT cues</div>
         <div><span className="font-semibold text-white">{draftWordCount}</span> draft words</div>
       </div>
 
@@ -4667,6 +4701,15 @@ export function ReviewWorkspace({
             >
               Save draft
             </button>
+            {postNoteCptRecommendations.candidates.length || postNoteCptRecommendations.missingGlobalElements.length ? (
+              <button
+                type="button"
+                onClick={() => jumpToElementById('post-note-cpt-support')}
+                className="rounded-[16px] border border-amber-200/24 bg-amber-300/12 px-5 py-3 font-medium text-amber-50"
+              >
+                Review CPT support
+              </button>
+            ) : null}
           </div>
         </div>
       </div>

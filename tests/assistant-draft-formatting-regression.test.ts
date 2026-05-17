@@ -46,7 +46,13 @@ type AssistantRoutePayload = {
   }>;
 };
 
-async function askFormatting(message: string) {
+async function askFormatting(
+  message: string,
+  options: {
+    draftText?: string;
+    recentMessages?: Array<{ role: string; content: string }>;
+  } = {},
+) {
   const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -58,9 +64,9 @@ async function askFormatting(message: string) {
         providerAddressingName: 'Test Provider',
         noteType: 'Outpatient Psych Follow-Up',
         outputDestination: 'Tebra/Kareo',
-        currentDraftText: messyDraft,
+        currentDraftText: options.draftText || messyDraft,
       },
-      recentMessages: [],
+      recentMessages: options.recentMessages || [],
     }),
   }));
 
@@ -148,6 +154,44 @@ describe('assistant draft formatting regression', () => {
     expect(draftText).not.toMatch(/unsupported|invented/i);
   });
 
+  it('expands visible draft detail only from existing draft facts', async () => {
+    const payload = await askFormatting('make it longer and include more details from what is already there');
+
+    expect(payload.answerMode).toBe('chart_ready_wording');
+    expect(payload.message).toMatch(/more detailed format/i);
+
+    const action = payload.actions?.find((item) => item.type === 'apply-draft-rewrite');
+    const draftText = action?.draftText || '';
+    expect(draftText).toMatch(/HPI:/);
+    expect(draftText).toMatch(/panic is less intense/i);
+    expect(draftText).toMatch(/forgot escitalopram twice/i);
+    expect(draftText).toMatch(/No final medication change is documented/i);
+    expect(draftText).not.toMatch(/started|increased|discontinued/i);
+  });
+
+  it('cleans casual shorthand into professional chart tone without changing clinical substance', async () => {
+    const casualDraft = [
+      'HPI:',
+      'pt kinda anxious and idk if meds helped. maybe slept 4 hours.',
+      '',
+      'Plan:',
+      'continue same meds per visible draft.',
+    ].join('\n');
+    const payload = await askFormatting('make it more professional and clinical tone', {
+      draftText: casualDraft,
+    });
+
+    expect(payload.answerMode).toBe('chart_ready_wording');
+    expect(payload.message).toMatch(/professional chart tone/i);
+
+    const action = payload.actions?.find((item) => item.type === 'apply-draft-rewrite');
+    const draftText = action?.draftText || '';
+    expect(draftText).toMatch(/Patient somewhat anxious/i);
+    expect(draftText).toMatch(/unclear if medications helped/i);
+    expect(draftText).toMatch(/possibly slept 4 hours/i);
+    expect(draftText).not.toMatch(/\bpt\b|kinda|idk|meds\b/i);
+  });
+
   it('treats a direct draft-shaping follow-up as a rewrite even when the provider does not say draft', async () => {
     const response = await POST(new Request('http://localhost/api/assistant/respond?eval=true', {
       method: 'POST',
@@ -202,6 +246,26 @@ describe('assistant draft formatting regression', () => {
     expect(payload.message).toMatch(/bupropion|Wellbutrin/i);
     expect(payload.message).toMatch(/paroxetine|Paxil|SSRI/i);
     expect(payload.message).not.toMatch(/Chart-ready wording/i);
+    expect(payload.actions?.some((item) => item.type === 'apply-draft-rewrite')).not.toBe(true);
+  });
+
+  it('switches focus to a completely different follow-up reference question after draft-shaping context', async () => {
+    const payload = await askFormatting('what is Lamictal used for?', {
+      recentMessages: [
+        {
+          role: 'provider',
+          content: 'Make the draft into one paragraph.',
+        },
+        {
+          role: 'assistant',
+          content: 'I converted the draft into one-paragraph format.',
+        },
+      ],
+    });
+
+    expect(payload.answerMode).toMatch(/reference|medication/i);
+    expect(payload.message).toMatch(/Lamictal|lamotrigine/i);
+    expect(payload.message).not.toMatch(/one-paragraph|Chart-ready wording/i);
     expect(payload.actions?.some((item) => item.type === 'apply-draft-rewrite')).not.toBe(true);
   });
 });

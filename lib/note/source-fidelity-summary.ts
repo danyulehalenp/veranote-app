@@ -19,6 +19,16 @@ export type SourceFidelityReviewItem = {
   reviewedAt?: string;
 };
 
+export type SourceFidelityChecklistTone = 'supported' | 'review' | 'caution';
+
+export type SourceFidelityChecklistItem = {
+  id: 'supported-sections' | 'source-gaps' | 'source-conflicts' | 'safety-wording';
+  label: string;
+  value: string;
+  detail: string;
+  tone: SourceFidelityChecklistTone;
+};
+
 export type SourceFidelitySummary = {
   totalSections: number;
   linkedSections: number;
@@ -31,6 +41,7 @@ export type SourceFidelitySummary = {
   dismissedReviewItems: number;
   statusLabel: string;
   statusDetail: string;
+  evidenceChecklist: SourceFidelityChecklistItem[];
   reviewItems: SourceFidelityReviewItem[];
 };
 
@@ -73,6 +84,12 @@ function item(input: Omit<SourceFidelityReviewItem, 'reviewStatus' | 'reviewedAt
     reviewStatus: entry?.status || 'open',
     reviewedAt: entry?.updatedAt,
   } satisfies SourceFidelityReviewItem;
+}
+
+function isOpenSafetyItem(reviewItem: SourceFidelityReviewItem) {
+  return reviewItem.severity !== 'info'
+    && reviewItem.reviewStatus !== 'reviewed'
+    && reviewItem.reviewStatus !== 'dismissed';
 }
 
 export function buildSourceFidelitySummary(input: BuildSourceFidelitySummaryInput): SourceFidelitySummary {
@@ -204,13 +221,60 @@ export function buildSourceFidelitySummary(input: BuildSourceFidelitySummaryInpu
     return severity || left.category.localeCompare(right.category) || left.label.localeCompare(right.label);
   });
 
-  const openReviewItems = reviewItems.filter((reviewItem) => (
-    reviewItem.severity !== 'info'
-    && reviewItem.reviewStatus !== 'reviewed'
-    && reviewItem.reviewStatus !== 'dismissed'
-  )).length;
+  const openReviewItems = reviewItems.filter(isOpenSafetyItem).length;
   const reviewedReviewItems = reviewItems.filter((reviewItem) => reviewItem.reviewStatus === 'reviewed').length;
   const dismissedReviewItems = reviewItems.filter((reviewItem) => reviewItem.reviewStatus === 'dismissed').length;
+  const openConflictItems = reviewItems.filter((reviewItem) => (
+    isOpenSafetyItem(reviewItem)
+    && (reviewItem.category === 'Conflict' || reviewItem.category === 'Continuity')
+  ));
+  const openMissingDataItems = reviewItems.filter((reviewItem) => (
+    isOpenSafetyItem(reviewItem)
+    && reviewItem.category === 'Missing data'
+  ));
+  const openSafetyWordingItems = reviewItems.filter((reviewItem) => (
+    isOpenSafetyItem(reviewItem)
+    && (reviewItem.category === 'Risk' || reviewItem.category === 'Medication' || reviewItem.category === 'MSE')
+  ));
+  const sourceGapCount = noEvidenceSections.length + weakOnlySections.length + openMissingDataItems.length;
+  const evidenceChecklist: SourceFidelityChecklistItem[] = [
+    {
+      id: 'supported-sections',
+      label: 'Supported sections',
+      value: `${confirmedSections.length}/${sections.length || 0}`,
+      detail: sections.length
+        ? `${linkedSections.length} have suggested links; ${confirmedSections.length} confirmed by reviewer.`
+        : 'Generate a draft before source support can be checked.',
+      tone: sections.length > 0 && confirmedSections.length === sections.length ? 'supported' : 'review',
+    },
+    {
+      id: 'source-gaps',
+      label: 'Source gaps',
+      value: String(sourceGapCount),
+      detail: sourceGapCount
+        ? 'Missing, weak, or unclear source support needs a clinician look.'
+        : 'No missing or weak source-support cues are currently surfaced.',
+      tone: sourceGapCount ? 'review' : 'supported',
+    },
+    {
+      id: 'source-conflicts',
+      label: 'Conflicts',
+      value: String(openConflictItems.length),
+      detail: openConflictItems.length
+        ? 'Preserve patient, collateral, staff, and chart conflicts instead of flattening them.'
+        : 'No active source conflicts are currently surfaced.',
+      tone: openConflictItems.length ? 'caution' : 'supported',
+    },
+    {
+      id: 'safety-wording',
+      label: 'Safety wording',
+      value: String(openSafetyWordingItems.length),
+      detail: openSafetyWordingItems.length
+        ? 'Risk, medication, or MSE wording needs source-faithful review.'
+        : 'No active risk, medication, or MSE wording cues are currently surfaced.',
+      tone: openSafetyWordingItems.length ? 'caution' : 'supported',
+    },
+  ];
   const statusLabel = openReviewItems
     ? `${openReviewItems} source safety item${openReviewItems === 1 ? '' : 's'}`
     : linkedSections.length === sections.length && sections.length > 0
@@ -233,6 +297,7 @@ export function buildSourceFidelitySummary(input: BuildSourceFidelitySummaryInpu
     dismissedReviewItems,
     statusLabel,
     statusDetail,
+    evidenceChecklist,
     reviewItems,
   };
 }
