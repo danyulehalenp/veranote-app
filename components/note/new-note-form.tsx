@@ -5280,15 +5280,14 @@ export function NewNoteForm() {
 	        <details className="workspace-rail-section workspace-rail-details">
 	          <summary>
 	            <span>Options</span>
-	            <small>Documents, prompt, review</small>
+	            <small>Advanced tools</small>
 	          </summary>
 	          <div className="grid gap-1.5">
 	            <button type="button" onClick={handleDocumentSourceJump} className="workspace-rail-tab">Source Documents</button>
-	            <button type="button" onClick={scrollToDraftControls} className="workspace-rail-tab">Draft Settings</button>
 	            <button type="button" onClick={scrollToMyNotePrompt} className="workspace-rail-tab">My Note Prompt</button>
-	            <button type="button" onClick={scrollToOutputPreferences} className="workspace-rail-tab">Preferences</button>
-	            <button type="button" onClick={() => scrollToComposeLane('support')} className="workspace-rail-tab">Support Tools</button>
-	            <button type="button" onClick={() => router.push('/dashboard/review')} className="workspace-rail-tab">Deep Review (optional)</button>
+	            <button type="button" onClick={scrollToOutputPreferences} className="workspace-rail-tab">EHR / Output</button>
+	            <button type="button" onClick={() => scrollToComposeLane('support')} className="workspace-rail-tab">Optional Support</button>
+	            <button type="button" onClick={() => router.push('/dashboard/review')} className="workspace-rail-tab">Deep Review</button>
 	          </div>
 	        </details>
 	      </aside>
@@ -6828,8 +6827,8 @@ export function NewNoteForm() {
             </div>
 
             <details
-              open={showUnifiedWorkspace || activeComposeLane === 'support'}
-              className={`${activeComposeLane === 'support' || activeComposeLane === 'finish' ? '' : 'hidden'} rounded-[22px] border border-cyan-200/12 bg-[rgba(7,18,32,0.42)] px-4 py-3 text-cyan-50/82`}
+              open={activeComposeLane === 'support'}
+              className={`${activeComposeLane === 'support' ? '' : 'hidden'} rounded-[22px] border border-cyan-200/12 bg-[rgba(7,18,32,0.42)] px-4 py-3 text-cyan-50/82`}
             >
               <summary className="cursor-pointer list-none">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -7561,33 +7560,21 @@ export function NewNoteForm() {
 
             <div className="mt-4 flex flex-wrap gap-2">
               {currentCheckpoint ? (
-                <div className="w-full rounded-[22px] border border-cyan-200/14 bg-[rgba(255,255,255,0.06)] p-4">
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/76">Current recovery checkpoint</div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <div className="text-base font-semibold text-white">
-	                        {currentCheckpoint.note?.trim() ? 'Draft saved' : 'Source checkpoint saved'}
+                <details className="workspace-utility-details w-full rounded-[18px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] px-3.5 py-2.5">
+                  <summary className="cursor-pointer list-none">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/58">Saved checkpoint</div>
+                        <div className="mt-1 text-sm font-semibold text-white">
+                          {currentCheckpoint.note?.trim() ? 'Draft saved' : 'Source checkpoint saved'}
                         </div>
-                        {currentCheckpoint.draftVersion ? (
-                          <span className="rounded-full border border-cyan-200/16 bg-[rgba(255,255,255,0.05)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
-                            v{currentCheckpoint.draftVersion}
-                          </span>
-                        ) : null}
-                        <span className="rounded-full border border-cyan-200/16 bg-[rgba(255,255,255,0.05)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
-                          {currentCheckpoint.recoveryState?.workflowStage === 'review' ? 'Review' : 'Compose'}
-                        </span>
-                        <span className="rounded-full border border-cyan-200/16 bg-[rgba(255,255,255,0.05)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
-                          {draftCheckpointStatus === 'saving' ? 'Saving' : draftCheckpointStatus === 'error' ? 'Local only' : `Saved ${formatRelativeCheckpointTime(currentCheckpoint.lastSavedAt || currentCheckpoint.recoveryState?.updatedAt)}`}
-                        </span>
                       </div>
-                      <p className="mt-2 text-sm leading-6 text-cyan-50/78">
-                        {currentCheckpoint.note?.trim()
-                          ? 'You already have a generated note for this workspace. Keep reviewing here, or jump back to the saved compose step without leaving the page.'
-                          : 'This workspace is carrying a saved compose checkpoint. You can keep editing in place, reset for a new note, or discard this checkpoint entirely.'}
-                      </p>
+                      <span className="rounded-full border border-cyan-200/12 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-50/62">
+                        {draftCheckpointStatus === 'saving' ? 'Saving' : draftCheckpointStatus === 'error' ? 'Local only' : `Saved ${formatRelativeCheckpointTime(currentCheckpoint.lastSavedAt || currentCheckpoint.recoveryState?.updatedAt)}`}
+                      </span>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                  </summary>
+                  <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
                         onClick={handleResumeCurrentCheckpoint}
@@ -7626,9 +7613,8 @@ export function NewNoteForm() {
                       >
                         {recoveryActionState === 'discarding' ? 'Discarding...' : 'Discard checkpoint'}
                       </button>
-                    </div>
                   </div>
-                </div>
+                </details>
               ) : null}
               <span className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 text-xs font-medium text-cyan-50">
                 Style: {outputStyle}
@@ -7637,7 +7623,7 @@ export function NewNoteForm() {
                 Format: {format}
               </span>
               <span className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 text-xs font-medium text-cyan-50">
-                Sections: {sectionPlan.sections.length ? sectionPlan.sections.map((section) => SECTION_LABELS[section]).join(' • ') : 'None'}
+                Sections: {sectionPlan.sections.length || 'None'}
               </span>
               {activePreset ? (
                 <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-100">
@@ -7646,45 +7632,34 @@ export function NewNoteForm() {
               ) : null}
             </div>
 
-            <div className="mt-5 grid gap-3 lg:grid-cols-3">
-              <label className="rounded-[20px] border border-cyan-200/12 bg-[rgba(255,255,255,0.05)] p-4 text-sm text-cyan-50">
-                <div className="flex items-start gap-3">
+            <div className="mt-4 grid gap-2 md:grid-cols-2">
+              <label className="rounded-[16px] border border-cyan-200/10 bg-[rgba(255,255,255,0.04)] px-3 py-2.5 text-sm text-cyan-50">
+                <div className="flex items-center gap-3">
                   <input type="checkbox" checked={flagMissingInfo} onChange={(event) => setFlagMissingInfo(event.target.checked)} />
                   <div>
                     <div className="font-semibold text-white">Keep missing details visible</div>
-                    <p className="mt-1 text-xs leading-5 text-cyan-50/70">Preserve gaps instead of smoothing thin source into cleaner prose.</p>
                   </div>
                 </div>
               </label>
-              <label className="rounded-[20px] border border-cyan-200/12 bg-[rgba(255,255,255,0.05)] p-4 text-sm text-cyan-50">
-                <div className="flex items-start gap-3">
+              <label className="rounded-[16px] border border-cyan-200/10 bg-[rgba(255,255,255,0.04)] px-3 py-2.5 text-sm text-cyan-50">
+                <div className="flex items-center gap-3">
                   <input type="checkbox" checked={keepCloserToSource} onChange={(event) => setKeepCloserToSource(event.target.checked)} />
                   <div>
                     <div className="font-semibold text-white">Stay closer to source wording</div>
-                    <p className="mt-1 text-xs leading-5 text-cyan-50/70">Favor fidelity over polish when the source is messy, partial, or conflicting.</p>
                   </div>
                 </div>
               </label>
-              <div className="rounded-[20px] border border-cyan-200/12 bg-[rgba(255,255,255,0.05)] p-4 text-sm text-cyan-50">
-                <div className="font-semibold text-white">Fact-preserving mode</div>
-                <p className="mt-1 text-xs leading-5 text-cyan-50/70">
-                  Unsupported findings and treatment details stay out. Final trust still comes from review against source.
-                </p>
-              </div>
             </div>
 
-            <div className="mt-5 rounded-[20px] border border-cyan-200/12 bg-[rgba(255,255,255,0.05)] p-4">
-              <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Before you generate</div>
-                  <div className="mt-1 text-sm leading-6 text-cyan-50/76">
-                    Veranote stays light here: one last compose check before the first draft.
+            <details className="workspace-utility-details mt-3 rounded-[18px] border border-cyan-200/10 bg-white/[0.03] px-3.5 py-2.5">
+              <summary className="cursor-pointer list-none">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-sm font-semibold text-cyan-50">Readiness checks</div>
+                  <div className="text-xs text-cyan-50/58">
+                    {composeNudges.some((item) => item.tone === 'warning' || item.tone === 'danger') ? 'Review source gaps' : 'Looks ready'}
                   </div>
                 </div>
-                <div className="text-xs text-cyan-50/58">
-                  {composeNudges.some((item) => item.tone === 'warning' || item.tone === 'danger') ? 'A little more source detail would make review smoother.' : 'Compose looks healthy enough to draft.'}
-                </div>
-              </div>
+              </summary>
               <div className="mt-3 grid gap-3 lg:grid-cols-3">
                 {composeNudges.slice(0, 3).map((item) => (
                   <div key={item.id} className={`rounded-[16px] border px-4 py-3 ${getWorkflowSignalClasses(item.tone)}`}>
@@ -7693,29 +7668,30 @@ export function NewNoteForm() {
                   </div>
                 ))}
               </div>
-            </div>
+            </details>
 
-            <div className="mt-5 flex flex-wrap gap-3">
+            <div className="mt-5 flex flex-wrap items-center gap-3">
               <button onClick={handleGenerate} disabled={isLoading || !hasSource} className="aurora-primary-button rounded-xl px-5 py-3 font-medium shadow-[0_18px_40px_rgba(2,8,18,0.22)] disabled:cursor-not-allowed disabled:opacity-60">
 	                {isLoading ? 'Generating draft...' : 'Generate Draft from Source'}
 	              </button>
-	              <button onClick={handleClear} className="aurora-secondary-button rounded-xl px-5 py-3 font-medium">Clear Workspace</button>
-	              <button onClick={handleLoadExample} className="aurora-secondary-button rounded-xl px-5 py-3 font-medium">Load Example Source</button>
+              <span className="text-xs leading-5 text-cyan-50/58">
+                Destination: <span className="font-semibold text-cyan-50">{destinationFitSummary}</span>
+              </span>
             </div>
 
-            <div className="mt-4 rounded-[18px] border border-cyan-200/12 bg-[rgba(255,255,255,0.05)] px-4 py-3 text-sm text-cyan-50/82">
-              Destination fit before generation: <span className="font-semibold text-white">{destinationFitSummary}</span>
-            </div>
+            <details className="workspace-utility-details mt-3 rounded-[18px] border border-cyan-200/10 bg-white/[0.025] px-3.5 py-2.5">
+              <summary className="cursor-pointer text-sm font-semibold text-cyan-50">More actions</summary>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <button onClick={handleClear} className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium">Clear Workspace</button>
+                <button onClick={handleLoadExample} className="aurora-secondary-button rounded-xl px-4 py-2 text-sm font-medium">Load Example Source</button>
+              </div>
+            </details>
 
             {recoveryMessage ? (
               <div className="mt-4 rounded-xl border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-4 py-3 text-sm text-cyan-50/84">
                 {recoveryMessage}
               </div>
             ) : null}
-
-            <div className="mt-4 text-sm text-cyan-50/76">
-              Review opens here after generation so dates, meds, quoted statements, objective data, and wording can be checked before anything is copied or exported.
-            </div>
           </div>
 
           <div

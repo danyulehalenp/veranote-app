@@ -738,6 +738,41 @@ h1, h2, h3, h4 {
   display: none;
 }
 
+.workspace-utility-details {
+  position: relative;
+}
+
+.workspace-utility-details > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.workspace-utility-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.workspace-utility-details > summary::after {
+  content: 'Open';
+  display: inline-flex;
+  margin-top: 0.5rem;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 999px;
+  background: rgba(103, 232, 249, 0.08);
+  padding: 0.18rem 0.55rem;
+  color: rgba(207, 250, 254, 0.78);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.workspace-utility-details[open] > summary::after {
+  content: 'Close';
+  border-color: rgba(252, 211, 77, 0.24);
+  background: rgba(252, 211, 77, 0.08);
+  color: rgba(254, 243, 199, 0.82);
+}
+
 .workspace-nudge-scroll {
   max-height: min(360px, calc(100vh - 14rem));
   overflow-y: auto;
