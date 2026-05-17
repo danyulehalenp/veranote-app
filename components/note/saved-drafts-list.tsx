@@ -370,95 +370,84 @@ export function SavedDraftsList() {
   return (
     <div className="grid gap-6">
       <div className="aurora-panel grid gap-4 rounded-[28px] p-6">
-        <div>
-          <h2 className="text-lg font-semibold">Draft Recovery</h2>
-          <p className="mt-1 text-sm text-muted">Use this as the recovery lane for the provider path. Resume the right working draft, clean up stale ones, and return directly to the main workspace.</p>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Find a saved draft.</h2>
+            <p className="mt-1 text-sm text-muted">Search first, then resume the right note in the main workspace.</p>
+          </div>
+          <div className="rounded-full border border-border bg-paper px-3 py-1 text-xs font-medium text-muted">
+            {draftSummary.total} active - {draftSummary.needsAttention} need review - {draftSummary.archived} archived
+          </div>
         </div>
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(220px,0.8fr)_minmax(220px,0.8fr)_minmax(220px,0.8fr)_minmax(220px,0.8fr)]">
-          <label className="grid gap-2 text-sm font-medium text-ink">
-            <span>Search drafts</span>
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search note type, source text, or draft text"
-              className="rounded-lg border border-border bg-white p-3"
-            />
-          </label>
-          <label className="grid gap-2 text-sm font-medium text-ink">
-            <span>Filter by specialty</span>
-            <select value={selectedSpecialty} onChange={(event) => setSelectedSpecialty(event.target.value)} className="rounded-lg border border-border bg-white p-3">
-              {specialtyOptions.map((option) => (
-                <option key={option}>{option}</option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-2 text-sm font-medium text-ink">
-            <span>Filter by stage</span>
-            <select
-              value={selectedStage}
-              onChange={(event) => setSelectedStage(event.target.value as 'All stages' | DraftRecoveryStage)}
-              className="rounded-lg border border-border bg-white p-3"
-            >
-              <option>All stages</option>
-              <option value="setup">Finish setup</option>
-              <option value="generate">Ready to generate</option>
-              <option value="review">Review in progress</option>
-              <option value="polish">Ready to finalize</option>
-            </select>
-          </label>
-          <label className="grid gap-2 text-sm font-medium text-ink">
-            <span>Visibility</span>
-            <select
-              value={visibilityFilter}
-              onChange={(event) => setVisibilityFilter(event.target.value as DraftVisibilityFilter)}
-              className="rounded-lg border border-border bg-white p-3"
-            >
-              <option value="active">Active only</option>
-              <option value="archived">Archived only</option>
-              <option value="all">All drafts</option>
-            </select>
-          </label>
-          <label className="grid gap-2 text-sm font-medium text-ink">
-            <span>Sort</span>
-            <select
-              value={sortMode}
-              onChange={(event) => setSortMode(event.target.value as DraftSortMode)}
-              className="rounded-lg border border-border bg-white p-3"
-            >
-              <option value="recommended">Best recovery point</option>
-              <option value="recent">Most recent</option>
-              <option value="needs-review">Most review work</option>
-              <option value="ready-to-finalize">Ready to finalize</option>
-            </select>
-          </label>
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <div className="aurora-soft-panel rounded-[22px] p-4">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Active drafts</div>
-          <div className="mt-2 text-2xl font-semibold text-ink">{draftSummary.total}</div>
-        </div>
-        <div className="aurora-soft-panel rounded-[22px] p-4">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Archived</div>
-          <div className="mt-2 text-2xl font-semibold text-ink">{draftSummary.archived}</div>
-        </div>
-        <div className="aurora-soft-panel rounded-[22px] p-4">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Generated notes</div>
-          <div className="mt-2 text-2xl font-semibold text-ink">{draftSummary.reviewReady}</div>
-        </div>
-        <div className="aurora-soft-panel rounded-[22px] p-4">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">With source loaded</div>
-          <div className="mt-2 text-2xl font-semibold text-ink">{draftSummary.withSource}</div>
-        </div>
-        <div className="aurora-soft-panel rounded-[22px] p-4">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Ready to generate</div>
-          <div className="mt-2 text-2xl font-semibold text-ink">{draftSummary.readyToGenerate}</div>
-        </div>
-        <div className="aurora-soft-panel rounded-[22px] p-4">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Need review</div>
-          <div className="mt-2 text-2xl font-semibold text-ink">{draftSummary.needsAttention}</div>
-        </div>
+        <label className="grid gap-2 text-sm font-medium text-ink">
+          <span>Search drafts</span>
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search note type, source text, draft text, specialty, or template"
+            className="rounded-xl border border-border bg-white p-4 text-base shadow-sm"
+          />
+        </label>
+        <details className="rounded-[20px] border border-border bg-white/70 p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-ink">
+            Filters and sorting
+          </summary>
+          <div className="mt-4 grid gap-4 xl:grid-cols-4">
+            <label className="grid gap-2 text-sm font-medium text-ink">
+              <span>Specialty</span>
+              <select value={selectedSpecialty} onChange={(event) => setSelectedSpecialty(event.target.value)} className="rounded-lg border border-border bg-white p-3">
+                {specialtyOptions.map((option) => (
+                  <option key={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-ink">
+              <span>Stage</span>
+              <select
+                value={selectedStage}
+                onChange={(event) => setSelectedStage(event.target.value as 'All stages' | DraftRecoveryStage)}
+                className="rounded-lg border border-border bg-white p-3"
+              >
+                <option>All stages</option>
+                <option value="setup">Finish setup</option>
+                <option value="generate">Ready to generate</option>
+                <option value="review">Review in progress</option>
+                <option value="polish">Ready to finalize</option>
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-ink">
+              <span>Visibility</span>
+              <select
+                value={visibilityFilter}
+                onChange={(event) => setVisibilityFilter(event.target.value as DraftVisibilityFilter)}
+                className="rounded-lg border border-border bg-white p-3"
+              >
+                <option value="active">Active only</option>
+                <option value="archived">Archived only</option>
+                <option value="all">All drafts</option>
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-ink">
+              <span>Sort</span>
+              <select
+                value={sortMode}
+                onChange={(event) => setSortMode(event.target.value as DraftSortMode)}
+                className="rounded-lg border border-border bg-white p-3"
+              >
+                <option value="recommended">Best recovery point</option>
+                <option value="recent">Most recent</option>
+                <option value="needs-review">Most review work</option>
+                <option value="ready-to-finalize">Ready to finalize</option>
+              </select>
+            </label>
+          </div>
+          <div className="mt-4 grid gap-2 text-xs text-muted sm:grid-cols-2 xl:grid-cols-4">
+            <div><span className="font-semibold text-ink">{draftSummary.reviewReady}</span> generated notes</div>
+            <div><span className="font-semibold text-ink">{draftSummary.withSource}</span> with source loaded</div>
+            <div><span className="font-semibold text-ink">{draftSummary.readyToGenerate}</span> ready to generate</div>
+            <div><span className="font-semibold text-ink">{draftSummary.needsAttention}</span> need review</div>
+          </div>
+        </details>
       </div>
 
       {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
@@ -535,17 +524,16 @@ export function SavedDraftsList() {
                 data-draft-id={draft.id}
                 className={`aurora-panel rounded-[26px] p-5 text-left transition hover:shadow-md ${draft.archivedAt ? 'opacity-80' : ''}`}
               >
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
                     <div className="text-lg font-semibold text-ink">{draft.noteType}</div>
                     <div className="mt-1 text-sm text-muted">
                       {draft.specialty} • {draft.role} • {draft.template}
                     </div>
-                    <p className="mt-3 max-w-2xl text-sm text-muted">{statusMeta.detail}</p>
+                    <p className="mt-2 max-w-2xl text-sm text-muted">{statusMeta.detail}</p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 md:justify-end">
                     <span className={`rounded-full border px-3 py-1 text-xs font-medium ${statusMeta.pillClassName}`}>{statusMeta.label}</span>
-                    <span className="aurora-pill rounded-full px-3 py-1 text-xs font-medium">v{draft.version}</span>
                     <span className="aurora-pill rounded-full px-3 py-1 text-xs font-medium">
                       Saved {formatRelativeUpdate(draft.updatedAt)}
                     </span>
@@ -561,25 +549,29 @@ export function SavedDraftsList() {
                   <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sky-900">
                     {draft.note?.trim() ? 'Generated note saved' : 'Source/setup only'}
                   </span>
-                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-800">Approved sections: {approved}</span>
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-900">Needs review: {needsReview}</span>
-                  <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-rose-900">Unreviewed: {unreviewed}</span>
-                  <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-violet-800">Confirmed evidence: {confirmedEvidence}</span>
+                  <span className="rounded-full border border-border bg-paper px-3 py-1 text-muted">
+                    Review: {approved} approved / {needsReview + unreviewed} open
+                  </span>
+                  <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-violet-800">Evidence: {confirmedEvidence}</span>
+                  <span className="aurora-pill rounded-full px-3 py-1 text-xs font-medium">v{draft.version}</span>
                   <span className="rounded-full border border-border bg-paper px-3 py-1 text-muted">
                     Last opened {formatRelativeUpdate(draft.lastOpenedAt || draft.updatedAt)}
                   </span>
                 </div>
 
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted">Source excerpt</div>
-                    <p className="mt-2 text-sm text-ink">{excerpt(draft.sourceInput)}</p>
+                <details className="mt-4 rounded-[18px] border border-border bg-white/70 p-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-ink">Preview source and draft</summary>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">Source excerpt</div>
+                      <p className="mt-2 text-sm text-ink">{excerpt(draft.sourceInput)}</p>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">Draft excerpt</div>
+                      <p className="mt-2 text-sm text-ink">{excerpt(draft.note)}</p>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted">Draft excerpt</div>
-                    <p className="mt-2 text-sm text-ink">{excerpt(draft.note)}</p>
-                  </div>
-                </div>
+                </details>
 
                 <div className="mt-4 flex flex-wrap gap-3">
                   {!draft.archivedAt ? (
@@ -587,7 +579,7 @@ export function SavedDraftsList() {
                       <button
                         type="button"
                         onClick={() => void handleOpenDraft(draft)}
-                        className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white transition hover:opacity-90"
+                        className="rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
                       >
                         Resume in workspace
                       </button>

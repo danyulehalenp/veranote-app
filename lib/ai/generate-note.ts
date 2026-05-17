@@ -350,6 +350,11 @@ function preservePendingOrUnclearLabSourceLimits(note: string, sourceInput: stri
   labLimits.push('Troponin line was not visible in the available scanned/OCR source.');
  }
 
+ if (/\bTSH\b.{0,120}(?:low|abnormal).{0,120}\brepeat\b.{0,80}\bpending\b|\brepeat\b.{0,80}\bpending\b.{0,120}\bTSH\b|\blow TSH\b/i.test(sourceInput)
+  && !/\bTSH\b.{0,160}(?:low|abnormal|pending|repeat)|\brepeat lab pending\b/i.test(note)) {
+  labLimits.push('TSH was low in the source history and repeat lab is pending.');
+ }
+
  if (!labLimits.length) {
   return note;
  }
@@ -496,6 +501,8 @@ function hardenMedicationAdherenceWording(note: string, sourceInput: string) {
  if (!sourceHasMissedDoseCue) return note;
 
  return note
+  .replace(/\b(?:medication\s+)?adherence\s+is\s+good\s+(?:is|was)\s+not\s+(?:claimed|documented|supported)\b/gi, 'full medication adherence is not established; missed doses are documented')
+  .replace(/\bgood\s+adherence\s+(?:is|was)\s+not\s+(?:claimed|documented|supported)\b/gi, 'full medication adherence is not established; missed doses are documented')
   .replace(/\bwhen\s+propranolol\s+is\s+taken\s+as\s+prescribed\b/gi, 'when propranolol is remembered/taken, while missed morning doses are also documented')
   .replace(/\bpropranolol\s+is\s+taken\s+as\s+prescribed\b/gi, 'propranolol is remembered/taken, with missed doses also documented')
   .replace(/\btaking\s+(?:medications|medicine|propranolol|sertraline|escitalopram|Lexapro)\s+as\s+prescribed\b/gi, 'taking medication as reported, with missed doses also documented')
@@ -504,7 +511,9 @@ function hardenMedicationAdherenceWording(note: string, sourceInput: string) {
   .replace(/\bperfect\s+adherence\b/gi, 'missed doses documented')
   .replace(/\badherence\s+is\s+good\b/gi, 'adherence includes documented missed doses')
   .replace(/\bgood\s+adherence\b/gi, 'adherence includes documented missed doses')
-  .replace(/\badherent\s+with\s+([A-Za-z][\w-]*)\b/gi, 'taking $1 as reported, with missed doses also documented');
+  .replace(/\badherent\s+with\s+([A-Za-z][\w-]*)\b/gi, 'taking $1 as reported, with missed doses also documented')
+  .replace(/\badherence includes documented missed doses\s+(?:is|was)\s+not\s+(?:claimed|documented|supported)\b/gi, 'full medication adherence is not established; missed doses are documented')
+  .replace(/\bmissed doses documented\s+(?:is|was)\s+not\s+(?:claimed|documented|supported)\b/gi, 'full medication adherence is not established; missed doses are documented');
 }
 
 function preserveDiagnosticUncertainty(note: string, sourceInput: string) {

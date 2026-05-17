@@ -4607,56 +4607,72 @@ export function ReviewWorkspace({
     <div className="workspace-panel rounded-[28px] p-5 shadow-[0_24px_60px_rgba(2,8,18,0.28)]">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Finish lane</div>
-          <h2 className="mt-2 text-[1.3rem] font-semibold tracking-[-0.03em] text-white">Finish review</h2>
-          <p className="mt-1 text-sm text-cyan-50/70">Finish only after the draft, warnings, and source checks feel clinically faithful.</p>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Finish</div>
+          <h2 className="mt-2 text-[1.3rem] font-semibold tracking-[-0.03em] text-white">Copy, save, or export.</h2>
+          <p className="mt-1 text-sm text-cyan-50/70">
+            One main finish action stays visible. Extra paste tools are tucked away until needed.
+          </p>
         </div>
         <span className={`rounded-full border px-3 py-1 text-xs font-medium ${exportReadiness.ready ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-          {exportReadiness.ready ? 'ready to export' : 'review still open'}
+          {exportReadiness.ready ? 'ready to copy' : 'review still open'}
         </span>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <CompactMetric label="Reviewed sections" value={reviewCounts.approved} detail="Approved and ready" />
-        <CompactMetric label="Still open" value={reviewCounts.unreviewed + reviewCounts.needsReview} detail="Unreviewed or needs review" />
-        <CompactMetric label="Reviewer evidence" value={reviewCounts.confirmedEvidence} detail="Confirmed source links" />
-        <CompactMetric label="Draft size" value={draftWordCount} detail={`${sourceWordCount} source words`} />
+
+      <div className="mt-4 grid gap-2 rounded-[20px] border border-cyan-200/10 bg-[rgba(255,255,255,0.04)] p-3 text-sm text-cyan-50/74 sm:grid-cols-2 xl:grid-cols-4">
+        <div><span className="font-semibold text-white">{reviewCounts.approved}</span> reviewed</div>
+        <div><span className="font-semibold text-white">{reviewCounts.unreviewed + reviewCounts.needsReview}</span> open</div>
+        <div><span className="font-semibold text-white">{reviewCounts.confirmedEvidence}</span> evidence links</div>
+        <div><span className="font-semibold text-white">{draftWordCount}</span> draft words</div>
       </div>
-      <div className="mt-4 grid gap-3 lg:grid-cols-3">
-        {finishRationaleCards.map((card) => (
-          <div key={card.id} className={`rounded-[18px] border px-4 py-3 ${card.toneClassName}`}>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.14em]">{card.label}</div>
-            <div className="mt-2 text-sm leading-6">{card.detail}</div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-4 rounded-[18px] border border-cyan-200/12 bg-[rgba(255,255,255,0.05)] p-4">
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+
+      <div className={`mt-4 rounded-[22px] border px-4 py-4 ${exportReadiness.ready ? 'border-emerald-200/28 bg-[rgba(20,83,45,0.24)] text-emerald-50' : 'border-amber-300/24 bg-[rgba(120,53,15,0.16)] text-amber-50'}`}>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Pre-copy gate</div>
-            <div className="mt-1 text-sm leading-6 text-cyan-50/72">
-              This replaces noisy finish popups with one visible checkpoint that stays in view while providers decide whether to copy.
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-80">
+              {exportReadiness.ready ? 'Ready for EHR paste' : 'Next finish item'}
+            </div>
+            <div className="mt-1 text-lg font-semibold text-white">
+              {exportReadiness.ready
+                ? `Copy into ${activeDestinationMeta.summaryLabel}.`
+                : finishTargetCard?.heading || exportReadiness.blockers[0] || exportReadiness.warnings[0] || 'Finish the remaining review checks.'}
+            </div>
+            <div className="mt-1 text-sm leading-6 opacity-90">
+              {exportReadiness.ready
+                ? 'Use Copy Final Note first. Save draft or open advanced export only if your workflow needs it.'
+                : finishTargetCard?.detail || 'Copy is held until the highest-risk review item is cleared.'}
             </div>
           </div>
-          <div className="text-xs text-cyan-50/58">
-            Red means stop-risk, amber means review it, blue is guidance, and green means operationally clear.
+          <div className="flex flex-wrap gap-3">
+            {exportReadiness.ready ? (
+              <button
+                type="button"
+                onClick={() => void handleCopy('ehr-safe')}
+                className="rounded-[16px] bg-white px-5 py-3 font-semibold text-emerald-900 shadow-[0_16px_34px_rgba(255,255,255,0.16)]"
+              >
+                Copy Final Note
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleJumpToFinishPriority}
+                className="rounded-[16px] border border-amber-200/28 bg-amber-500/14 px-5 py-3 font-semibold text-amber-50"
+              >
+                Open next finish item
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleSaveDraft}
+              className="rounded-[16px] border border-cyan-200/18 bg-[rgba(8,27,44,0.72)] px-5 py-3 font-medium text-cyan-50"
+            >
+              Save draft
+            </button>
           </div>
         </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          {finishGateSignals.map((item) => (
-            <div key={item.id} className={`rounded-[16px] border px-4 py-3 ${getReviewSignalClasses(item.tone)}`}>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.14em]">{item.label}</div>
-              <div className="mt-2 text-sm leading-6">{item.detail}</div>
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={handleJumpToFinishPriority}
-            className="rounded-[14px] border border-cyan-200/18 bg-[rgba(8,27,44,0.9)] px-4 py-2.5 text-sm font-medium text-cyan-50"
-          >
-            Open next finish item
-          </button>
+      </div>
+
+      {!exportReadiness.ready ? (
+        <div className="mt-3 flex flex-wrap gap-3">
           {reviewCounts.needsReview || reviewCounts.unreviewed ? (
             <button
               type="button"
@@ -4676,71 +4692,60 @@ export function ReviewWorkspace({
             </button>
           ) : null}
         </div>
-        {finishTargetCard && !exportReadiness.ready ? (
-          <div className="mt-4 rounded-[18px] border border-amber-300/24 bg-[rgba(120,53,15,0.16)] p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-100/90">Current blocker</div>
-                <div className="mt-1 text-base font-semibold text-white">{finishTargetCard.heading}</div>
-                <div className="mt-1 text-sm leading-6 text-amber-50/86">{finishTargetCard.detail}</div>
-                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-amber-100/78">
-                  <span className="rounded-full border border-amber-300/22 bg-amber-500/10 px-2.5 py-1 uppercase tracking-[0.14em]">
-                    Status: {finishTargetCard.statusLabel}
-                  </span>
-                  <span className="rounded-full border border-amber-300/22 bg-amber-500/10 px-2.5 py-1 uppercase tracking-[0.14em]">
-                    Evidence links: {finishTargetCard.linkedEvidenceCount}
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleJumpToFirstOpenSection}
-                className="rounded-[14px] border border-amber-200/24 bg-amber-500/14 px-4 py-2.5 text-sm font-medium text-amber-50"
-              >
-                Open this section
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </div>
-      <div className="mt-4 space-y-3 text-sm text-ink">
-        {exportReadiness.blockers.length ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-            <div className="font-medium text-amber-950">Blockers</div>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-900">
-              {exportReadiness.blockers.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">
-            All detected sections have been reviewed. Final note copy/export is available.
-          </div>
-        )}
+      ) : null}
 
-        {exportReadiness.warnings.length ? (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div className="font-medium text-slate-900">Still worth checking</div>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-800">
-              {exportReadiness.warnings.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </div>
-      <div className="workspace-subpanel mt-5 rounded-[22px] p-4">
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Final checkpoint</div>
-            <p className="mt-1 text-sm text-cyan-50/68">
-              This is the last confidence check before copy or export.
-            </p>
-          </div>
-          <div className="text-xs text-cyan-50/62">
-            {exportReadiness.ready ? 'Content risk looks lower; finish decisions are now mostly operational.' : 'Finish is being held open by review-state or trust-state signals.'}
-          </div>
+      {(copyMessage || exportMessage || rewriteMessage || saveMessage) ? (
+        <div className="mt-4">
+          {renderRecentActions()}
+        </div>
+      ) : null}
+
+      <details className="workspace-subpanel workspace-expandable mt-5 rounded-[22px] p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-cyan-50">
+          Review gates and safety checks
+        </summary>
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          {finishRationaleCards.map((card) => (
+            <div key={card.id} className={`rounded-[18px] border px-4 py-3 ${card.toneClassName}`}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em]">{card.label}</div>
+              <div className="mt-2 text-sm leading-6">{card.detail}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {finishGateSignals.map((item) => (
+            <div key={item.id} className={`rounded-[16px] border px-4 py-3 ${getReviewSignalClasses(item.tone)}`}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em]">{item.label}</div>
+              <div className="mt-2 text-sm leading-6">{item.detail}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 space-y-3 text-sm text-ink">
+          {exportReadiness.blockers.length ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <div className="font-medium text-amber-950">Blockers</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-900">
+                {exportReadiness.blockers.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">
+              All detected sections have been reviewed. Final note copy/export is available.
+            </div>
+          )}
+
+          {exportReadiness.warnings.length ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="font-medium text-slate-900">Still worth checking</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-800">
+                {exportReadiness.warnings.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3">
@@ -4759,55 +4764,20 @@ export function ReviewWorkspace({
             <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Next best move</div>
             <div className="mt-2 text-sm text-cyan-50">
               {exportReadiness.ready
-                ? 'Copy or export after a final read for tone and destination fit.'
+                ? 'Copy after a final read for tone and destination fit.'
                 : exportReadiness.blockers[0] || exportReadiness.warnings[0] || 'Keep reviewing the highest-pressure section first.'}
             </div>
           </div>
         </div>
-      </div>
-      <div className="workspace-subpanel mt-5 rounded-[22px] p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-cyan-100/62">Finish actions</div>
-            <p className="mt-1 text-sm text-cyan-50/66">
-              {exportReadiness.ready
-                ? 'The note is ready for paste. Copy stays primary; save and navigation stay quieter.'
-                : 'Copy/export stay primary once review clears. Save and navigation stay quieter.'}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/dashboard/new-note" className="text-sm text-cyan-50/72 underline underline-offset-2">Back to edit</Link>
-            <Link href="/dashboard/new-note" className="text-sm text-cyan-50/72 underline underline-offset-2">Start new note</Link>
-          </div>
-        </div>
-        {exportReadiness.ready ? (
-          <div className="mt-4 rounded-[18px] border border-emerald-200/28 bg-[rgba(20,83,45,0.26)] px-4 py-4 text-emerald-50 shadow-[0_18px_42px_rgba(6,78,59,0.18)]">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-100/82">Ready for EHR paste</div>
-                <div className="mt-1 text-lg font-semibold text-white">Review is clear enough to copy into {activeDestinationMeta.summaryLabel} now.</div>
-                <div className="mt-1 text-sm leading-6 text-emerald-50/86">
-                  Copy the final note when review is complete. Use the main copy action first, then use plain text or field targets only if your workflow needs them.
-                </div>
-              </div>
-              <button
-                onClick={() => void handleCopy('ehr-safe')}
-                className="rounded-[16px] bg-white px-5 py-3 font-semibold text-emerald-900 shadow-[0_16px_34px_rgba(255,255,255,0.16)]"
-              >
-                Copy Final Note
-              </button>
-            </div>
-          </div>
-        ) : null}
+      </details>
+
+      <details className="workspace-subpanel workspace-expandable mt-4 rounded-[22px] p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-cyan-50">
+          Advanced copy/export and EHR paste tools
+        </summary>
         <div className="mt-4 flex flex-wrap gap-3">
           <button
-            onClick={() => void handleCopy('ehr-safe')}
-            disabled={!exportReadiness.ready}
-            className={`rounded-[16px] px-5 py-3 font-medium shadow-[0_16px_34px_rgba(18,181,208,0.2)] ${exportReadiness.ready ? 'bg-accent text-white ring-2 ring-emerald-300/32' : 'bg-accent text-white disabled:cursor-not-allowed disabled:opacity-60'}`}
-          >
-            {exportReadiness.ready ? 'Copy Final Note (Best Default)' : 'Copy Final Note'}
-          </button>
-          <button
+            type="button"
             onClick={() => void handleCopy('plain-text')}
             disabled={!exportReadiness.ready}
             className="rounded-[16px] border border-cyan-200/20 bg-[rgba(8,27,44,0.9)] px-5 py-3 font-medium text-cyan-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -4815,55 +4785,38 @@ export function ReviewWorkspace({
             Copy plain text
           </button>
           <button
+            type="button"
             onClick={handleExportNote}
             disabled={!exportReadiness.ready}
             className="rounded-[16px] border border-cyan-200/20 bg-[rgba(8,27,44,0.82)] px-5 py-3 font-medium text-cyan-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Export .txt
           </button>
-          <button onClick={handleSaveDraft} className="rounded-[16px] border border-border bg-white px-5 py-3 font-medium text-cyan-50/84">
-            Save draft
-          </button>
-          <button onClick={handleExportReviewBundle} className="rounded-[16px] border border-border bg-white px-5 py-3 font-medium text-cyan-50/84">
+          <button
+            type="button"
+            onClick={handleExportReviewBundle}
+            className="rounded-[16px] border border-cyan-200/20 bg-[rgba(8,27,44,0.72)] px-5 py-3 font-medium text-cyan-50"
+          >
             Export review bundle
           </button>
-        </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-3">
-          <div className={`rounded-[16px] border px-4 py-3 text-sm ${exportReadiness.ready ? 'border-emerald-200/20 bg-[rgba(20,83,45,0.18)] text-emerald-50/92' : 'border-cyan-200/10 bg-[rgba(13,30,50,0.48)] text-cyan-50/78'}`}>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Copy Final Note</div>
-            <div className="mt-2 leading-6">{exportReadiness.ready ? 'This is the main paste action for most users. It matches the selected destination profile and is the fastest path into the chart.' : 'Use this as the default copy action when the destination profile matters and formatting cleanup should match the selected EHR behavior.'}</div>
-          </div>
-          <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3 text-sm text-cyan-50/78">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Copy plain text</div>
-            <div className="mt-2 leading-6">Use this when you want the note without destination cleanup, usually for manual editing before paste.</div>
-          </div>
-          <div className="rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3 text-sm text-cyan-50/78">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Copy field targets</div>
-            <div className="mt-2 leading-6">Use the field-level copy buttons below when your EHR splits the note across multiple paste areas.</div>
-          </div>
-        </div>
-        {!exportReadiness.ready ? (
-          <div className="mt-4 rounded-[16px] border border-amber-200/24 bg-[rgba(146,98,18,0.18)] px-4 py-3 text-sm text-amber-50">
-            Copy and export are intentionally held until review is clearer. Use <span className="font-semibold text-white">Open next finish item</span> to jump to the highest-priority blocker instead of guessing.
-          </div>
-        ) : null}
-        {(copyMessage || exportMessage || rewriteMessage || saveMessage) ? (
-          <div className="mt-4">
-            {renderRecentActions()}
-          </div>
-        ) : null}
-        <div className="mt-4 rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.38)] px-4 py-3 text-sm text-cyan-50/76">
-          Feedback is now kept out of the main finish flow. If something is wrong or confusing, use the separate feedback surface so copy/export stays focused.
-          <Link href="/dashboard/feedback" className="ml-2 font-semibold text-cyan-100 underline decoration-cyan-200/30 underline-offset-4">
+          <Link href="/dashboard/new-note" className="rounded-[16px] border border-cyan-200/16 bg-[rgba(8,27,44,0.54)] px-5 py-3 text-sm font-medium text-cyan-50/84">
+            Back to edit
+          </Link>
+          <Link href="/dashboard/feedback" className="rounded-[16px] border border-cyan-200/16 bg-[rgba(8,27,44,0.54)] px-5 py-3 text-sm font-medium text-cyan-50/84">
             Open feedback
           </Link>
         </div>
+        {!exportReadiness.ready ? (
+          <div className="mt-4 rounded-[16px] border border-amber-200/24 bg-[rgba(146,98,18,0.18)] px-4 py-3 text-sm text-amber-50">
+            Copy and export stay locked until review is clearer.
+          </div>
+        ) : null}
         <div className="mt-4 rounded-[16px] border border-cyan-200/10 bg-[rgba(13,30,50,0.48)] px-4 py-3 text-sm text-cyan-50/78">
           Active paste profile: <span className="font-semibold text-cyan-50">{activeDestinationMeta.summaryLabel}</span>. {activeDestinationMeta.pasteExpectation}
         </div>
         {activeOutputProfile ? (
           <div className="mt-3 rounded-[16px] border border-cyan-200/10 bg-[rgba(7,18,32,0.72)] px-4 py-3 text-sm text-cyan-50/76">
-            Active site preset: <span className="font-semibold text-cyan-50">{activeOutputProfile.name}</span> ({activeOutputProfile.siteLabel}) • {getOutputNoteFocusLabel(activeOutputProfile.noteFocus)}
+            Active site preset: <span className="font-semibold text-cyan-50">{activeOutputProfile.name}</span> ({activeOutputProfile.siteLabel}) - {getOutputNoteFocusLabel(activeOutputProfile.noteFocus)}
           </div>
         ) : null}
         <div className="mt-3 rounded-[18px] border border-cyan-200/10 bg-[rgba(8,24,40,0.76)] p-4">
@@ -4892,11 +4845,8 @@ export function ReviewWorkspace({
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/62">Suggested Paste Targets</div>
                 <div className="mt-1 text-sm text-cyan-50/78">
-                  {activeDestinationMeta.fieldGuideSummary || 'Use these field-level copy targets when your destination splits the note across multiple sections.'}
+                  {activeDestinationMeta.fieldGuideSummary || 'Use field-level copy only when your EHR splits the note across multiple sections.'}
                 </div>
-              </div>
-              <div className="text-xs text-cyan-50/58">
-                Providers working across multiple sites can switch destinations in settings and come back here for the matching copy layout.
               </div>
             </div>
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -4923,7 +4873,7 @@ export function ReviewWorkspace({
                   </div>
                   {target.matchedHeadings.length ? (
                     <div className="mt-3 text-[11px] uppercase tracking-[0.14em] text-cyan-100/50">
-                      Mapped from: {target.matchedHeadings.join(' • ')}
+                      Mapped from: {target.matchedHeadings.join(' / ')}
                     </div>
                   ) : null}
                   <div className="mt-3 max-h-40 overflow-y-auto rounded-[14px] border border-cyan-200/10 bg-[rgba(5,16,28,0.74)] px-3 py-3 text-sm leading-6 text-cyan-50/82">
@@ -4934,7 +4884,7 @@ export function ReviewWorkspace({
             </div>
           </div>
         ) : null}
-      </div>
+      </details>
     </div>
   );
 
