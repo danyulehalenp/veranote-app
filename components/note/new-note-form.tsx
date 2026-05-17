@@ -1216,6 +1216,18 @@ export function NewNoteForm() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!draftHydrationComplete) {
+      return;
+    }
+
+    [0, 80, 220, 500].forEach((delay) => {
+      window.setTimeout(() => {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      }, delay);
+    });
+  }, [draftHydrationComplete]);
+
   const noteTypeOptions = useMemo(() => noteTypeOptionsBySpecialty[specialty] || [], [specialty]);
   const templateOptions = useMemo(() => templateOptionsByNoteType[noteType] || [], [noteType]);
   const sourceInput = useMemo(() => buildSourceInputFromSections(sourceSections), [sourceSections]);
@@ -5888,18 +5900,16 @@ export function NewNoteForm() {
               </div>
             ) : null}
 
-            <div className={`grid gap-4 2xl:flex-1 2xl:items-start ${
-              activeComposeLane === 'finish'
-                ? hasGeneratedDraft
-                  ? '2xl:grid-cols-[minmax(0,0.48fr)_minmax(0,0.52fr)]'
-                  : '2xl:grid-cols-[minmax(0,0.58fr)_minmax(340px,0.42fr)]'
-                : '2xl:grid-cols-1'
+            <div className={`grid gap-4 xl:flex-1 xl:items-start ${
+              hasGeneratedDraft
+                ? 'xl:grid-cols-[minmax(0,0.46fr)_minmax(0,0.54fr)]'
+                : 'xl:grid-cols-[minmax(0,0.52fr)_minmax(340px,0.48fr)]'
             }`}>
-              <div className="grid gap-4 2xl:pr-2">
+              <div className="grid gap-4 xl:min-h-0 xl:pr-2">
 
-      {showUnifiedWorkspace || activeComposeLane === 'source' ? (
-	      <div id="source-panel" ref={registerComposeSection('source-input')} className="workspace-panel flex flex-col rounded-[28px] p-2.5 text-white sm:p-3 xl:min-h-[560px]">
-	        <div className="mb-2 flex flex-col gap-2 rounded-[20px] border border-cyan-200/10 bg-[rgba(255,255,255,0.035)] px-3 py-2.5 lg:flex-row lg:items-center lg:justify-between">
+      {(
+	      <div id="source-panel" ref={registerComposeSection('source-input')} className="workspace-panel flex flex-col rounded-[28px] p-2.5 text-white sm:p-3 xl:sticky xl:top-4 xl:max-h-[calc(100vh-9rem)] xl:min-h-[560px] xl:overflow-y-auto">
+	        <div className="mb-2 flex flex-col gap-2 rounded-[20px] border border-cyan-200/10 bg-[rgba(255,255,255,0.035)] px-3 py-2.5 2xl:flex-row 2xl:items-center 2xl:justify-between">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Source</div>
             <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-white">Paste or dictate source.</h2>
@@ -6346,7 +6356,7 @@ export function NewNoteForm() {
                   </div>
                 </div>
 
-                <div className="workspace-source-fields grid gap-3 xl:grid-cols-2">
+                <div className="workspace-source-fields grid gap-3">
                   {sourceEntrySteps.map((step) => (
                     <SourceInput
                       key={step.key}
@@ -6716,13 +6726,13 @@ export function NewNoteForm() {
           </div>
         </div>
       </div>
-      ) : null}
+      )}
 
               </div>
 
-		              <div className={`${activeComposeLane === 'finish' ? 'grid' : 'hidden'} gap-4 2xl:min-h-0 2xl:overflow-hidden 2xl:pl-2`}>
+		              <div className="grid gap-4 xl:min-h-0 xl:overflow-hidden xl:pl-2">
 	      {generatedSession ? (
-	      <div id="generated-note-workspace" className="grid gap-4 2xl:min-h-0 2xl:h-full 2xl:overflow-y-auto 2xl:pr-1">
+	      <div id="generated-note-workspace" className="grid gap-4 xl:min-h-0 xl:max-h-[calc(100vh-9rem)] xl:overflow-y-auto xl:pr-1">
         <AtlasReviewDock
           statusLabel={atlasStatusLabel}
           detail={atlasDetail}
@@ -6741,82 +6751,31 @@ export function NewNoteForm() {
 	        />
       </div>
       ) : (
-      <div className="workspace-panel flex flex-col rounded-[30px] p-5 text-sm text-cyan-50/72 2xl:min-h-0 2xl:h-full 2xl:overflow-y-auto">
-        <div className="workspace-subpanel rounded-[26px] p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-	            <div>
-	              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-100/76">Draft</div>
-	              <div className="mt-2 text-[1.45rem] font-semibold tracking-[-0.03em] text-white">
-                  {isLoading ? 'Generating draft...' : hasSource ? 'Add source and generate a draft to begin.' : 'Paste, dictate, or upload source to start.'}
-                </div>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-cyan-50/74">
-                Compare source and draft side by side.
+      <div id="generated-note-workspace" className="workspace-panel flex flex-col rounded-[28px] p-4 text-sm text-cyan-50/72 xl:sticky xl:top-4 xl:max-h-[calc(100vh-9rem)] xl:min-h-[560px] xl:overflow-y-auto">
+        <div className="rounded-[24px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100/64">Draft</div>
+              <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                {isLoading ? 'Generating draft...' : hasSource ? 'Ready to generate.' : 'No draft yet.'}
+              </h2>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-cyan-50/70">
+                {hasSource
+                  ? 'Generate from the source on the left, then review the note here.'
+                  : 'Paste, dictate, or upload source on the left to begin.'}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.06)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
+              <span title={noteType} className="max-w-[190px] truncate rounded-full border border-cyan-200/12 bg-white/[0.05] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.13em] text-cyan-50">
                 {noteType}
-              </div>
-              <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.06)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
-                {sourceCompletionCount}/{sourceEntrySteps.length} source steps loaded
-              </div>
-            </div>
-	          </div>
-
-          <div className="mt-5">
-            <AtlasReviewDock
-              statusLabel={atlasStatusLabel}
-              detail={atlasDetail}
-              noteType={noteType}
-              sourceCompletionLabel={atlasSourceCompletionLabel}
-              attentionCount={atlasAttentionCount}
-              hasDraft={hasGeneratedDraft}
-              actions={atlasReviewActions}
-              assistantName={assistantPersona.name}
-              assistantAvatar={assistantPersona.avatar}
-            />
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <div className="workspace-card-static rounded-[18px] p-4">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Draft</div>
-	              <div className="mt-2 text-lg font-semibold text-white">{isLoading ? 'Generating draft...' : 'No draft yet'}</div>
-	              <p className="mt-2 text-sm leading-6 text-cyan-50/72">
-	                Add source and generate a draft to begin.
-              </p>
-            </div>
-            <div className="workspace-card-static rounded-[18px] p-4">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-100/62">Source</div>
-	              <div className="mt-2 text-lg font-semibold text-white">Source stays visible</div>
-	              <p className="mt-2 text-sm leading-6 text-cyan-50/72">
-	                Check wording, dates, meds, and quotes while reviewing.
-              </p>
-            </div>
-            <div className="rounded-[18px] border border-emerald-300/14 bg-[linear-gradient(180deg,rgba(16,185,129,0.14),rgba(10,30,25,0.26))] p-4 shadow-[0_18px_42px_rgba(5,22,18,0.24)]">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-100/74">Review</div>
-	              <div className="mt-2 text-lg font-semibold text-white">Review ready after draft</div>
-	              <p className="mt-2 text-sm leading-6 text-cyan-50/72">
-	                {assistantPersona.name} and final copy actions appear in this pane.
-              </p>
+              </span>
+              <span className="rounded-full border border-cyan-200/12 bg-white/[0.05] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.13em] text-cyan-50">
+                {sourceCompletionCount}/{sourceEntrySteps.length} fields
+              </span>
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3">
-            {[
-              'Paste or skip the source steps on the left.',
-              'Open the draft controls and generate once the source is ready.',
-              'Review, revise, and copy the note here without leaving the workspace.',
-            ].map((item, index) => (
-              <div key={item} className="workspace-card-static flex items-start gap-3 rounded-[18px] p-4">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-cyan-200/16 bg-[rgba(255,255,255,0.05)] text-[11px] font-semibold text-white">
-                  {index + 1}
-                </div>
-                <div className="pt-0.5 text-sm leading-6 text-cyan-50/82">{item}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-3">
+          <div className="mt-4 flex flex-wrap gap-3">
             <button
               type="button"
               onClick={() => {
@@ -6833,14 +6792,14 @@ export function NewNoteForm() {
               onClick={() => scrollToComposeLane('source')}
               className="aurora-secondary-button rounded-xl px-4 py-2.5 text-sm font-medium"
             >
-              Jump to source
+              Edit source
             </button>
             <button
               type="button"
               onClick={scrollToDraftControls}
               className="aurora-secondary-button rounded-xl px-4 py-2.5 text-sm font-medium"
             >
-              Open Draft Settings
+              Draft settings
             </button>
             <button
               type="button"
@@ -6851,6 +6810,23 @@ export function NewNoteForm() {
             </button>
           </div>
         </div>
+
+        <div className="mt-4 rounded-[20px] border border-cyan-200/10 bg-[rgba(255,255,255,0.035)] p-4">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/60">{assistantPersona.name} Review</div>
+          <div className="mt-1 text-base font-semibold text-white">{atlasStatusLabel}</div>
+          <p className="mt-2 text-sm leading-6 text-cyan-50/68">
+            {assistantPersona.name} becomes useful after a draft exists. Until then, keep the source clean and generate when the left pane reflects the encounter.
+          </p>
+        </div>
+
+        <details className="mt-4 rounded-[20px] border border-cyan-200/10 bg-[rgba(255,255,255,0.03)] p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-cyan-50">What happens after generation?</summary>
+          <div className="mt-3 grid gap-2 text-sm leading-6 text-cyan-50/70">
+            <p>1. The generated note appears in this right pane.</p>
+            <p>2. Source remains scrollable on the left for comparison.</p>
+            <p>3. {assistantPersona.name} review and copy/export actions stay with the draft.</p>
+          </div>
+        </details>
       </div>
       )}
               </div>
