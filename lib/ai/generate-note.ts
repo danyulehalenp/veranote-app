@@ -323,43 +323,52 @@ function preserveRestraintSourceStatus(note: string, sourceInput: string) {
 }
 
 function preservePendingOrUnclearLabSourceLimits(note: string, sourceInput: string) {
- const labLimits: string[] = [];
+  const labLimits: string[] = [];
+  let nextNote = note;
 
- if (/\bUDS\b.{0,80}\bpending\b|\bpending\b.{0,80}\bUDS\b/i.test(sourceInput)
-  && !/\bUDS\b.{0,80}\bpending\b|\bpending\b.{0,80}\bUDS\b/i.test(note)) {
-  labLimits.push('UDS was marked pending in the source.');
- }
+  const sourceHasUnavailableLithiumLevel = /\blithium level\b.{0,100}(?:cut off|not included|not available|unavailable|not visible|line is cut off|line.*not included)/i.test(sourceInput);
+  if (sourceHasUnavailableLithiumLevel) {
+    nextNote = nextNote.replace(/\blithium level (?:is |was |remains )?pending\b/gi, 'lithium level is not available in the provided source');
+    if (!/\blithium level\b.{0,100}(?:not available|unavailable|not included|cut off|not visible|incomplete data)/i.test(nextNote)) {
+      labLimits.push('Lithium level was cut off/not included in the available source.');
+    }
+  }
 
- if (/\bpotassium\b.{0,80}(?:appears|unclear|cut off|3\.\?)/i.test(sourceInput)
-  && !/\bpotassium\b.{0,80}(?:appears|unclear|cut off|3\.|not fully visible)/i.test(note)) {
-  labLimits.push('Potassium value was partially cut off/unclear in the scanned or OCR lab source.');
- }
+  if (/\bUDS\b.{0,80}\bpending\b|\bpending\b.{0,80}\bUDS\b/i.test(sourceInput)
+  && !/\bUDS\b.{0,80}\bpending\b|\bpending\b.{0,80}\bUDS\b/i.test(nextNote)) {
+	  labLimits.push('UDS was marked pending in the source.');
+  }
 
- if (/\bpregnancy(?: test)?\b.{0,80}(?:not visible|line not visible|cut off|unclear)/i.test(sourceInput)
-  && !/\bpregnancy(?: test)?\b.{0,80}(?:not visible|line not visible|cut off|unclear|not documented)/i.test(note)) {
-  labLimits.push('Pregnancy test line was not visible in the available source.');
- }
+  if (/\bpotassium\b.{0,80}(?:appears|unclear|cut off|3\.\?)/i.test(sourceInput)
+  && !/\bpotassium\b.{0,80}(?:appears|unclear|cut off|3\.|not fully visible)/i.test(nextNote)) {
+	  labLimits.push('Potassium value was partially cut off/unclear in the scanned or OCR lab source.');
+  }
 
- if (/\bEKG\b.{0,80}(?:\?|unclear|question mark|OCR|tachy\?)|\bsinus tachy\?/i.test(sourceInput)
-  && !/\bEKG\b.{0,120}(?:unclear|question|OCR|tachy|not fully visible|source limitation)/i.test(note)) {
-  labLimits.push('EKG wording was unclear or question-marked in the scanned/OCR source.');
- }
+  if (/\bpregnancy(?: test)?\b.{0,80}(?:not visible|line not visible|cut off|unclear)/i.test(sourceInput)
+  && !/\bpregnancy(?: test)?\b.{0,80}(?:not visible|line not visible|cut off|unclear|not documented)/i.test(nextNote)) {
+	  labLimits.push('Pregnancy test line was not visible in the available source.');
+  }
 
- if (/\btroponin\b.{0,80}(?:not visible|line not visible|cut off|unclear)/i.test(sourceInput)
-  && !/\btroponin\b.{0,120}(?:not visible|line not visible|cut off|unclear|not documented|source limitation)/i.test(note)) {
-  labLimits.push('Troponin line was not visible in the available scanned/OCR source.');
- }
+  if (/\bEKG\b.{0,80}(?:\?|unclear|question mark|OCR|tachy\?)|\bsinus tachy\?/i.test(sourceInput)
+  && !/\bEKG\b.{0,120}(?:unclear|question|OCR|tachy|not fully visible|source limitation)/i.test(nextNote)) {
+	  labLimits.push('EKG wording was unclear or question-marked in the scanned/OCR source.');
+  }
 
- if (/\bTSH\b.{0,120}(?:low|abnormal).{0,120}\brepeat\b.{0,80}\bpending\b|\brepeat\b.{0,80}\bpending\b.{0,120}\bTSH\b|\blow TSH\b/i.test(sourceInput)
-  && !/\bTSH\b.{0,160}(?:low|abnormal|pending|repeat)|\brepeat lab pending\b/i.test(note)) {
-  labLimits.push('TSH was low in the source history and repeat lab is pending.');
- }
+  if (/\btroponin\b.{0,80}(?:not visible|line not visible|cut off|unclear)/i.test(sourceInput)
+  && !/\btroponin\b.{0,120}(?:not visible|line not visible|cut off|unclear|not documented|source limitation)/i.test(nextNote)) {
+	  labLimits.push('Troponin line was not visible in the available scanned/OCR source.');
+  }
 
- if (!labLimits.length) {
-  return note;
- }
+  if (/\bTSH\b.{0,120}(?:low|abnormal).{0,120}\brepeat\b.{0,80}\bpending\b|\brepeat\b.{0,80}\bpending\b.{0,120}\bTSH\b|\blow TSH\b/i.test(sourceInput)
+  && !/\bTSH\b.{0,160}(?:low|abnormal|pending|repeat)|\brepeat lab pending\b/i.test(nextNote)) {
+	  labLimits.push('TSH was low in the source history and repeat lab is pending.');
+  }
 
- return `${note.trim()}\n\nDiagnostics / Source Limitation:\n${labLimits.join(' ')}`;
+  if (!labLimits.length) {
+	  return nextNote;
+  }
+
+  return `${nextNote.trim()}\n\nDiagnostics / Source Limitation:\n${labLimits.join(' ')}`;
 }
 
 function preserveMissingVitalsMedicalSourceLimits(note: string, sourceInput: string) {
@@ -577,13 +586,17 @@ function removeUnsupportedMedicationActionPlan(note: string, sourceInput: string
 
  const sourceSupportsBuprenorphineContinuation = /\b(?:continue|continued|dose unchanged|remain(?:ed)? on|no dose change)\b.{0,80}\bbuprenorphine|\bbuprenorphine\b.{0,80}\b(?:continue|continued|dose unchanged|no dose change)\b/i.test(sourceInput);
  if (!sourceSupportsBuprenorphineContinuation) {
-  cleaned = cleaned
-   .replace(/\bContinue current buprenorphine\/naloxone dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
-   .replace(/\bContinue buprenorphine\/naloxone[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
-   .replace(/\bDo not change buprenorphine(?:\/naloxone)? dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
-   .replace(/\bNo changes? to (?:the )?buprenorphine(?:\/naloxone)? dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
-   .replace(/\bNo buprenorphine dose changes? (?:are|is) documented(?: or recommended)?[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
-   .replace(/\bNo dose changes? (?:are|were|is) documented(?: or recommended)?[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+	 cleaned = cleaned
+	  .replace(/\bContinue current buprenorphine\/naloxone dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+	  .replace(/\bContinue buprenorphine\/naloxone[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+	  .replace(/\b(?:The )?notes? (?:to|state to|indicate to)\s+not change (?:the )?buprenorphine(?:\/naloxone)? dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+	  .replace(/\b(?:Provider )?(?:add[-\s]?on|instruction|note) (?:states?|says|instructs|notes)?\s*(?:to )?not change (?:the )?buprenorphine(?:\/naloxone)? dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+	  .replace(/\bDo not change buprenorphine(?:\/naloxone)? dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+	  .replace(/\bNo changes? to (?:the )?buprenorphine(?:\/naloxone)? dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+	  .replace(/\bNo buprenorphine dose changes? (?:are|is) documented(?: or recommended)?[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+	  .replace(/\bNo buprenorphine(?:\/naloxone)? dose changes? (?:are|were|is) (?:made|completed|recommended)[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+	  .replace(/\bNo dose changes? (?:are|were|is) documented(?: or recommended)?[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+	  .replace(/\bNo dose changes? (?:are|were|is) (?:made|completed|recommended)[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
    .replace(/\bNo changes? to (?:the )?(?:medication|current medication|MAT) dose[^.\n]*(?:documented|made|recommended)[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
    .replace(/\bNo (?:medication|current medication|MAT) dose changes?[^.\n]*(?:documented|made|recommended)[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
    .replace(/\b(?:The patient )?did not report any changes? to (?:their )?medication regimen[^.\n]*(?:\.\s*)?/gi, 'No current buprenorphine/naloxone dosing decision is documented in the provided source. ');

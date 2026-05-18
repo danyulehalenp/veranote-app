@@ -33,6 +33,20 @@ describe('EHR copy-pack formatting', () => {
     expect(formatted).toMatch(/- Continue source-supported follow-up wording/);
   });
 
+  it('returns WellSky psych paste targets that keep narrative, MSE/risk, and plan separate', () => {
+    const targets = getOutputDestinationFieldTargets('WellSky', 'inpatient-psych-follow-up');
+    const labels = targets.map((target) => target.label).join(' | ');
+    const aliases = targets.flatMap((target) => target.aliases).join(' | ');
+    const notes = targets.map((target) => target.note).join(' | ');
+
+    expect(labels).toMatch(/Progress narrative/i);
+    expect(labels).toMatch(/MSE \/ safety update/i);
+    expect(labels).toMatch(/Interventions \/ response \/ plan/i);
+    expect(aliases).toMatch(/risk assessment/i);
+    expect(notes).toMatch(/source-close/i);
+    expect(notes).toMatch(/contradiction-preserving/i);
+  });
+
   it('returns Tebra psychiatry-specific paste targets for inpatient follow-up workflows', () => {
     const targets = getOutputDestinationFieldTargets('Tebra/Kareo', 'inpatient-psych-follow-up');
     const labels = targets.map((target) => target.label).join(' | ');
@@ -117,6 +131,20 @@ describe('EHR copy-pack formatting', () => {
 
       expect(meta.behavior).toBe('section-paste');
       expect(meta.fieldGuideSummary).toMatch(/direct .*writeback remains future connector work/i);
+    }
+  });
+
+  it('keeps psych-focused copy packs source-conflict aware across common behavioral-health destinations', () => {
+    for (const destination of ['WellSky', 'Tebra/Kareo', 'TherapyNotes', 'Valant', 'ICANotes', 'Welligent', 'Netsmart myAvatar', 'Qualifacts/CareLogic', 'Credible'] as const) {
+      const targets = getOutputDestinationFieldTargets(destination, 'inpatient-psych-follow-up');
+      const searchable = targets
+        .map((target) => `${target.label} ${target.aliases.join(' ')} ${target.note}`)
+        .join(' ');
+
+      expect(searchable).toMatch(/mental status|MSE/i);
+      expect(searchable).toMatch(/risk|safety/i);
+      expect(searchable).toMatch(/plan|intervention|disposition/i);
+      expect(searchable).not.toMatch(/direct writeback is enabled|auto[-\s]?insert/i);
     }
   });
 });

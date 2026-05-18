@@ -75,6 +75,29 @@ async function askFormatting(
 }
 
 describe('assistant draft formatting regression', () => {
+  it('handles the plain provider request to make the note one paragraph', async () => {
+    const payload = await askFormatting('make the note into one paragraph');
+
+    expect(payload.answerMode).toBe('chart_ready_wording');
+    expect(payload.message).toMatch(/one-paragraph format/i);
+    expect(payload.message).toMatch(/panic is less intense/i);
+    expect(payload.message).not.toMatch(/\n\nPlan:/);
+    expect(payload.actions?.find((item) => item.type === 'apply-draft-rewrite')?.draftText).not.toMatch(/\bHPI:|\bPlan:/);
+  });
+
+  it('handles explicit two-paragraph HPI then MSE/plan wording', async () => {
+    const payload = await askFormatting('make HPI in first paragraph and MSE and plan in second paragraph');
+
+    expect(payload.answerMode).toBe('chart_ready_wording');
+    expect(payload.message).toMatch(/two-paragraph HPI\/MSE\/Plan format/i);
+
+    const action = payload.actions?.find((item) => item.type === 'apply-draft-rewrite');
+    const draftText = action?.draftText || '';
+    const paragraphs = draftText.split(/\n\n/);
+    expect(paragraphs[0]).toMatch(/HPI:/);
+    expect(paragraphs[1]).toMatch(/Mental Status Exam:|Plan:/);
+  });
+
   it('turns a sectioned draft into one paragraph even when the provider misspells paragraph', async () => {
     const payload = await askFormatting('for follow up note instead of sections make it into one paragraf');
 

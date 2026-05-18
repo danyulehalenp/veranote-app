@@ -34,11 +34,17 @@ import { buildDiagnosisProfileSummary, createEmptyDiagnosisProfileEntry, hasDiag
 import { buildMedicationProfileGapSummary, buildMedicationProfileSummary, createEmptyMedicationProfileEntry, hasMedicationProfileUnresolvedEntries, normalizeMedicationProfile } from '@/lib/note/medication-profile';
 import { mergePresetCatalog, findPresetForNoteType, type NotePreset } from '@/lib/note/presets';
 import { countWords, parseDraftSections } from '@/lib/note/review-sections';
+import {
+  buildSourceEvidenceReview,
+  type SourceEvidenceReview,
+  type SourceEvidenceReviewSignal,
+} from '@/lib/note/source-evidence-review';
 import { buildEncounterSupportSummary, createEncounterSupportDefaults, getEncounterSupportConfig, normalizeEncounterSupport } from '@/lib/note/encounter-support';
 import { planSections, SECTION_LABELS, type NoteSectionKey, type OutputScope } from '@/lib/note/section-profiles';
 import {
   DEFAULT_DICTATION_SOURCE_LANE,
   SOURCE_CAPTURE_FLOW_GUIDES,
+  type SourceLaneId,
 } from '@/lib/note/source-lane-contract';
 import { ASSISTANT_ACTION_EVENT, publishAssistantContext } from '@/lib/veranote/assistant-context';
 import { assistantMemoryService } from '@/lib/veranote/assistant-memory-service';
@@ -588,6 +594,109 @@ function AtlasReviewDock({
       <p className="mt-3 text-xs leading-5 text-cyan-50/58">
         {assistantName} opens with this note context. It will not change the draft unless you apply an existing review action.
       </p>
+    </div>
+  );
+}
+
+function getSourceEvidenceToneClasses(signal: SourceEvidenceReviewSignal) {
+  switch (signal.severity) {
+    case 'caution':
+      return 'border-amber-300/24 bg-amber-300/10 text-amber-50';
+    case 'review':
+      return 'border-sky-300/22 bg-sky-300/10 text-sky-50';
+    case 'info':
+    default:
+      return 'border-cyan-200/14 bg-white/[0.05] text-cyan-50/74';
+  }
+}
+
+function SourceEvidenceReviewPanel({
+  review,
+  onFocusSource,
+  hasDraft,
+}: {
+  review: SourceEvidenceReview;
+  onFocusSource: (laneId: SourceLaneId) => void;
+  hasDraft: boolean;
+}) {
+  const reviewSignals = review.signals.filter((signal) => signal.severity !== 'info');
+  const visibleSignals = (reviewSignals.length ? reviewSignals : review.signals).slice(0, 3);
+
+  return (
+    <div data-testid="source-evidence-review-panel" className="rounded-[22px] border border-sky-300/18 bg-[rgba(56,189,248,0.07)] p-3.5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-100/68">Source evidence</div>
+          <div className="mt-1 text-sm font-semibold text-white">
+            {review.loadedLaneCount
+              ? `${review.loadedLaneCount} source field${review.loadedLaneCount === 1 ? '' : 's'} loaded`
+              : 'No source loaded yet'}
+          </div>
+          <p className="mt-1 text-xs leading-5 text-sky-50/68">
+            {hasDraft
+              ? 'Use these cues to compare the draft against source before finishing.'
+              : 'Veranote will preserve conflicts, gaps, and source limits when the draft is generated.'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full border border-sky-200/18 bg-white/[0.06] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-50">
+            {review.sourceCount} words
+          </span>
+          <span className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+            reviewSignals.length ? 'border-amber-200/24 bg-amber-300/12 text-amber-50' : 'border-emerald-200/20 bg-emerald-300/10 text-emerald-50'
+          }`}>
+            {reviewSignals.length ? `${reviewSignals.length} cue${reviewSignals.length === 1 ? '' : 's'}` : 'No conflict cues'}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {review.laneSummaries.map((lane) => (
+          <button
+            key={lane.id}
+            type="button"
+            onClick={() => onFocusSource(lane.id)}
+            className={`workspace-action-card rounded-[14px] border px-3 py-2 text-left transition ${
+              lane.status === 'empty'
+                ? 'border-white/8 bg-white/[0.025] text-cyan-50/54'
+                : lane.status === 'needs-review'
+                  ? 'border-amber-200/22 bg-amber-300/10 text-amber-50'
+                  : 'border-sky-200/18 bg-white/[0.055] text-sky-50'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">{lane.shortLabel}</span>
+              <span className="text-[11px] opacity-75">{lane.wordCount ? `${lane.wordCount}w` : 'empty'}</span>
+            </div>
+            {lane.snippet ? (
+              <div className="mt-1 line-clamp-2 text-xs leading-5 opacity-80">{lane.snippet}</div>
+            ) : null}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-3 grid gap-2">
+        {visibleSignals.map((signal) => (
+          <div key={signal.id} data-testid="source-evidence-review-signal" className={`rounded-[16px] border px-3 py-2.5 ${getSourceEvidenceToneClasses(signal)}`}>
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-75">{signal.label}</div>
+                <div className="mt-1 text-sm font-semibold text-white">{signal.summary}</div>
+                <div className="mt-1 text-xs leading-5 opacity-80">{signal.whyThisMatters}</div>
+              </div>
+              {signal.sourceLaneId ? (
+                <button
+                  type="button"
+                  onClick={() => onFocusSource(signal.sourceLaneId!)}
+                  className="workspace-action-pill shrink-0 rounded-full border border-white/14 bg-white/10 px-3 py-1 text-[11px] font-semibold text-white"
+                >
+                  Open source
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2424,6 +2533,15 @@ export function NewNoteForm() {
     : dictationTargetSteps[0];
   const sourceCompletionCount = populatedSectionLabels.length;
   const sourceCompletionPercent = Math.round((sourceCompletionCount / sourceEntrySteps.length) * 100);
+  const sourceEvidenceReview = useMemo(
+    () => buildSourceEvidenceReview({
+      noteType,
+      sourceSections,
+      sourceInput,
+      draftText: generatedSession?.note || draftCheckpoint?.note || '',
+    }),
+    [draftCheckpoint?.note, generatedSession?.note, noteType, sourceInput, sourceSections],
+  );
   const captureFlowGuides = SOURCE_CAPTURE_FLOW_GUIDES;
   const sourceModeCards = useMemo(
     () => ([
@@ -3954,6 +4072,24 @@ export function NewNoteForm() {
     });
   }
 
+  function focusSourceEvidenceLane(laneId: SourceLaneId) {
+    setWorkflowStage('compose');
+    setActiveComposeLane('source');
+    setSourceWorkspaceMode('manual');
+    setActiveSourceTab(laneId);
+    setEvalBanner('Opened the source field tied to the evidence cue. Review source wording before generating or finishing.');
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const target = document.getElementById(`source-field-${laneId}`);
+        target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        window.setTimeout(() => {
+          target?.querySelector('textarea')?.focus({ preventScroll: true });
+        }, 120);
+      });
+    });
+  }
+
   function handleDocumentSourceJump() {
     setActiveComposeLane('source');
     setSourceWorkspaceMode('manual');
@@ -4804,7 +4940,8 @@ export function NewNoteForm() {
 
   const hasGeneratedDraft = Boolean(generatedSession?.note?.trim());
   const hasSource = sourceCompletionCount > 0;
-  const atlasAttentionCount = composeNudges.filter((item) => item.tone === 'warning' || item.tone === 'danger').length;
+  const sourceEvidenceAttentionCount = sourceEvidenceReview.signals.filter((item) => item.severity === 'review' || item.severity === 'caution').length;
+  const atlasAttentionCount = composeNudges.filter((item) => item.tone === 'warning' || item.tone === 'danger').length + sourceEvidenceAttentionCount;
   const atlasSourceCompletionLabel = `${sourceCompletionCount}/${sourceEntrySteps.length} source`;
   const atlasStatusLabel = hasGeneratedDraft
     ? atlasAttentionCount
@@ -5107,6 +5244,11 @@ export function NewNoteForm() {
                   actions={atlasReviewActions}
                   assistantName={assistantPersona.name}
                   assistantAvatar={assistantPersona.avatar}
+                />
+                <SourceEvidenceReviewPanel
+                  review={sourceEvidenceReview}
+                  onFocusSource={focusSourceEvidenceLane}
+                  hasDraft={hasGeneratedDraft}
                 />
                 <ReviewWorkspace
                   initialSession={generatedSession}
@@ -6743,6 +6885,11 @@ export function NewNoteForm() {
           assistantName={assistantPersona.name}
           assistantAvatar={assistantPersona.avatar}
         />
+        <SourceEvidenceReviewPanel
+          review={sourceEvidenceReview}
+          onFocusSource={focusSourceEvidenceLane}
+          hasDraft={hasGeneratedDraft}
+        />
 	        <ReviewWorkspace
 	          initialSession={generatedSession}
 	          embedded
@@ -6794,6 +6941,14 @@ export function NewNoteForm() {
               Edit source
             </button>
           </div>
+        </div>
+
+        <div className="mt-3">
+          <SourceEvidenceReviewPanel
+            review={sourceEvidenceReview}
+            onFocusSource={focusSourceEvidenceLane}
+            hasDraft={hasGeneratedDraft}
+          />
         </div>
 
         <div className="mt-3 rounded-[18px] border border-cyan-200/10 bg-white/[0.03] px-3.5 py-2.5">

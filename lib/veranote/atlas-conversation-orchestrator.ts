@@ -384,6 +384,15 @@ function isLowInformationProviderFragment(message: string, routeHint: AtlasConve
 
   const normalized = normalizeText(message);
   const words = normalized.split(/\s+/).filter(Boolean);
+  if (
+    words.length <= 10
+    && /^(short|rough|dictated rough|from bullets)\b/.test(normalized)
+    && /\b(pt|patient)\b/.test(normalized)
+    && /\b(denies|denied|says|reports)\b/.test(normalized)
+  ) {
+    return true;
+  }
+
   if (extractClinicalTopicAnchors(normalized).length > 0 || words.length > 12) {
     return false;
   }

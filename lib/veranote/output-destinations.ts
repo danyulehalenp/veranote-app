@@ -299,9 +299,9 @@ const OUTPUT_DESTINATION_META: Record<OutputDestination, OutputDestinationMeta> 
       },
       {
         id: 'therapynotes-current-mental-status',
-        label: 'Current mental status',
-        aliases: ['mental status', 'observations', 'insight', 'judgment'],
-        note: 'Use when the note template has a dedicated mental status section.',
+        label: 'Current mental status / safety',
+        aliases: ['mental status', 'observations', 'insight', 'judgment', 'risk assessment', 'safety'],
+        note: 'Use when the note template has a dedicated mental status section or when safety/risk wording needs to stay close to observed MSE details.',
       },
       {
         id: 'therapynotes-assessment',
@@ -337,9 +337,9 @@ const OUTPUT_DESTINATION_META: Record<OutputDestination, OutputDestinationMeta> 
       },
       {
         id: 'valant-mse',
-        label: 'MSE / observations',
-        aliases: ['mental status', 'observations', 'insight', 'judgment'],
-        note: 'Use for mental status and observed behavior.',
+        label: 'MSE / observations / risk',
+        aliases: ['mental status', 'observations', 'insight', 'judgment', 'risk assessment', 'safety'],
+        note: 'Use for mental status, observed behavior, and source-supported risk/safety updates.',
       },
       {
         id: 'valant-assessment',
@@ -715,9 +715,9 @@ const TEBRA_NOTE_FOCUS_TARGETS: Partial<Record<OutputNoteFocus, OutputFieldTarge
     },
     {
       id: 'tebra-psych-progress-mse',
-      label: 'MSE',
-      aliases: ['mental status', 'observations', 'insight', 'judgment'],
-      note: 'Use for the dedicated MSE field in Psych Progress templates.',
+      label: 'MSE / safety',
+      aliases: ['mental status', 'observations', 'insight', 'judgment', 'risk assessment', 'safety'],
+      note: 'Use for the dedicated MSE field in Psych Progress templates, including source-supported safety/risk observations when the template does not provide a separate risk field.',
     },
     {
       id: 'tebra-psych-progress-impression',
@@ -730,6 +730,89 @@ const TEBRA_NOTE_FOCUS_TARGETS: Partial<Record<OutputNoteFocus, OutputFieldTarge
       label: 'Psych Intervention / Plan',
       aliases: ['plan', 'psych intervention', 'proposed discharge'],
       note: 'Use for interventions, medication adjustments, and next-step planning.',
+    },
+  ],
+};
+
+const WELLSKY_NOTE_FOCUS_TARGETS: Partial<Record<OutputNoteFocus, OutputFieldTarget[]>> = {
+  'inpatient-psych-evaluation': [
+    {
+      id: 'wellsky-initial-narrative',
+      label: 'Narrative / HPI',
+      aliases: ['narrative', 'chief complaint', 'hpi', 'reason for admission', 'presenting problem'],
+      note: 'Use for the source-close admission narrative, keeping referral/collateral attribution visible.',
+    },
+    {
+      id: 'wellsky-initial-mse-risk',
+      label: 'MSE / risk',
+      aliases: ['mental status', 'risk assessment', 'safety', 'observations'],
+      note: 'Use for source-supported MSE, risk language, and contradiction-preserving collateral or staff observations.',
+    },
+    {
+      id: 'wellsky-initial-assessment-plan',
+      label: 'Assessment / plan',
+      aliases: ['assessment', 'diagnosis', 'plan', 'intervention', 'proposed discharge'],
+      note: 'Use for formulation and plan after unsupported diagnosis, risk, and clearance wording has been reviewed.',
+    },
+  ],
+  'inpatient-psych-follow-up': [
+    {
+      id: 'wellsky-progress-narrative',
+      label: 'Progress narrative',
+      aliases: ['interval update', 'follow up', 'progress note', 'subjective', 'symptom review'],
+      note: 'Use for source-close progress wording, response to treatment, and day-to-day narrative.',
+    },
+    {
+      id: 'wellsky-progress-mse-risk',
+      label: 'MSE / safety update',
+      aliases: ['mental status', 'risk assessment', 'safety', 'observations'],
+      note: 'Use for observed MSE, risk, protective factors, and contradiction-preserving safety wording.',
+    },
+    {
+      id: 'wellsky-progress-intervention-plan',
+      label: 'Interventions / response / plan',
+      aliases: ['intervention', 'response to intervention', 'plan', 'medications', 'discharge barriers'],
+      note: 'Use for interventions provided, patient response, medication-plan wording, discharge barriers, and next steps.',
+    },
+  ],
+  'outpatient-evaluation': [
+    {
+      id: 'wellsky-outpatient-intake-narrative',
+      label: 'Presenting concerns / history',
+      aliases: ['presenting problem', 'chief complaint', 'hpi', 'history', 'biopsychosocial'],
+      note: 'Use for intake narrative and history-heavy source material while preserving source attribution.',
+    },
+    {
+      id: 'wellsky-outpatient-intake-mse-risk',
+      label: 'MSE / risk',
+      aliases: ['mental status', 'risk assessment', 'safety', 'observations'],
+      note: 'Use for MSE and risk wording that remains source-supported and uncertainty-preserving.',
+    },
+    {
+      id: 'wellsky-outpatient-intake-plan',
+      label: 'Assessment / plan',
+      aliases: ['assessment', 'diagnosis', 'plan', 'recommendations'],
+      note: 'Use for diagnostic framing, recommendations, and follow-up without implying direct EHR writeback.',
+    },
+  ],
+  'outpatient-follow-up': [
+    {
+      id: 'wellsky-outpatient-progress-narrative',
+      label: 'Data / interval narrative',
+      aliases: ['data', 'interval update', 'subjective', 'hpi', 'symptom review'],
+      note: 'Use for patient-reported interval course and session narrative.',
+    },
+    {
+      id: 'wellsky-outpatient-progress-mse-risk',
+      label: 'MSE / risk update',
+      aliases: ['mental status', 'risk assessment', 'safety', 'observations'],
+      note: 'Use for updated MSE and risk content, keeping conflicts and missing data visible.',
+    },
+    {
+      id: 'wellsky-outpatient-progress-plan',
+      label: 'Assessment / interventions / plan',
+      aliases: ['assessment', 'intervention', 'plan', 'response', 'goals'],
+      note: 'Use for response to intervention, assessment, goals, and next-step plan.',
     },
   ],
 };
@@ -1090,6 +1173,10 @@ export function getOutputDestinationOptions() {
 }
 
 export function getOutputDestinationFieldTargets(destination: OutputDestination, noteFocus: OutputNoteFocus = 'general') {
+  if (destination === 'WellSky' && WELLSKY_NOTE_FOCUS_TARGETS[noteFocus]) {
+    return WELLSKY_NOTE_FOCUS_TARGETS[noteFocus] || OUTPUT_DESTINATION_META[destination].fieldTargets;
+  }
+
   if (destination === 'Tebra/Kareo' && TEBRA_NOTE_FOCUS_TARGETS[noteFocus]) {
     return TEBRA_NOTE_FOCUS_TARGETS[noteFocus] || OUTPUT_DESTINATION_META[destination].fieldTargets;
   }
