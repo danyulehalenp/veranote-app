@@ -80,4 +80,35 @@ describe('source linking traceability', () => {
     expect(summary.unsupportedSectionCount).toBeGreaterThanOrEqual(1);
     expect(summary.sourceUsage[0]?.count).toBeGreaterThan(0);
   });
+
+  it('links clean draft wording back to misspelled OCR-style source text', () => {
+    const messySourceSections: SourceSections = {
+      intakeCollateral: 'Scanned ER packet: pt slep 2 hrs. Mom reports suicdal txts last night. UDS pendng.',
+      clinicianNotes: 'Pt denys SI today. Provider observed anxious affect and fast speech.',
+      patientTranscript: '',
+      objectiveData: 'Provider add-on: keep conflict visible and do not write no risk.',
+    };
+    const draftSections = parseDraftSections([
+      'HPI:',
+      'Patient slept two hours.',
+      '',
+      'Risk:',
+      'Patient denies SI today, but collateral reports suicidal texts last night and UDS is pending.',
+      '',
+      'MSE:',
+      'Anxious affect and fast speech were observed.',
+    ].join('\n'));
+
+    const evidenceMap = buildSectionSentenceEvidenceMap(draftSections, messySourceSections, 3);
+    const hpiLinks = evidenceMap['hpi']?.flatMap((row) => row.links) || [];
+    const riskLinks = evidenceMap['risk']?.flatMap((row) => row.links) || [];
+    const mseLinks = evidenceMap['mse']?.flatMap((row) => row.links) || [];
+    const riskTerms = riskLinks.flatMap((link) => link.overlapTerms);
+
+    expect(hpiLinks.some((link) => link.blockId.startsWith('intakeCollateral-'))).toBe(true);
+    expect(riskLinks.some((link) => link.blockId.startsWith('intakeCollateral-'))).toBe(true);
+    expect(riskLinks.some((link) => link.blockId.startsWith('clinicianNotes-'))).toBe(true);
+    expect(mseLinks.some((link) => link.blockId.startsWith('clinicianNotes-'))).toBe(true);
+    expect(riskTerms).toEqual(expect.arrayContaining(['suicidal', 'texts', 'pending']));
+  });
 });

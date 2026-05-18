@@ -125,6 +125,7 @@ export function buildSourceEvidenceReview(input: BuildSourceEvidenceReviewInput)
   const laneSummaries = buildLaneSummaries(input.sourceSections);
   const loadedLaneCount = laneSummaries.filter((lane) => lane.wordCount > 0).length;
   const signals: SourceEvidenceReviewSignal[] = [];
+  const riskTerms = String.raw`(?:si|s\/i|suicid|suicdal|suicidial|self[-\s]?harm|hi|h\/i|homicid|hallucinat|halucinat|ah\/vh|voices?)`;
 
   if (!loadedLaneCount) {
     pushSignal(signals, {
@@ -139,10 +140,10 @@ export function buildSourceEvidenceReview(input: BuildSourceEvidenceReviewInput)
     });
   }
 
-  const patientRiskDenial = has(source, /\b(?:patient\s+)?den(?:y|ies|ied)\b.{0,80}\b(?:si|suicid|self[-\s]?harm|hi|homicid|hallucination|ah\/vh)\b/i)
-    || has(source, /\b(?:no|denies)\s+(?:si\/hi|suicidal|homicidal|hallucinations?|ah\/vh)\b/i);
-  const collateralRiskConcern = has(source, /\b(?:collateral|mother|father|parent|girlfriend|boyfriend|spouse|family|staff|nursing|school|police|ems)\b.{0,160}\b(?:suicid|self[-\s]?harm|homicid|threat|texts?|weapon|attempt|overdose|responding to internal stimuli|hallucinat|voices)\b/i)
-    || has(source, /\b(?:suicidal texts?|threatening texts?|reported attempt|staff observed|nursing observed|responding to internal stimuli)\b/i);
+  const patientRiskDenial = has(source, new RegExp(String.raw`\b(?:patient\s+)?den(?:y|ies|ied|ys)\b.{0,90}\b${riskTerms}\b`, 'i'))
+    || has(source, new RegExp(String.raw`\b(?:no|denies|denys)\s+(?:si\/hi|s\/i|h\/i|suicidal|suicdal|homicidal|hallucinations?|halucinations?|ah\/vh|voices?)\b`, 'i'));
+  const collateralRiskConcern = has(source, new RegExp(String.raw`\b(?:collateral|mother|mom|father|dad|parent|girlfriend|boyfriend|spouse|family|staff|nursing|school|police|ems)\b.{0,170}\b(?:suicid|suicdal|suicidial|self[-\s]?harm|homicid|threat|texts?|txts?|weapon|attempt|overdose|responding to internal stimuli|hallucinat|halucinat|voices)\b`, 'i'))
+    || has(source, /\b(?:suicidal texts?|suicdal texts?|suicidal txts?|threatening texts?|reported attempt|staff observed|nursing observed|responding to internal stimuli)\b/i);
 
   if (patientRiskDenial && collateralRiskConcern) {
     pushSignal(signals, {
@@ -161,8 +162,8 @@ export function buildSourceEvidenceReview(input: BuildSourceEvidenceReviewInput)
   }
 
   if (
-    has(source, /\b(?:denies hallucinations|denies ah\/vh|no hallucinations|not hearing voices)\b/i)
-    && has(source, /\b(?:responding to internal stimuli|internally preoccupied|laughing to self|talking to self|staring into corner|staff observed)\b/i)
+    has(source, /\b(?:denies hallucinations|denys hallucinations|denies ah\/vh|no hallucinations|no halucinations|not hearing voices)\b/i)
+    && has(source, /\b(?:responding to internal stimuli|internally preoccupied|laughing to self|talking to self|staring into corner|staff observed|nursing observed)\b/i)
   ) {
     pushSignal(signals, {
       id: 'perception-observation-conflict',
@@ -179,7 +180,7 @@ export function buildSourceEvidenceReview(input: BuildSourceEvidenceReviewInput)
     });
   }
 
-  if (has(source, /\b(?:pending|not resulted|awaiting|not back yet|labs pending|medical clearance pending|clearance pending|uds pending|ekg pending)\b/i)) {
+  if (has(source, /\b(?:pending|pendng|pndng|not resulted|awaiting|awaitng|not back yet|not bak|labs pending|medical clearance pending|clearance pending|uds pending|ekg pending)\b/i)) {
     pushSignal(signals, {
       id: 'pending-data-visible',
       severity: 'review',
@@ -196,8 +197,8 @@ export function buildSourceEvidenceReview(input: BuildSourceEvidenceReviewInput)
   }
 
   if (
-    has(source, /\b(?:med list|medication list|mar|pharmacy|patient reports|collateral reports)\b.{0,140}\b(?:stopped|not taking|refus(?:e|ed|ing)|nonadherent|missed|discontinued|still shows|unclear)\b/i)
-    || has(source, /\b(?:stopped|not taking|refus(?:e|ed|ing)|nonadherent|missed)\b.{0,80}\b(?:med|medication|dose|mar|pharmacy)\b/i)
+    has(source, /\b(?:med list|medication list|mar|pharmacy|patient reports|collateral reports)\b.{0,150}\b(?:stopped|stoped|stoppd|not taking|not takeing|not takng|refus(?:e|ed|ing)|refusd|nonadherent|missed|missd|discontinued|still shows|unclear)\b/i)
+    || has(source, /\b(?:stopped|stoped|stoppd|not taking|not takeing|not takng|refus(?:e|ed|ing)|refusd|nonadherent|missed|missd)\b.{0,90}\b(?:med|medication|dose|mar|pharmacy)\b/i)
   ) {
     pushSignal(signals, {
       id: 'medication-source-discrepancy',
@@ -267,7 +268,23 @@ export function buildSourceEvidenceReview(input: BuildSourceEvidenceReviewInput)
     });
   }
 
-  const sourceHasUncertainty = has(sourceLower, /\b(?:si|suicid|hi|homicid|collateral|pending|not resulted|clearance|weapon|attempt|overdose|withdrawal|intoxication|responding to internal stimuli)\b/i);
+  if (has(source, /\b(?:ocr|scann(?:ed|ed:|d)|scan|illegible|unreadable|blurry|photo|fax|handwritten|cut off|poor image|hard to read)\b/i)) {
+    pushSignal(signals, {
+      id: 'source-quality-review',
+      severity: 'review',
+      label: 'Source quality',
+      summary: 'Source may come from OCR, scan, photo, fax, or hard-to-read material.',
+      whyThisMatters: 'Low-quality source text can turn misspellings or partial words into clinical errors if the draft treats them as settled facts.',
+      whatToCheck: [
+        'Verify key medications, labs, dates, risk statements, and collateral claims against the original document.',
+        'Keep uncertain or illegible details explicitly uncertain instead of cleaning them into false certainty.',
+      ],
+      sourceLaneId: 'intakeCollateral',
+      targetId: sourceTargetId('intakeCollateral'),
+    });
+  }
+
+  const sourceHasUncertainty = has(sourceLower, /\b(?:si|s\/i|suicid|suicdal|suicidial|hi|h\/i|homicid|collateral|pending|pendng|pndng|not resulted|clearance|weapon|attempt|overdose|withdrawal|intoxication|responding to internal stimuli)\b/i);
   if (
     draft
     && sourceHasUncertainty

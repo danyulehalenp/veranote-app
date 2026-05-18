@@ -68,20 +68,112 @@ const STOP_WORDS = new Set([
   'with', 'would', 'you', 'your', 'daily', 'note', 'section', 'current', 'today'
 ]);
 
+const CLINICAL_SHORT_TOKENS = new Set(['ah', 'bh', 'ed', 'ekg', 'er', 'hi', 'mse', 'qtc', 'si', 'uds', 'vh']);
+
+const TEXT_ALIASES: Array<[RegExp, string]> = [
+  [/\bsuicd(?:al|ial)?\b/g, 'suicidal'],
+  [/\bsuicidial\b/g, 'suicidal'],
+  [/\bslep\b/g, 'sleep'],
+  [/\bsleepng\b/g, 'sleeping'],
+  [/\bhrs?\b/g, 'hours'],
+  [/\btxts?\b/g, 'texts'],
+  [/\bpendng\b/g, 'pending'],
+  [/\bpndng\b/g, 'pending'],
+  [/\bdeprss(?:ed|ion)?\b/g, 'depressed'],
+  [/\bdepresed\b/g, 'depressed'],
+  [/\banx(?:ity|ous)\b/g, 'anxiety'],
+  [/\bhalucinat(?:e|es|ed|ing|ions?)\b/g, 'hallucination'],
+  [/\bhallucinatons\b/g, 'hallucinations'],
+  [/\blithum\b/g, 'lithium'],
+  [/\bdepokte\b/g, 'depakote'],
+  [/\bvalporate\b/g, 'valproate'],
+  [/\bescit(?:a)?lopram\b/g, 'escitalopram'],
+  [/\bconcetration\b/g, 'concentration'],
+  [/\birratated\b/g, 'irritable'],
+  [/\bdenys\b/g, 'denies'],
+  [/\btakeing\b/g, 'taking'],
+  [/\btakng\b/g, 'taking'],
+  [/\bstop(?:ed|pd)\b/g, 'stopped'],
+];
+
+const TOKEN_ALIASES: Record<string, string> = {
+  asleep: 'sleep',
+  slept: 'sleep',
+  sleeping: 'sleep',
+  suicidal: 'suicidal',
+  suicidality: 'suicidal',
+  suicidial: 'suicidal',
+  suicdal: 'suicidal',
+  si: 'suicidal',
+  homicidal: 'homicidal',
+  hi: 'homicidal',
+  hallucinations: 'hallucination',
+  hallucinating: 'hallucination',
+  hallucinated: 'hallucination',
+  voices: 'hallucination',
+  ah: 'hallucination',
+  vh: 'hallucination',
+  anxious: 'anxiety',
+  anxity: 'anxiety',
+  anxous: 'anxiety',
+  depressed: 'depression',
+  depresed: 'depression',
+  deprssed: 'depression',
+  depression: 'depression',
+  mood: 'mood',
+  meds: 'medication',
+  med: 'medication',
+  medications: 'medication',
+  sertraline: 'sertraline',
+  zoloft: 'sertraline',
+  bupropion: 'bupropion',
+  wellbutrin: 'bupropion',
+  paroxetine: 'paroxetine',
+  paxil: 'paroxetine',
+  citalopram: 'citalopram',
+  celexa: 'citalopram',
+  lamotrigine: 'lamotrigine',
+  lamictal: 'lamotrigine',
+  lithium: 'lithium',
+  lithum: 'lithium',
+  depakote: 'valproate',
+  valproate: 'valproate',
+  valporate: 'valproate',
+  txt: 'texts',
+  txts: 'texts',
+  texts: 'texts',
+  pending: 'pending',
+  pendng: 'pending',
+  pndng: 'pending',
+};
+
+function applyTextAliases(value: string) {
+  return TEXT_ALIASES.reduce((current, [pattern, replacement]) => current.replace(pattern, replacement), value);
+}
+
 function normalizeText(value: string) {
-  return value
+  const lowered = value
     .toLowerCase()
     .replace(/\r\n/g, '\n')
+    .replace(/\bsi\/hi\b/g, 'si hi')
+    .replace(/\bah\/vh\b/g, 'ah vh');
+
+  return applyTextAliases(lowered)
     .replace(/[^a-z0-9%/.\-\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
+function normalizeToken(rawToken: string) {
+  const token = rawToken.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
+  return TOKEN_ALIASES[token] || token;
+}
+
 function tokenize(value: string) {
   return normalizeText(value)
     .split(/\s+/)
-    .map((token) => token.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, ''))
-    .filter((token) => token.length >= 3 && !STOP_WORDS.has(token));
+    .map(normalizeToken)
+    .filter((token) => (token.length >= 3 || CLINICAL_SHORT_TOKENS.has(token)) && !STOP_WORDS.has(token));
 }
 
 function unique<T>(items: T[]) {

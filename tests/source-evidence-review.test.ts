@@ -96,4 +96,25 @@ describe('source evidence review', () => {
     expect(addon?.severity).toBe('info');
     expect(addon?.whatToCheck.join(' ')).toMatch(/should not leak into the final note/i);
   });
+
+  it('flags OCR-style misspellings, pending data, risk conflict, and med discrepancy', () => {
+    const review = buildSourceEvidenceReview({
+      noteType: 'Inpatient Psych Follow-Up',
+      sourceSections: {
+        ...EMPTY_SOURCE_SECTIONS,
+        intakeCollateral: 'Scanned ER packet with OCR: pt denys SI today. Mom reports suicdal txts last night. UDS pendng and EKG not bak.',
+        objectiveData: 'Med list still shows sertraline 50 mg, but pt not takeing meds for two weeks.',
+      },
+      draftText: 'Patient is medically cleared with no safety concerns.',
+    });
+
+    expect(review.signals.find((signal) => signal.id === 'source-quality-review')).toMatchObject({
+      severity: 'review',
+      label: 'Source quality',
+    });
+    expect(review.signals.find((signal) => signal.id === 'patient-collateral-risk-conflict')?.severity).toBe('caution');
+    expect(review.signals.find((signal) => signal.id === 'pending-data-visible')?.summary).toMatch(/pending/i);
+    expect(review.signals.find((signal) => signal.id === 'medication-source-discrepancy')?.summary).toMatch(/Medication source/i);
+    expect(review.signals.find((signal) => signal.id === 'unsupported-reassurance-draft')?.severity).toBe('caution');
+  });
 });

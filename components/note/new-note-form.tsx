@@ -683,6 +683,13 @@ function SourceEvidenceReviewPanel({
                 <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-75">{signal.label}</div>
                 <div className="mt-1 text-sm font-semibold text-white">{signal.summary}</div>
                 <div className="mt-1 text-xs leading-5 opacity-80">{signal.whyThisMatters}</div>
+                {signal.whatToCheck.length ? (
+                  <ul className="mt-2 grid gap-1 text-xs leading-5 opacity-85">
+                    {signal.whatToCheck.slice(0, 2).map((item) => (
+                      <li key={item}>Check: {item}</li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
               {signal.sourceLaneId ? (
                 <button

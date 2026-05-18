@@ -104,6 +104,7 @@ describe('EHR copy-pack formatting', () => {
       'Valant',
       'Epic',
       'Oracle Health/Cerner',
+      'MEDITECH Expanse',
       'athenaOne',
       'eClinicalWorks',
       'Netsmart myAvatar',
@@ -126,11 +127,11 @@ describe('EHR copy-pack formatting', () => {
   });
 
   it('keeps major medical EHR copy packs honest about manual paste versus future writeback', () => {
-    for (const destination of ['Epic', 'eClinicalWorks', 'AdvancedMD', 'DrChrono'] as const) {
+    for (const destination of ['Epic', 'Oracle Health/Cerner', 'MEDITECH Expanse', 'eClinicalWorks', 'AdvancedMD', 'DrChrono'] as const) {
       const meta = getOutputDestinationMeta(destination);
 
       expect(meta.behavior).toBe('section-paste');
-      expect(meta.fieldGuideSummary).toMatch(/direct .*writeback remains future connector work/i);
+      expect(meta.fieldGuideSummary).toMatch(/direct .*writeback (?:remains future connector work|is not enabled)/i);
     }
   });
 

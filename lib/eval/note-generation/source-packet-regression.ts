@@ -350,7 +350,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
     role: 'Psychiatric NP',
     ehr: 'Luminello',
     noteType: 'Outpatient Psychiatric Evaluation',
-    customInstructions: 'Use outpatient evaluation sections. Preserve allergy conflict and do not resolve medication safety from this packet alone.',
+    customInstructions: 'Use outpatient evaluation sections. Preserve allergy conflict and do not resolve medication safety from this packet alone. Do not write restart/start/resume lamotrigine; the source only supports that the patient wants help with medication options.',
     sourceSections: {
       intakeCollateral: buildReviewedDocumentSourceBlock({
         fileName: 'outside-psychiatry-referral-scan.pdf',
@@ -376,7 +376,8 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       objectiveData: [
         'Provider Add-On:',
         '- Keep allergy/rash uncertainty explicit.',
-        '- Do not say lamotrigine was restarted.',
+        '- Do not say lamotrigine was restarted, started, resumed, or recommended.',
+        '- If medication preference is mentioned, say only that the patient wants help with medication options for mood swings.',
         '- Do not confirm bipolar disorder from copied-forward diagnoses alone.',
       ].join('\n'),
     },
@@ -2031,7 +2032,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
     role: 'Psychiatric NP',
     ehr: 'WellSky',
     noteType: 'Inpatient Psych Initial Adult Evaluation',
-    customInstructions: 'Use inpatient evaluation sections. Treat OCR as imperfect and keep medication/lab uncertainty explicit.',
+    customInstructions: 'Use inpatient evaluation sections. Treat OCR as imperfect and keep medication/lab uncertainty explicit. The lithium level line is cut off and not available; do not call it pending, normal, therapeutic, or resulted.',
     sourceSections: {
       intakeCollateral: [
         'Scanned referral OCR, mixed order:',
@@ -2056,7 +2057,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       objectiveData: [
         'Provider Add-On:',
         '- Do not list lithium as confirmed current medication.',
-        '- Do not state lithium level normal or pending unless source supports it.',
+        '- Do not state lithium level normal, therapeutic, resulted, or pending. The source supports only that the lithium level line is cut off / not available.',
         '- Do not state medically cleared.',
         '- Preserve OCR uncertainty and creatinine 1.4.',
       ].join('\n'),
