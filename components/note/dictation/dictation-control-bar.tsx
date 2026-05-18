@@ -36,7 +36,6 @@ export function DictationControlBar({
   onStart,
   onPause,
   onStop,
-  onStopAndInsert,
 }: {
   enabled: boolean;
   uiState: DictationUiState;
@@ -71,7 +70,6 @@ export function DictationControlBar({
   onStart: () => void;
   onPause: () => void;
   onStop: () => void;
-  onStopAndInsert?: () => void;
 }) {
   const isListening = uiState === 'listening' || uiState === 'interim' || uiState === 'final_ready';
 
@@ -182,18 +180,8 @@ export function DictationControlBar({
             disabled={!enabled || uiState === 'idle' || uiState === 'stopped'}
             className="rounded-xl bg-[rgba(244,63,94,0.16)] px-3 py-2 text-sm font-medium text-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Stop
+            Stop & Review
           </button>
-          {onStopAndInsert ? (
-            <button
-              type="button"
-              onClick={onStopAndInsert}
-              disabled={!enabled || uiState !== 'listening'}
-              className="rounded-xl bg-[rgba(251,191,36,0.18)] px-3 py-2 text-sm font-medium text-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Stop & Insert
-            </button>
-          ) : null}
         </div>
       </div>
     </div>

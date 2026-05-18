@@ -3645,7 +3645,7 @@ export function NewNoteForm() {
     setDictationSession((current) => setLocalDictationUiState(current, 'paused'));
   }
 
-  async function handleStopDictation(options?: { insertAfterStop?: boolean }) {
+  async function handleStopDictation() {
     const activeSessionId = dictationSession.sessionId;
     let queuedFinalTranscriptCount = 0;
     let finalSegments: TranscriptSegment[] = [];
@@ -3695,17 +3695,6 @@ export function NewNoteForm() {
       queuedFinalTranscriptCount > 0 || current.pendingSegments.length > 0 ? 'final_ready' : 'stopped',
     ));
 
-    if (options?.insertAfterStop && finalSegments[0]) {
-      await insertDictationSegment(finalSegments[0], finalSegments[0].text);
-    } else if (options?.insertAfterStop) {
-      setDictationTechnicalStatus('Stop & Insert could not insert because no complete transcript was returned.');
-    }
-  }
-
-  async function handleStopAndInsertDictation() {
-    setDictationUploadStatus('uploading audio');
-    setDictationTechnicalStatus('Stopping and preparing to insert the final transcript.');
-    await handleStopDictation({ insertAfterStop: true });
   }
 
   async function handleQueueMockUtterance() {
@@ -5785,9 +5774,6 @@ export function NewNoteForm() {
                   onStop={() => {
                     void handleStopDictation();
                   }}
-                  onStopAndInsert={() => {
-                    void handleStopAndInsertDictation();
-                  }}
                 />
 
                 <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,0.72fr)_minmax(260px,0.28fr)]">
@@ -6656,9 +6642,6 @@ export function NewNoteForm() {
                     }}
                     onStop={() => {
                       void handleStopDictation();
-                    }}
-                    onStopAndInsert={() => {
-                      void handleStopAndInsertDictation();
                     }}
                   />
                 </div>

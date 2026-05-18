@@ -941,8 +941,7 @@ export function AmbientEncounterWorkspace({
           onToggleFloating={toggleFloating}
           onResetFloatingPosition={resetFloatingPosition}
           onDragHandlePointerDown={startDragging}
-          startLabel={sessionState === 'ready_to_record' ? 'Start ambient session' : undefined}
-          stopLabel="Stop + generate"
+          stopLabel="Stop and review transcript"
           onPrepareSession={handlePrepareSession}
           onStartRecording={() => {
             void withRequest(async () => {

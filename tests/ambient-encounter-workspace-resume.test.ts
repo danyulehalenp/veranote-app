@@ -167,8 +167,12 @@ describe('ambient encounter workspace resume', () => {
       );
     });
 
+    expect(container.textContent).toContain('Prepare consent');
+    expect(container.textContent).toContain('Stop and review transcript');
+    expect(container.textContent).not.toContain('Stop + generate');
+
     const startButton = [...container.querySelectorAll('button')]
-      .find((node) => node.textContent?.includes('Start ambient session'));
+      .find((node) => node.textContent?.includes('Prepare consent'));
     expect(startButton).toBeTruthy();
 
     await act(async () => {
@@ -217,6 +221,7 @@ describe('ambient encounter workspace resume', () => {
       snapshot.sessionId === 'ambient-session-1' && snapshot.sessionState === 'ready_to_record'
     ))).toBe(true);
     expect(container.textContent).toContain('Session: ready to record');
+    expect(container.textContent).toContain('Start recording');
     expect(container.textContent).toContain('1 transcript events');
   });
 });

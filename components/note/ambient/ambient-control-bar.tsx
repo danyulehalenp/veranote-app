@@ -151,8 +151,8 @@ export function AmbientControlBar({
         ? 'Transcript text will appear after recording stops and the captured audio is transcribed.'
         : 'Transcript transport will initialize after consent and recording start.';
   const primaryStartLabel = startLabel
-    || (needsPreparation ? 'Start ambient session' : 'Start recording');
-  const primaryStopLabel = stopLabel || 'Stop';
+    || (needsPreparation ? 'Prepare consent' : 'Start recording');
+  const primaryStopLabel = stopLabel || 'Stop and review transcript';
   const handlePrimaryStart = needsPreparation && onPrepareSession ? onPrepareSession : onStartRecording;
   const shellTone = toneForState(sessionState);
   const chromeLabel = isFloating ? 'Floating ambient control' : 'Docked ambient control';
