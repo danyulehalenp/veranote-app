@@ -23,6 +23,11 @@ export const metadata: Metadata = {
     template: '%s | Veranote',
   },
   description: 'Turn messy clinical input into a polished, source-faithful note without inventing facts.',
+  icons: {
+    icon: [{ url: '/veranote-logo.png', type: 'image/png' }],
+    shortcut: ['/veranote-logo.png'],
+    apple: [{ url: '/veranote-logo.png', type: 'image/png' }],
+  },
   alternates: {
     canonical: '/',
   },

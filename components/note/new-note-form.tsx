@@ -6488,12 +6488,6 @@ export function NewNoteForm() {
                       </div>
                     </details>
                   </div>
-                  <div
-                    data-testid="source-capture-route-strip"
-                    className="mt-3 rounded-[16px] border border-cyan-200/10 bg-[rgba(7,18,32,0.48)] px-3 py-2 text-[11px] leading-5 text-cyan-50/70"
-                  >
-                    <span className="font-semibold text-cyan-50">Manual, Dictation, and Ambient</span> all insert into a selected source field after review.
-                  </div>
                 </div>
 
                 <div className="workspace-source-fields grid gap-3">

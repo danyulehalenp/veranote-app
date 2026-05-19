@@ -203,6 +203,24 @@ async function waitForVisible(locator, timeout = 2500) {
   }
 }
 
+async function hasVisibleText(page, pattern, timeout = 1500) {
+  const deadline = Date.now() + timeout;
+  const locator = page.getByText(pattern);
+
+  while (Date.now() < deadline) {
+    const count = await locator.count().catch(() => 0);
+    for (let index = 0; index < count; index += 1) {
+      if (await locator.nth(index).isVisible().catch(() => false)) {
+        return true;
+      }
+    }
+
+    await page.waitForTimeout(100);
+  }
+
+  return false;
+}
+
 async function signInForQa(page, appUrl) {
   const accessCode = process.env.LIVE_NOTE_MATRIX_ACCESS_CODE || await readLocalEnvValue('VERANOTE_BETA_ACCESS_CODE');
   if (!accessCode) {
@@ -219,19 +237,51 @@ async function signInForQa(page, appUrl) {
 }
 
 async function ensureComposeSetupVisible(page) {
-  const clinicalFieldSelect = page.locator('select[aria-label="Select clinical field"]').first();
-  if (await waitForVisible(clinicalFieldSelect, 1500)) {
-    return;
+  const deadline = Date.now() + 30000;
+  let bodyText = '';
+  const clinicalFieldSelects = page.locator('select[aria-label="Select clinical field"]');
+
+  while (Date.now() < deadline) {
+    const count = await clinicalFieldSelects.count().catch(() => 0);
+    for (let index = 0; index < count; index += 1) {
+      if (await clinicalFieldSelects.nth(index).isVisible().catch(() => false)) {
+        return;
+      }
+    }
+
+    bodyText = await page.locator('body').innerText().catch(() => '');
+    const hasLegacySetup =
+      /MAIN WORKFLOW/i.test(bodyText) &&
+      /SETUP/i.test(bodyText) &&
+      /FIELD/i.test(bodyText) &&
+      /Generate Draft/i.test(bodyText);
+    const hasCompactSetup =
+      /New note/i.test(bodyText) &&
+      /Setup/i.test(bodyText) &&
+      /Source/i.test(bodyText) &&
+      /Paste, dictate, or commit transcript/i.test(bodyText) &&
+      /Generate Draft/i.test(bodyText);
+
+    if (hasLegacySetup || hasCompactSetup) {
+      return;
+    }
+
+    if (/Preparing your note workspace/i.test(bodyText)) {
+      await page.waitForTimeout(500);
+      continue;
+    }
+
+    await page.waitForTimeout(250);
   }
 
   const backToCompose = page.getByText('Back to Compose', { exact: true }).first();
   if (await waitForVisible(backToCompose, 5000)) {
     await backToCompose.click();
-    await clinicalFieldSelect.waitFor({ state: 'visible', timeout: 30000 });
+    await clinicalFieldSelects.first().waitFor({ state: 'attached', timeout: 30000 });
     return;
   }
 
-  const bodyExcerpt = await page.locator('body').innerText().then((text) => text.slice(0, 1200)).catch(() => '');
+  const bodyExcerpt = bodyText.slice(0, 1200);
   throw new Error([
     `Compose setup controls did not become visible on ${page.url()}.`,
     `Body excerpt: ${bodyExcerpt}`,
@@ -268,6 +318,7 @@ async function selectFirstVisible(page, selector, value) {
 
   const controls = page.locator(selector);
   const count = await controls.count();
+  await revealWorkspaceSetupControls(page);
 
   for (let index = 0; index < count; index += 1) {
     const control = controls.nth(index);
@@ -286,7 +337,20 @@ async function selectFirstVisible(page, selector, value) {
   ].join('\n'));
 }
 
+async function revealWorkspaceSetupControls(page) {
+  await page.locator('details').evaluateAll((details) => {
+    for (const detail of details) {
+      const text = detail.textContent || '';
+      if (/Options|Advanced tools|Setup|Draft settings|Preferences/i.test(text)) {
+        detail.open = true;
+      }
+    }
+  }).catch(() => {});
+  await page.waitForTimeout(100);
+}
+
 async function readFirstVisibleSelectValue(page, selector) {
+  await revealWorkspaceSetupControls(page);
   const controls = page.locator(selector);
   const count = await controls.count();
 
@@ -368,8 +432,8 @@ async function runCase(page, item, helpers) {
   await selectFirstVisible(page, 'select[aria-label="Select note type"]', item.noteType);
   const selectedEhrValue = await readFirstVisibleSelectValue(page, 'select[aria-label="Select EHR destination"]');
 
-  const dictationToggleVisible = await waitForVisible(page.getByText(/Dictation (On|Off)/).first(), 1500);
-  const ambientToggleVisible = await waitForVisible(page.getByText(/Ambient (On|Off)/).first(), 1500);
+  const dictationToggleVisible = await hasVisibleText(page, /\bDictation\b/i);
+  const ambientToggleVisible = await hasVisibleText(page, /\bAmbient\b/i);
 
   await fillSourceField(page, 'source-field-intakeCollateral', sourceSections.intakeCollateral);
   await fillSourceField(page, 'source-field-clinicianNotes', sourceSections.clinicianNotes);

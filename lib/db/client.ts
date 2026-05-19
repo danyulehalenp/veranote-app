@@ -1,6 +1,3 @@
-import { promises as fs } from 'fs';
-import { tmpdir } from 'os';
-import path from 'path';
 import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '@/lib/constants/settings';
 import { DEFAULT_PROVIDER_ACCOUNT_ID } from '@/lib/constants/provider-accounts';
 import { DEFAULT_PROVIDER_IDENTITY_ID, findProviderIdentity } from '@/lib/constants/provider-identities';
@@ -41,28 +38,96 @@ type PrototypeDb = {
   betaFeedback: BetaFeedbackItem[];
 };
 
-export function resolvePrototypeDataDir(env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()) {
+export function resolvePrototypeDataDir(
+  env: NodeJS.ProcessEnv = process.env,
+  cwd = /*turbopackIgnore: true*/ process.cwd(),
+) {
   if (env.PROTOTYPE_DATA_DIR) {
-    return path.resolve(env.PROTOTYPE_DATA_DIR);
+    return resolveFilePath(env.PROTOTYPE_DATA_DIR, cwd);
   }
 
   if (env.VERCEL || env.AWS_LAMBDA_FUNCTION_NAME || env.NEXT_RUNTIME) {
-    return path.join(tmpdir(), 'veranote-prototype-data');
+    return joinFilePath(getPrototypeTmpDir(env), 'veranote-prototype-data');
   }
 
-  return path.join(cwd, '.prototype-data');
+  return joinFilePath(cwd, '.prototype-data');
 }
 
-export function resolvePrototypeDbPath(env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()) {
+export function resolvePrototypeDbPath(
+  env: NodeJS.ProcessEnv = process.env,
+  cwd = /*turbopackIgnore: true*/ process.cwd(),
+) {
   if (env.PROTOTYPE_DB_PATH) {
-    return path.resolve(env.PROTOTYPE_DB_PATH);
+    return resolveFilePath(env.PROTOTYPE_DB_PATH, cwd);
   }
 
-  return path.join(resolvePrototypeDataDir(env, cwd), 'prototype-db.json');
+  return joinFilePath(resolvePrototypeDataDir(env, cwd), 'prototype-db.json');
 }
 
-const DATA_DIR = resolvePrototypeDataDir();
-const DB_PATH = resolvePrototypeDbPath();
+function getPrototypeTmpDir(env: NodeJS.ProcessEnv = process.env) {
+  return env.TMPDIR || env.TMP || env.TEMP || '/tmp';
+}
+
+function resolveFilePath(input: string, cwd: string) {
+  if (input.startsWith('/')) {
+    return normalizeFilePath(input);
+  }
+
+  return joinFilePath(cwd, input);
+}
+
+function joinFilePath(...segments: string[]) {
+  const [firstSegment = '', ...restSegments] = segments;
+  const joined = [firstSegment, ...restSegments]
+    .filter((segment) => segment.length > 0)
+    .map((segment, index) => {
+      if (index === 0) {
+        return segment.replace(/\/+$/g, '');
+      }
+
+      return segment.replace(/^\/+|\/+$/g, '');
+    })
+    .join('/');
+
+  return normalizeFilePath(joined);
+}
+
+function normalizeFilePath(input: string) {
+  const absolute = input.startsWith('/');
+  const parts: string[] = [];
+
+  for (const segment of input.split('/')) {
+    if (!segment || segment === '.') {
+      continue;
+    }
+
+    if (segment === '..') {
+      if (parts.length > 0) {
+        parts.pop();
+      } else if (!absolute) {
+        parts.push(segment);
+      }
+
+      continue;
+    }
+
+    parts.push(segment);
+  }
+
+  if (parts.length === 0) {
+    return absolute ? '/' : '.';
+  }
+
+  return `${absolute ? '/' : ''}${parts.join('/')}`;
+}
+
+function getPrototypeDataDir() {
+  return resolvePrototypeDataDir();
+}
+
+function getPrototypeDbPath() {
+  return resolvePrototypeDbPath();
+}
 
 export function shouldUseDurableSupabaseStorage(env: NodeJS.ProcessEnv = process.env) {
   if (env.VERANOTE_DB_BACKEND === 'prototype') {
@@ -117,12 +182,16 @@ const defaultDb: PrototypeDb = {
 };
 
 async function ensureDbFile() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  const dataDir = getPrototypeDataDir();
+  const dbPath = getPrototypeDbPath();
+  const fs = await import('node:fs/promises');
+
+  await fs.mkdir(dataDir, { recursive: true });
 
   try {
-    await fs.access(DB_PATH);
+    await fs.access(dbPath);
   } catch {
-    await fs.writeFile(DB_PATH, JSON.stringify(defaultDb, null, 2), 'utf8');
+    await fs.writeFile(dbPath, JSON.stringify(defaultDb, null, 2), 'utf8');
   }
 }
 
@@ -130,7 +199,8 @@ async function readDb(): Promise<PrototypeDb> {
   await ensureDbFile();
 
   try {
-    const raw = await fs.readFile(DB_PATH, 'utf8');
+    const fs = await import('node:fs/promises');
+    const raw = await fs.readFile(getPrototypeDbPath(), 'utf8');
     const parsed = JSON.parse(raw) as Partial<PrototypeDb>;
 
     return {
@@ -232,7 +302,8 @@ async function readDb(): Promise<PrototypeDb> {
 
 async function writeDb(data: PrototypeDb) {
   await ensureDbFile();
-  await fs.writeFile(DB_PATH, JSON.stringify(data, null, 2), 'utf8');
+  const fs = await import('node:fs/promises');
+  await fs.writeFile(getPrototypeDbPath(), JSON.stringify(data, null, 2), 'utf8');
 }
 
 function createDraftId() {
@@ -1376,7 +1447,7 @@ export async function getDbStatus() {
 
   return {
     status: 'file-backed-prototype',
-    path: DB_PATH,
+    path: getPrototypeDbPath(),
     draftCount: db.drafts.length,
     notePresetCount: db.notePresets.length,
     veranoteBuildTaskCount: db.veranoteBuildTasks.length,
