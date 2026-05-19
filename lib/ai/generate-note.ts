@@ -371,12 +371,34 @@ function preservePendingOrUnclearLabSourceLimits(note: string, sourceInput: stri
   return `${nextNote.trim()}\n\nDiagnostics / Source Limitation:\n${labLimits.join(' ')}`;
 }
 
+function preserveErMedicationAdministrationSourceLimits(note: string, sourceInput: string) {
+ const sourceHasErAtivan = /\b(?:Ativan|lorazepam)\b.{0,120}\b(?:given|admin|med admin|administered)\b|\b(?:given|admin|med admin|administered)\b.{0,120}\b(?:Ativan|lorazepam)\b/i.test(sourceInput);
+ if (!sourceHasErAtivan) return note;
+ if (/\b(?:Ativan|lorazepam)\b/i.test(note)) return note;
+
+ const doseMatch = sourceInput.match(/\b(?:Ativan|lorazepam)\s+[\w.]+\s*mg\b/i);
+ const doseText = doseMatch?.[0] || 'Ativan/lorazepam';
+ const reasonLimit = /\breason\b.{0,80}\b(?:blurry|unclear|not visible|unreadable)\b|\b(?:blurry|unclear|not visible|unreadable)\b.{0,80}\breason\b/i.test(sourceInput)
+  ? 'the reason field was blurry/unclear in the source'
+  : 'the administration reason was not clearly established in the provided source';
+
+ return `${note.trim()}\n\nER Medication Source Detail:\nThe ER medication-administration source lists ${doseText} as given; ${reasonLimit}. This is source-limited historical ER data, not a new medication order.`;
+}
+
 function preserveMissingVitalsMedicalSourceLimits(note: string, sourceInput: string) {
  const sourceCallsOutMissingVitals = /\b(?:no vitals provided|no vital signs provided|vitals? not provided|vitals? not documented|no vitals?)\b/i.test(sourceInput);
  if (!sourceCallsOutMissingVitals) return note;
  if (/\bmedical\b.{0,120}\b(?:vitals?|vital signs?|not provided|not documented|source limitation|limited)\b|\b(?:vitals?|vital signs?)\b.{0,120}\bmedical\b/i.test(note)) return note;
 
  return `${note.trim()}\n\nMedical / Source Limitation:\nVital signs and broader medical data were not provided in the source, so medical contributors and monitoring limits remain source limitations.`;
+}
+
+function preserveSafetyPlanningSourceStatus(note: string, sourceInput: string) {
+ const sourceHasIncompleteSafetyPlan = /\bsafety plan\b.{0,160}\b(?:started|begun|initiated)\b[\s\S]{0,220}\b(?:not uploaded|not finalized|not final|not completed|not available|not attached)\b|\b(?:not uploaded|not finalized|not final|not completed|not available|not attached)\b[\s\S]{0,220}\bsafety plan\b/i.test(sourceInput);
+ if (!sourceHasIncompleteSafetyPlan) return note;
+ if (/\bsafety plan\b.{0,180}\b(?:started|begun|initiated|not uploaded|not finalized|not completed|not available|source-limited|source limitation)\b/i.test(note)) return note;
+
+ return `${note.trim()}\n\nSafety Planning Source Status:\nSafety plan work was started in the source, but the final written safety plan was not uploaded/not available in the provided material.`;
 }
 
 function preservePendingMatDoseDecision(note: string, sourceInput: string) {
@@ -737,11 +759,13 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withoutUnsupportedMedicalStability = removeUnsupportedMedicalStability(withSleepPreserved, input.sourceInput);
  const withMedicalClearancePreserved = preserveMedicalClearanceUncertainty(withoutUnsupportedMedicalStability, input.sourceInput);
  const withLabLimitsPreserved = preservePendingOrUnclearLabSourceLimits(withMedicalClearancePreserved, input.sourceInput);
- const withMissingVitalsMedicalLimits = preserveMissingVitalsMedicalSourceLimits(withLabLimitsPreserved, input.sourceInput);
+ const withErMedicationSourceLimits = preserveErMedicationAdministrationSourceLimits(withLabLimitsPreserved, input.sourceInput);
+ const withMissingVitalsMedicalLimits = preserveMissingVitalsMedicalSourceLimits(withErMedicationSourceLimits, input.sourceInput);
  const withMatDoseDecisionLimit = preservePendingMatDoseDecision(withMissingVitalsMedicalLimits, input.sourceInput);
  const withAllergyMedicationSourceLimits = preserveAllergyMedicationSourceLimits(withMatDoseDecisionLimit, input.sourceInput);
  const withSourceBoundRisk = hardenSourceBoundRiskWording(withAllergyMedicationSourceLimits, input.sourceInput);
- const withPriorCurrentRiskTimeline = preservePriorCurrentRiskTimeline(withSourceBoundRisk, input.sourceInput);
+ const withSafetyPlanningSourceStatus = preserveSafetyPlanningSourceStatus(withSourceBoundRisk, input.sourceInput);
+ const withPriorCurrentRiskTimeline = preservePriorCurrentRiskTimeline(withSafetyPlanningSourceStatus, input.sourceInput);
  const withDischargeBarriers = preserveDischargePlanningBarriers(withPriorCurrentRiskTimeline, input.sourceInput);
  const withContinuityBoundaries = preservePatientContinuityBoundaries(withDischargeBarriers, input.sourceInput);
  const withMedicationAdherenceHardened = hardenMedicationAdherenceWording(withContinuityBoundaries, input.sourceInput);

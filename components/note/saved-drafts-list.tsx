@@ -187,7 +187,7 @@ export function SavedDraftsList() {
 
     try {
       const response = await fetch(
-        `/api/drafts?providerId=${encodeURIComponent(resolvedProviderIdentityId)}&includeArchived=true`,
+        `/api/drafts?providerId=${encodeURIComponent(resolvedProviderIdentityId)}&includeArchived=true&ensureExamples=true`,
         { cache: 'no-store' },
       );
       const data = (await response.json()) as { drafts?: SavedDraft[]; error?: string };

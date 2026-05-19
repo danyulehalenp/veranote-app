@@ -6,6 +6,7 @@ import { normalizeMedicationProfile } from '@/lib/note/medication-profile';
 import type { NoteSectionKey, OutputScope } from '@/lib/note/section-profiles';
 import type { DraftSession } from '@/types/session';
 import { getAuthorizedProviderContext, resolveScopedProviderIdentityId } from '@/lib/veranote/provider-session';
+import { getFictionalDraftExampleSeeds } from '@/lib/veranote/fictional-draft-examples';
 
 export async function GET(request: Request) {
   const authorizedProvider = await getAuthorizedProviderContext();
@@ -16,7 +17,22 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const providerId = resolveScopedProviderIdentityId(searchParams.get('providerId') || undefined, authorizedProvider.providerIdentityId);
   const includeArchived = searchParams.get('includeArchived') === 'true';
-  const drafts = await listDrafts(providerId, { includeArchived });
+  const ensureExamples = searchParams.get('ensureExamples') === 'true';
+  let drafts = await listDrafts(providerId, { includeArchived });
+
+  if (ensureExamples) {
+    const exampleSeeds = getFictionalDraftExampleSeeds(providerId);
+    const activeDraftIds = new Set(drafts.filter((draft) => !draft.archivedAt).map((draft) => draft.id));
+    const missingSeeds = exampleSeeds.filter((seed) => !activeDraftIds.has(seed.draftId));
+
+    if (missingSeeds.length > 0) {
+      for (const seed of missingSeeds) {
+        await saveDraft(seed, providerId);
+      }
+      drafts = await listDrafts(providerId, { includeArchived });
+    }
+  }
+
   return NextResponse.json({ drafts });
 }
 

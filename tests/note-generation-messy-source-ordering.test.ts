@@ -19,6 +19,10 @@ const MESSY_ORDERING_CASE_IDS = [
   'multi-day-inpatient-followup-copy-forward-risk-med-misspellings',
   'therapy-intake-scanned-referral-family-collateral-unsafe-summary',
   'medical-psych-overlap-out-of-order-med-clearance-lab-followup',
+  'er-upload-inpatient-eval-alcohol-withdrawal-risk-med-conflict',
+  'uploaded-previous-provider-note-lithium-creatinine-med-rec-conflict',
+  'school-collateral-adolescent-therapy-intake-risk-source-conflict',
+  'medical-hp-scanned-discharge-summary-qtc-syncope-antipsychotic-confounder',
 ];
 
 describe('note generation messy source ordering', () => {
@@ -45,6 +49,10 @@ describe('note generation messy source ordering', () => {
     expect(combinedText).toMatch(/Prompt name: Hale concise narrative|Possible CPT 99214|Four-source-box|source box/i);
     expect(combinedText).toMatch(/going to snap|med clear\?|one thought record|bus did not come/i);
     expect(combinedText).toMatch(/free T4 pendng|pregnancy test pendng|goodbye texts|family report|valproic lvl pendng/i);
+    expect(combinedText).toMatch(/BAL 212|CIWA|Ativan|paroxetine|Seroquel/i);
+    expect(combinedText).toMatch(/creatinine 1\.42|lithium lvl|medication reconciliation discrepancy/i);
+    expect(combinedText).toMatch(/School referral|ROI for school not signed|504\?|safety plan started/i);
+    expect(combinedText).toMatch(/QTc 497\?|syncope eval|potassium was 3\.3|no current EKG|Geodon/i);
 
     for (const item of cases) {
       const sourceInput = buildSourceInputFromSections(item.sourceSections);

@@ -168,7 +168,7 @@ function makeTempDraft(runId, draftId) {
 }
 
 async function listDrafts(page) {
-  const result = await apiJson(page, `/api/drafts?providerId=${encodeURIComponent(PROVIDER_ID)}&includeArchived=true`);
+  const result = await apiJson(page, `/api/drafts?providerId=${encodeURIComponent(PROVIDER_ID)}&includeArchived=true&ensureExamples=true`);
   assertOk(result, 'list drafts');
   return Array.isArray(result.json?.drafts) ? result.json.drafts : [];
 }
@@ -176,6 +176,21 @@ async function listDrafts(page) {
 async function findDraft(page, draftId) {
   const drafts = await listDrafts(page);
   return drafts.find((draft) => draft.id === draftId) || null;
+}
+
+function getDraftSearchInput(page) {
+  return page.getByLabel('Search drafts');
+}
+
+async function openFiltersDrawer(page) {
+  const visibilitySelect = page.getByLabel('Visibility');
+  if (await visibilitySelect.isVisible()) {
+    return visibilitySelect;
+  }
+
+  await page.getByText('Filters and sorting').click();
+  await visibilitySelect.waitFor({ state: 'visible', timeout: 15000 });
+  return visibilitySelect;
 }
 
 async function main() {
@@ -191,6 +206,9 @@ async function main() {
   const targetUrl = `${APP_ORIGIN}/dashboard/drafts?fresh=saved-drafts-workflow-qa`;
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 940 } });
+  await context.addInitScript((providerId) => {
+    window.localStorage.setItem('veranote:current-provider-id', providerId);
+  }, PROVIDER_ID);
   const page = await context.newPage();
 
   const report = {
@@ -242,7 +260,7 @@ async function main() {
     report.checks.tempDraftCreated = createDraft.json?.draft?.id === draftId;
 
     await page.goto(targetUrl, { waitUntil: 'networkidle' });
-    const searchInput = page.getByPlaceholder('Search note type, source text, or draft text');
+    const searchInput = getDraftSearchInput(page);
     await searchInput.waitFor({ state: 'visible', timeout: 15000 });
     await searchInput.fill(runId);
 
@@ -262,7 +280,7 @@ async function main() {
     }, draftId);
 
     await page.goto(targetUrl, { waitUntil: 'networkidle' });
-    await page.getByPlaceholder('Search note type, source text, or draft text').fill(runId);
+    await getDraftSearchInput(page).fill(runId);
     const actionCard = page.locator(`[data-testid="saved-draft-card"][data-draft-id="${draftId}"]`);
     await actionCard.waitFor({ state: 'visible', timeout: 15000 });
     await actionCard.getByRole('button', { name: 'Archive' }).click();
@@ -277,8 +295,7 @@ async function main() {
     const archivedDraft = await findDraft(page, draftId);
     report.checks.archiveWorks = Boolean(archivedDraft?.archivedAt);
 
-    const visibilitySelect = page.getByLabel('Visibility');
-    await visibilitySelect.waitFor({ state: 'visible', timeout: 15000 });
+    const visibilitySelect = await openFiltersDrawer(page);
     await visibilitySelect.selectOption('archived');
     const archivedCard = page.locator(`[data-testid="saved-draft-card"][data-draft-id="${draftId}"]`);
     await archivedCard.waitFor({ state: 'visible', timeout: 15000 });
@@ -295,7 +312,7 @@ async function main() {
     report.checks.restoreWorks = Boolean(restoredDraft && !restoredDraft.archivedAt);
 
     await page.goto(targetUrl, { waitUntil: 'networkidle' });
-    await page.getByPlaceholder('Search note type, source text, or draft text').fill(runId);
+    await getDraftSearchInput(page).fill(runId);
     const deleteCard = page.locator(`[data-testid="saved-draft-card"][data-draft-id="${draftId}"]`);
     await deleteCard.waitFor({ state: 'visible', timeout: 15000 });
     await deleteCard.getByRole('button', { name: 'Delete' }).click();
