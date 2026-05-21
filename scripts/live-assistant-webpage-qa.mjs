@@ -9,9 +9,96 @@
  *   npx vitest run --silent=true --maxWorkers=1 tests/live-assistant-answer-quality.test.ts
  */
 
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
 const APP_URL = process.env.LIVE_ASSISTANT_QA_URL || 'http://localhost:3001/dashboard/new-note';
 const AUTH_COOKIE = process.env.LIVE_ASSISTANT_QA_AUTH_COOKIE || 'veranote-provider-token';
+const QA_EMAIL = process.env.LIVE_ASSISTANT_QA_EMAIL || 'daniel.hale@veranote-beta.local';
 const BANK_ID = process.env.LIVE_ASSISTANT_QA_BANK || 'core';
+
+async function readLocalEnvValue(key) {
+  if (process.env[key]) {
+    return process.env[key];
+  }
+
+  try {
+    const contents = await fs.readFile(path.resolve('.env.local'), 'utf8');
+    const line = contents
+      .split(/\r?\n/)
+      .find((entry) => entry.trim().startsWith(`${key}=`));
+    if (!line) {
+      return null;
+    }
+
+    return line
+      .slice(line.indexOf('=') + 1)
+      .trim()
+      .replace(/^['"]|['"]$/g, '') || null;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForVisible(locator, timeout = 2500) {
+  try {
+    await locator.waitFor({ state: 'visible', timeout });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function signInForQa(page, appUrl) {
+  const accessCode = process.env.LIVE_ASSISTANT_QA_ACCESS_CODE || await readLocalEnvValue('VERANOTE_BETA_ACCESS_CODE');
+  if (!accessCode) {
+    throw new Error(
+      'Live assistant webpage QA reached sign-in and no beta access code was available. '
+      + 'Set LIVE_ASSISTANT_QA_ACCESS_CODE or add VERANOTE_BETA_ACCESS_CODE to .env.local.',
+    );
+  }
+
+  await page.locator('input[type="email"]').first().waitFor({ state: 'visible', timeout: 15000 });
+  await page.locator('input[type="password"]').first().waitFor({ state: 'visible', timeout: 15000 });
+  await page.locator('input[type="email"]').first().fill(QA_EMAIL);
+  await page.locator('input[type="password"]').first().fill(accessCode);
+  await page.getByRole('button', { name: /sign in/i }).click();
+  await page.waitForURL((url) => !url.pathname.includes('/sign-in'), { timeout: 30000 });
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+}
+
+async function openAssistantPanel(page) {
+  const input = page.getByTestId('assistant-composer-input');
+  if (await waitForVisible(input, 1000)) {
+    return;
+  }
+
+  const candidates = [
+    page.getByTestId('atlas-review-dock-ask-button'),
+    page.getByTestId('assistant-open-button'),
+    page.getByTestId('workspace-assistant-open-button'),
+    page.getByTestId('assistant-expand-button'),
+    page.getByRole('button', { name: /^(open|ask)\s+(assistant|atlas|precision)$/i }),
+    page.getByRole('button', { name: /^review\s+(draft\s+)?with\s+(assistant|atlas|precision)$/i }),
+  ];
+
+  for (const candidate of candidates) {
+    const count = await candidate.count().catch(() => 0);
+    for (let index = 0; index < count; index += 1) {
+      const target = candidate.nth(index);
+      if (!(await target.isVisible().catch(() => false))) {
+        continue;
+      }
+
+      await target.click();
+      if (await waitForVisible(input, 5000)) {
+        return;
+      }
+    }
+  }
+
+  throw new Error(`Assistant composer did not become visible on ${page.url()}.`);
+}
 
 async function main() {
   let chromium;
@@ -44,14 +131,12 @@ async function main() {
   }]);
 
   const page = await context.newPage();
-  await page.goto(APP_URL, { waitUntil: 'networkidle' });
-
-  const openButton = page.getByTestId('assistant-open-button');
-  if (await openButton.count()) {
-    await openButton.click();
-  } else if (await page.getByTestId('assistant-expand-button').count()) {
-    await page.getByTestId('assistant-expand-button').click();
+  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
+  if (page.url().includes('/sign-in')) {
+    await signInForQa(page, APP_URL);
   }
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await openAssistantPanel(page);
 
   const input = page.getByTestId('assistant-composer-input');
   const send = page.getByTestId('assistant-send-button');
