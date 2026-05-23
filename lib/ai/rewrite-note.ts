@@ -267,6 +267,16 @@ function buildRewriteDirectives(input: RewriteInput) {
   return directives.join(' ');
 }
 
+function getRewriteTimeoutMs() {
+  const raw = (process.env.VERANOTE_REWRITE_TIMEOUT_MS || process.env.VERANOTE_NOTE_GENERATION_TIMEOUT_MS || '').trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed >= 5_000) {
+    return parsed;
+  }
+
+  return 60_000;
+}
+
 export async function rewriteNote(input: RewriteInput): Promise<RewriteResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
@@ -317,6 +327,8 @@ export async function rewriteNote(input: RewriteInput): Promise<RewriteResult> {
           ],
         },
       ],
+    }, {
+      timeout: getRewriteTimeoutMs(),
     });
 
     return {

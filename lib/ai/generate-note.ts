@@ -145,6 +145,16 @@ function getRequestedProvider() {
  return 'none';
 }
 
+function getGenerationTimeoutMs() {
+ const raw = process.env.VERANOTE_NOTE_GENERATION_TIMEOUT_MS?.trim();
+ const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+ if (Number.isFinite(parsed) && parsed >= 5_000) {
+  return parsed;
+ }
+
+ return 60_000;
+}
+
 function buildFallbackResult(
  input: GenerateNoteInput,
  model: string | null,
@@ -925,6 +935,8 @@ export async function generateNote(input: GenerateNoteInput): Promise<GenerateNo
  strict: true,
  },
  },
+ }, {
+  timeout: getGenerationTimeoutMs(),
  });
 
  const outputText = response.output_text;
