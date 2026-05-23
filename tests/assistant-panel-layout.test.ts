@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDefaultAssistantPanelLayout,
   clampAssistantPanelLayout,
+  avoidAssistantPanelExclusionZone,
   DEFAULT_PANEL_LAYOUT,
   PANEL_DEFAULT_BOTTOM_OFFSET,
   PANEL_MARGIN,
@@ -107,5 +108,45 @@ describe('assistant panel layout helpers', () => {
       width: 620,
       height: 720,
     });
+  });
+
+  it('moves a restored panel away from a critical workspace rail exclusion zone', () => {
+    const safe = avoidAssistantPanelExclusionZone({
+      x: 24,
+      y: 24,
+      width: 560,
+      height: 780,
+    }, {
+      width: 1280,
+      height: 720,
+    }, {
+      x: 16,
+      y: 120,
+      width: 240,
+      height: 560,
+    });
+
+    expect(safe.x).toBe(1280 - safe.width - PANEL_MARGIN);
+    expect(safe.y).toBe(24);
+  });
+
+  it('keeps a panel position when it does not overlap an exclusion zone', () => {
+    const safe = avoidAssistantPanelExclusionZone({
+      x: 680,
+      y: 24,
+      width: 560,
+      height: 640,
+    }, {
+      width: 1280,
+      height: 720,
+    }, {
+      x: 16,
+      y: 120,
+      width: 240,
+      height: 560,
+    });
+
+    expect(safe.x).toBe(680);
+    expect(safe.y).toBe(24);
   });
 });

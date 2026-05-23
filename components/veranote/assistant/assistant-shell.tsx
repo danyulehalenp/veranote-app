@@ -10,6 +10,7 @@ import { assembleAssistantApiContext, resolveAssistantStageForPathname } from '@
 import {
   buildDefaultAssistantPanelLayout,
   clampAssistantPanelLayout,
+  avoidAssistantPanelExclusionZone,
   getRenderedAssistantPanelBounds,
   MINIMIZED_PANEL_LAYOUT,
   PANEL_LAYOUT_STORAGE_KEY,
@@ -21,6 +22,7 @@ import {
   type AssistantPanelRenderedBounds,
   type AssistantPanelLayout,
   type AssistantViewport,
+  type AssistantPanelExclusionZone,
 } from '@/lib/veranote/assistant-panel-layout';
 import { resolveAssistantPersona } from '@/lib/veranote/assistant-persona';
 import { ASSISTANT_ENABLED } from '@/lib/veranote/assistant-mode';
@@ -54,6 +56,38 @@ function getAssistantViewport(): AssistantViewport {
 
 function layoutsMatch(a: AssistantPanelLayout, b: AssistantPanelLayout) {
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
+function getWorkspaceRailExclusionZone(): AssistantPanelExclusionZone | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const rail = document.querySelector('.workspace-left-rail');
+  if (!(rail instanceof HTMLElement)) {
+    return null;
+  }
+
+  const rect = rail.getBoundingClientRect();
+  return {
+    x: rect.left,
+    y: rect.top,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function keepPanelClearOfWorkspaceRail(
+  layout: AssistantPanelLayout,
+  viewport: AssistantViewport,
+  renderedBounds?: AssistantPanelRenderedBounds,
+) {
+  return avoidAssistantPanelExclusionZone(
+    layout,
+    viewport,
+    getWorkspaceRailExclusionZone(),
+    renderedBounds,
+  );
 }
 
 type CommitLayoutOptions = {
@@ -108,9 +142,14 @@ export function AssistantShell() {
 
   const commitPanelLayout = useCallback((nextLayout: AssistantPanelLayout, options: CommitLayoutOptions = {}) => {
     const viewport = getAssistantViewport();
-    const normalized = options.snap
+    const normalizedBeforeSafeArea = options.snap
       ? snapAssistantPanelLayout(nextLayout, viewport)
       : clampAssistantPanelLayout(nextLayout, viewport, options.renderedBounds);
+    const shouldAvoidRail = options.renderedBounds?.width !== MINIMIZED_PANEL_LAYOUT.width
+      || options.renderedBounds?.height !== MINIMIZED_PANEL_LAYOUT.height;
+    const normalized = shouldAvoidRail
+      ? keepPanelClearOfWorkspaceRail(normalizedBeforeSafeArea, viewport, options.renderedBounds)
+      : normalizedBeforeSafeArea;
 
     layoutRef.current = normalized;
     setPanelLayout((current) => layoutsMatch(current, normalized) ? current : normalized);
@@ -244,14 +283,18 @@ export function AssistantShell() {
 
     const viewport = getAssistantViewport();
     const shouldUseMinimizedBounds = viewport.width < DOCKED_VIEWPORT_WIDTH || window.localStorage.getItem(PANEL_MINIMIZED_STORAGE_KEY) === 'true';
+    const renderedBounds = shouldUseMinimizedBounds ? MINIMIZED_PANEL_LAYOUT : undefined;
     const storedLayout = parseStoredAssistantPanelLayout(
       window.localStorage.getItem(PANEL_LAYOUT_STORAGE_KEY),
       window.localStorage.getItem(PANEL_SIZE_STORAGE_KEY),
       viewport,
-      shouldUseMinimizedBounds ? MINIMIZED_PANEL_LAYOUT : undefined,
+      renderedBounds,
     );
-    layoutRef.current = storedLayout;
-    setPanelLayout(storedLayout);
+    const safeStoredLayout = renderedBounds
+      ? storedLayout
+      : keepPanelClearOfWorkspaceRail(storedLayout, viewport, renderedBounds);
+    layoutRef.current = safeStoredLayout;
+    setPanelLayout(safeStoredLayout);
   }, []);
 
   useEffect(() => {
@@ -295,6 +338,20 @@ export function AssistantShell() {
     window.addEventListener('resize', handleWindowResize);
     return () => window.removeEventListener('resize', handleWindowResize);
   }, [commitPanelLayout, isMinimized]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || isCompactViewport || !isOpen || isMinimized) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      commitPanelLayout(layoutRef.current, {
+        persist: true,
+      });
+    }, 150);
+
+    return () => window.clearTimeout(timeout);
+  }, [commitPanelLayout, isCompactViewport, isMinimized, isOpen, pathname]);
 
   useEffect(() => {
     function handleContextEvent(event: Event) {
@@ -395,6 +452,9 @@ export function AssistantShell() {
       setIsInteracting(false);
       if (isMinimized && hasMoved) {
         suppressNextDockClickRef.current = true;
+        window.setTimeout(() => {
+          suppressNextDockClickRef.current = false;
+        }, 0);
       }
       commitPanelLayout({
         ...startLayout,

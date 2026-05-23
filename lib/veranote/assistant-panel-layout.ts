@@ -15,12 +15,20 @@ export type AssistantPanelRenderedBounds = {
   height: number;
 };
 
+export type AssistantPanelExclusionZone = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export const PANEL_LAYOUT_STORAGE_KEY = 'veranote-assistant-panel-layout';
 export const PANEL_SIZE_STORAGE_KEY = 'veranote-assistant-panel-size';
 export const PANEL_OPEN_STORAGE_KEY = 'veranote-assistant-panel-open';
 export const PANEL_MINIMIZED_STORAGE_KEY = 'veranote-assistant-panel-minimized';
 export const PANEL_MARGIN = 24;
 export const PANEL_DEFAULT_BOTTOM_OFFSET = 96;
+export const PANEL_EXCLUSION_GAP = 16;
 export const DEFAULT_PANEL_LAYOUT = {
   width: 560,
   height: 780,
@@ -87,6 +95,57 @@ export function clampAssistantPanelLayout(
     x: clamp(layout.x, PANEL_MARGIN, viewport.width - positionWidth - PANEL_MARGIN),
     y: clamp(layout.y, PANEL_MARGIN, viewport.height - positionHeight - PANEL_MARGIN),
   };
+}
+
+function rectsOverlap(
+  first: AssistantPanelExclusionZone,
+  second: AssistantPanelExclusionZone,
+) {
+  return (
+    first.x < second.x + second.width
+    && first.x + first.width > second.x
+    && first.y < second.y + second.height
+    && first.y + first.height > second.y
+  );
+}
+
+export function avoidAssistantPanelExclusionZone(
+  layout: AssistantPanelLayout,
+  viewport: AssistantViewport,
+  exclusionZone?: AssistantPanelExclusionZone | null,
+  renderedBounds?: AssistantPanelRenderedBounds,
+): AssistantPanelLayout {
+  const clamped = clampAssistantPanelLayout(layout, viewport, renderedBounds);
+  if (!exclusionZone || exclusionZone.width <= 0 || exclusionZone.height <= 0) {
+    return clamped;
+  }
+
+  const rendered = renderedBounds ?? {
+    width: clamped.width,
+    height: clamped.height,
+  };
+  const panelRect = {
+    x: clamped.x,
+    y: clamped.y,
+    width: rendered.width,
+    height: rendered.height,
+  };
+
+  if (!rectsOverlap(panelRect, exclusionZone)) {
+    return clamped;
+  }
+
+  const maxX = viewport.width - rendered.width - PANEL_MARGIN;
+  const rightAlignedX = maxX;
+  const leftOfExclusionX = exclusionZone.x - rendered.width - PANEL_EXCLUSION_GAP;
+  const fallbackX = rightAlignedX >= exclusionZone.x + exclusionZone.width + PANEL_EXCLUSION_GAP
+    ? rightAlignedX
+    : leftOfExclusionX;
+
+  return clampAssistantPanelLayout({
+    ...clamped,
+    x: fallbackX,
+  }, viewport, renderedBounds);
 }
 
 export function snapAssistantPanelLayout(
