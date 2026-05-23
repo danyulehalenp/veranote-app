@@ -64,16 +64,16 @@ export function SourceInput({
     <label
       id={id}
       suppressHydrationWarning
-      className={`workspace-subpanel workspace-glow grid border-l-4 text-sm font-medium text-white shadow-[0_24px_56px_rgba(2,8,18,0.22)] ${lane.frame} ${
+      className={`workspace-subpanel grid border-l-4 text-sm font-medium text-white shadow-[0_14px_34px_rgba(2,8,18,0.16)] ${lane.frame} ${
         compact
-          ? 'gap-3 rounded-[22px] p-4'
+          ? 'gap-2 rounded-[20px] p-3'
           : 'gap-3 rounded-[26px] p-4 sm:gap-4 sm:p-5'
       }`}
     >
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
           <span className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${lane.label}`}>{label}</span>
-          <p className={`max-w-4xl font-normal text-cyan-50/74 ${compact ? 'mt-1.5 text-[13px] leading-5' : 'mt-2 text-sm leading-6'}`}>{hint}</p>
+          <p className={`max-w-4xl font-normal text-cyan-50/70 ${compact ? 'mt-1 line-clamp-2 text-[12px] leading-5' : 'mt-2 text-sm leading-6'}`}>{hint}</p>
         </div>
         <div className={`self-start rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${value.trim() ? 'border-emerald-300/30 bg-emerald-400/10 text-emerald-100 shadow-[0_12px_28px_rgba(16,185,129,0.18)]' : lane.badge}`}>
           {value.trim() ? 'Loaded' : 'Waiting'}
@@ -87,8 +87,8 @@ export function SourceInput({
         placeholder={placeholder}
         className={`workspace-control w-full px-4 text-[15px] leading-7 ${
           compact
-            ? 'min-h-[190px] rounded-[18px] py-3.5 sm:min-h-[220px] xl:min-h-[240px]'
-            : 'min-h-[220px] rounded-[22px] py-4 sm:min-h-[260px] xl:min-h-[300px]'
+            ? 'min-h-[132px] rounded-[16px] py-3 sm:min-h-[145px] xl:min-h-[155px]'
+            : 'min-h-[190px] rounded-[22px] py-4 sm:min-h-[230px] xl:min-h-[260px]'
         }`}
       />
     </label>

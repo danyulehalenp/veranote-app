@@ -5184,7 +5184,7 @@ export function NewNoteForm() {
             </div>
 
             <div className="grid gap-4 2xl:grid-cols-[minmax(0,0.45fr)_minmax(0,0.55fr)] 2xl:items-start">
-              <div id="source-panel" className="workspace-panel grid gap-4 rounded-[30px] p-4 text-white 2xl:sticky 2xl:top-4 2xl:max-h-[calc(100vh-10rem)] 2xl:overflow-y-auto">
+              <div id="source-panel" className="workspace-panel grid gap-4 rounded-[30px] p-4 text-white sm:max-h-[calc(100vh-10rem)] sm:overflow-y-auto 2xl:sticky 2xl:top-4">
                 <div className="rounded-[22px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] p-4">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/68">Source packet</div>
                   <div className="mt-1 text-lg font-semibold tracking-[-0.02em] text-white">Edit source beside the draft</div>
@@ -5229,7 +5229,7 @@ export function NewNoteForm() {
                 </details>
               </div>
 
-              <div id="generated-note-workspace" className="grid gap-4 2xl:max-h-[calc(100vh-10rem)] 2xl:overflow-y-auto 2xl:pr-1">
+              <div id="generated-note-workspace" className="grid gap-4 sm:max-h-[calc(100vh-10rem)] sm:overflow-y-auto sm:pr-1">
                 <AtlasReviewDock
                   statusLabel={atlasStatusLabel}
                   detail={atlasDetail}
@@ -6042,7 +6042,7 @@ export function NewNoteForm() {
               <div className="grid gap-4 xl:min-h-0 xl:pr-2">
 
       {(
-	      <div id="source-panel" ref={registerComposeSection('source-input')} className="workspace-panel flex flex-col rounded-[28px] p-2.5 text-white sm:p-3 xl:sticky xl:top-4 xl:max-h-[calc(100vh-9rem)] xl:min-h-[560px] xl:overflow-y-auto">
+	      <div id="source-panel" ref={registerComposeSection('source-input')} className="workspace-panel flex flex-col rounded-[28px] p-2.5 text-white sm:max-h-[calc(100vh-9rem)] sm:min-h-0 sm:overflow-y-auto sm:p-3 xl:sticky xl:top-4 xl:min-h-[560px]">
 	        <div className="mb-2 flex flex-col gap-2 rounded-[20px] border border-cyan-200/10 bg-[rgba(255,255,255,0.035)] px-3 py-2.5 2xl:flex-row 2xl:items-center 2xl:justify-between">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Source</div>
@@ -6509,6 +6509,7 @@ export function NewNoteForm() {
                               : 'Add prompt name, code preference, plan language, discharge wording, or site-specific instructions.'
 	                      }
 	                      tone={step.tone}
+	                      compact
 	                    />
                   ))}
                 </div>
@@ -6857,7 +6858,7 @@ export function NewNoteForm() {
 
 		              <div className="grid gap-4 xl:min-h-0 xl:overflow-hidden xl:pl-2">
 	      {generatedSession ? (
-	      <div id="generated-note-workspace" className="grid gap-4 xl:min-h-0 xl:max-h-[calc(100vh-9rem)] xl:overflow-y-auto xl:pr-1">
+	      <div id="generated-note-workspace" className="grid gap-4 sm:max-h-[calc(100vh-9rem)] sm:overflow-y-auto sm:pr-1 xl:min-h-0">
         <AtlasReviewDock
           statusLabel={atlasStatusLabel}
           detail={atlasDetail}
@@ -6881,7 +6882,7 @@ export function NewNoteForm() {
 	        />
       </div>
       ) : (
-      <div id="generated-note-workspace" className="workspace-panel flex flex-col rounded-[28px] p-4 text-sm text-cyan-50/72 xl:sticky xl:top-4 xl:max-h-[calc(100vh-9rem)] xl:min-h-[560px] xl:overflow-y-auto">
+      <div id="generated-note-workspace" className="workspace-panel flex flex-col rounded-[28px] p-4 text-sm text-cyan-50/72 sm:max-h-[calc(100vh-9rem)] sm:min-h-0 sm:overflow-y-auto xl:sticky xl:top-4 xl:min-h-[560px]">
         <div className="rounded-[24px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
