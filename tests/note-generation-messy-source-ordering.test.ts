@@ -23,6 +23,7 @@ const MESSY_ORDERING_CASE_IDS = [
   'uploaded-previous-provider-note-lithium-creatinine-med-rec-conflict',
   'school-collateral-adolescent-therapy-intake-risk-source-conflict',
   'medical-hp-scanned-discharge-summary-qtc-syncope-antipsychotic-confounder',
+  'patient-continuity-followup-prior-risk-medication-verify-today',
 ];
 
 describe('note generation messy source ordering', () => {
@@ -53,6 +54,7 @@ describe('note generation messy source ordering', () => {
     expect(combinedText).toMatch(/creatinine 1\.42|lithium lvl|medication reconciliation discrepancy/i);
     expect(combinedText).toMatch(/School referral|ROI for school not signed|504\?|safety plan started/i);
     expect(combinedText).toMatch(/QTc 497\?|syncope eval|potassium was 3\.3|no current EKG|Geodon/i);
+    expect(combinedText).toMatch(/Patient Continuity Context|previously documented|Verify today|do not silently copy prior note content/i);
 
     for (const item of cases) {
       const sourceInput = buildSourceInputFromSections(item.sourceSections);
