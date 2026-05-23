@@ -11,3 +11,5 @@ tsconfig.tsbuildinfo
 test-results/*
 !test-results/.last-run.json
 supabase/.temp/
+desktop-overlay/node_modules/
+desktop-overlay/dist/

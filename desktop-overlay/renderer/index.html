@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Veranote Dictation Overlay</title>
+    <link rel="stylesheet" href="./overlay.css" />
+  </head>
+  <body>
+    <main class="overlay-shell">
+      <div class="overlay-header">
+        <div>
+          <div class="eyebrow">Veranote</div>
+          <h1>Dictation Overlay</h1>
+        </div>
+        <div class="status-pill" id="capture-state-pill">Idle</div>
+      </div>
+
+      <section class="signal-card">
+        <div class="signal-label">Speech box</div>
+        <div class="signal-value" id="speech-box-state">Overlay ready</div>
+        <p class="signal-copy">
+          This desktop layer now previews queued transcript and can route accepted segments back into a linked Veranote draft.
+        </p>
+      </section>
+
+      <section class="grid">
+        <div class="panel">
+          <div class="panel-label">Current target</div>
+          <div class="panel-value" id="current-target">Veranote source mode</div>
+          <div class="panel-copy" id="current-target-copy">Direct EHR insertion comes after backend bridge and target routing are wired.</div>
+        </div>
+        <div class="panel">
+          <div class="panel-label">Hotkey</div>
+          <div class="panel-value">Cmd/Ctrl + Shift + D</div>
+          <div class="panel-copy">Toggles the floating speech box.</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-label">Field target</div>
+        <div class="panel-value" id="field-target-label">No field target loaded</div>
+        <div class="panel-copy" id="field-target-copy">The overlay will load the provider’s destination-aware field workflow here.</div>
+        <div class="button-row">
+          <button id="previous-target">Previous field</button>
+          <button id="next-target">Next field</button>
+          <button id="confirm-target">Confirm active app target</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-label">Next integration step</div>
+        <div class="panel-value" id="next-step">Loading...</div>
+        <div class="panel-copy" id="provider-status">Checking overlay status...</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-label">Overlay controls</div>
+        <div class="control-grid">
+          <label>
+            <span>Encounter id</span>
+            <input id="encounter-id" value="overlay-demo-encounter" />
+          </label>
+          <label>
+            <span>Target section</span>
+            <select id="target-section">
+              <option value="clinicianNotes">Clinician notes</option>
+              <option value="intakeCollateral">Intake or collateral</option>
+              <option value="patientTranscript">Patient conversation</option>
+            </select>
+          </label>
+          <label>
+            <span>Requested provider</span>
+            <select id="requested-provider"></select>
+          </label>
+          <label class="checkbox">
+            <input id="allow-fallback" type="checkbox" checked />
+            <span>Allow mock fallback</span>
+          </label>
+        </div>
+        <div class="button-row">
+          <button id="refresh-status">Refresh status</button>
+          <button id="start-session" class="primary">Start session</button>
+          <button id="pause-session">Pause mic</button>
+          <button id="resume-session">Resume mic</button>
+          <button id="stop-session">Stop session</button>
+        </div>
+        <div class="panel-copy" id="capture-status-copy">Microphone capture is idle.</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-label">Stored commands</div>
+        <div class="panel-value" id="command-summary">Provider dictation commands will appear here.</div>
+        <div class="panel-copy">Use these like a compact Fluency-style command tray. Commands still route into the linked Veranote draft, not directly into another app yet.</div>
+        <div class="segment-list" id="command-tray"></div>
+      </section>
+
+      <section class="panel transcript-panel">
+        <div class="panel-label">Live transcript queue</div>
+        <div class="panel-value" id="queue-summary">No queued transcript yet</div>
+        <div class="panel-copy" id="interim-preview">Interim transcript will appear here while the overlay session is active.</div>
+        <div class="segment-list" id="pending-segments"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-label">Linked Veranote draft</div>
+        <div class="panel-value" id="draft-link-state">Not linked yet</div>
+        <div class="panel-copy" id="draft-link-copy">The first accepted segment will create a connected draft checkpoint.</div>
+        <div class="button-row">
+          <button id="open-draft">Open in Veranote</button>
+          <button id="paste-latest">Paste current field</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="./overlay.js"></script>
+  </body>
+</html>

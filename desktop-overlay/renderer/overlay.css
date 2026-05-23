@@ -1,0 +1,202 @@
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #07111d;
+  color: #ecfeff;
+}
+
+.overlay-shell {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+}
+
+.eyebrow,
+.panel-label,
+.signal-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(165, 243, 252, 0.72);
+}
+
+h1 {
+  margin: 4px 0 0;
+  font-size: 24px;
+}
+
+.status-pill {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: rgba(255,255,255,0.06);
+}
+
+.status-pill.active {
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+.status-pill.error {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.signal-card,
+.panel {
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(255,255,255,0.05);
+}
+
+.transcript-panel {
+  gap: 10px;
+}
+
+.signal-value,
+.panel-value {
+  margin-top: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: white;
+}
+
+.signal-copy,
+.panel-copy {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(236, 254, 255, 0.78);
+}
+
+.grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.control-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
+.control-grid label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(236, 254, 255, 0.8);
+}
+
+.control-grid input,
+.control-grid select,
+.button-row button {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.07);
+  color: white;
+  padding: 10px 12px;
+}
+
+.checkbox {
+  align-content: end;
+}
+
+.checkbox input {
+  margin-right: 8px;
+  width: auto;
+}
+
+.button-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.button-row .primary {
+  background: rgba(34,197,94,0.2);
+}
+
+.segment-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.segment-card {
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(2, 6, 23, 0.42);
+}
+
+.segment-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(165, 243, 252, 0.82);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.segment-text {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(236, 254, 255, 0.94);
+  white-space: pre-wrap;
+}
+
+.segment-flags {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.flag-pill {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  background: rgba(251, 191, 36, 0.14);
+  border: 1px solid rgba(251, 191, 36, 0.24);
+  color: #fde68a;
+}
+
+.segment-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.segment-actions button {
+  flex: 1;
+}
+
+.empty-state {
+  padding: 10px 0 2px;
+  font-size: 13px;
+  color: rgba(236, 254, 255, 0.7);
+}
+
+.command-card {
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(8, 15, 33, 0.55);
+}
+
+.command-card .panel-copy {
+  margin-top: 6px;
+}

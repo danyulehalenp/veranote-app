@@ -19,6 +19,18 @@ describe('desktop target adapters', () => {
     expect(adapter?.id).toBe('tebra-browser');
   });
 
+  it('tolerates common one-word EHR misspellings in destination or window title', () => {
+    const adapter = resolveDesktopTargetAdapter({
+      destinationLabel: 'WellSki',
+      desktopContext: {
+        appName: 'Google Chrome',
+        windowTitle: 'Welsky Progress Note',
+      },
+    });
+
+    expect(adapter?.id).toBe('wellsky-browser');
+  });
+
   it('prefers direct accessibility insertion before paste for known adapters', () => {
     const strategies = resolveDesktopInsertionStrategies({
       destinationLabel: 'SimplePractice',
