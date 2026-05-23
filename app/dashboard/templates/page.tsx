@@ -1,10 +1,7 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AppShell } from '@/components/layout/app-shell';
 import { InternalSurfaceNotice } from '@/components/layout/internal-surface-notice';
-import { AmbientInternalWorkbench } from '@/components/settings/ambient-internal-workbench';
-import { AmbientCapabilityPanel } from '@/components/settings/ambient-capability-panel';
-import { DictationCapabilityPanel } from '@/components/settings/dictation-capability-panel';
-import { ProviderBetaOperationsPanel } from '@/components/settings/provider-beta-operations-panel';
 import { ProviderSettingsPanel } from '@/components/settings/provider-settings-panel';
 import { providerProfiles } from '@/lib/constants/provider-profiles';
 import { getCareSettingForNoteType, getDefaultPresetCatalog, type CareSetting } from '@/lib/note/presets';
@@ -30,22 +27,48 @@ export default function TemplatesPage() {
   return (
     <AppShell
       title="Templates and Profiles"
-      subtitle="Set the provider-facing defaults that actually shape daily note work: profile behavior, starter lanes, and psych-first template guidance. Internal planning surfaces stay visible here only as secondary references."
+      subtitle="Provider-facing defaults only: profile behavior, starter lanes, output preferences, and psych-first template guidance. Internal planning now lives in the Internal Workbench."
       fullWidth
     >
       <div className="grid gap-6">
-        <InternalSurfaceNotice body="Use this page to tune product defaults and profile behavior, but remember it is still an internal configuration surface rather than a daily provider workflow page." />
+        <InternalSurfaceNotice body="Use this page to tune product defaults and profile behavior. Planning, beta operations, eval pressure, and voice roadmap controls are intentionally separated into the Internal Workbench." />
         <section className="aurora-panel rounded-[28px] p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <div className="text-sm font-semibold uppercase tracking-[0.16em] text-cyan-100">Provider-facing controls</div>
-              <h2 className="mt-1 text-2xl font-semibold text-white">Keep this page focused on the defaults that shape real note work</h2>
+              <div className="text-sm font-semibold uppercase tracking-[0.16em] text-cyan-100">Provider defaults cockpit</div>
+              <h2 className="mt-1 text-2xl font-semibold text-white">Only controls that shape real note work belong here</h2>
               <p className="mt-2 max-w-3xl text-sm leading-7 text-cyan-50/84">
-                The main product job here is simple: make profile defaults, template lanes, and output preferences easier to understand without mixing them up with roadmap planning or internal beta operations.
+                This page answers one product question: what defaults should a provider start with before they write a note? Everything else is routed to internal operations so the settings story stays calm.
               </p>
             </div>
-            <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium text-muted">
-              Product settings first
+            <div className="flex flex-wrap gap-2 md:justify-end">
+              <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium text-muted">
+                Provider settings first
+              </div>
+              <Link
+                href="/dashboard/internal#template-planning"
+                className="aurora-secondary-button rounded-xl px-3 py-2 text-xs font-semibold"
+              >
+                Internal planning
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 lg:grid-cols-3">
+            <div className="aurora-soft-panel rounded-[20px] p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">1 Profile</div>
+              <div className="mt-1 text-sm font-semibold text-ink">Choose provider defaults</div>
+              <p className="mt-2 text-sm leading-6 text-muted">Sets the starting documentation style, note priorities, and review emphasis.</p>
+            </div>
+            <div className="aurora-soft-panel rounded-[20px] p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">2 Output</div>
+              <div className="mt-1 text-sm font-semibold text-ink">Tune EHR/site behavior</div>
+              <p className="mt-2 text-sm leading-6 text-muted">Controls destination, note focus, formatting, and reusable site presets.</p>
+            </div>
+            <div className="aurora-soft-panel rounded-[20px] p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">3 Templates</div>
+              <div className="mt-1 text-sm font-semibold text-ink">Review starter lanes</div>
+              <p className="mt-2 text-sm leading-6 text-muted">Shows the preset lanes providers should recognize by care setting.</p>
             </div>
           </div>
         </section>
@@ -141,48 +164,23 @@ export default function TemplatesPage() {
             </div>
         </section>
 
-        <details className="aurora-panel rounded-[28px] p-6">
-          <summary className="cursor-pointer list-none">
-            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">Internal planning surfaces</h2>
-                <p className="mt-1 text-sm text-muted">
-                  These are still useful for product and operations planning, but they are not part of the core provider-facing settings story.
-                </p>
-              </div>
-              <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium text-muted">
-                Internal only
-              </div>
+        <section className="aurora-panel rounded-[28px] p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-sm font-semibold uppercase tracking-[0.16em] text-cyan-100">Boundary</div>
+              <h2 className="mt-1 text-lg font-semibold text-white">Internal planning is no longer embedded here</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-7 text-cyan-50/82">
+                Beta operations, voice capability planning, roadmap pressure, and ambient workbench controls are still available, but they now live behind the Internal Workbench so providers do not confuse planning scaffolds with usable settings.
+              </p>
             </div>
-          </summary>
-
-          <div className="mt-5 grid gap-6">
-            <ProviderBetaOperationsPanel />
-
-            <section className="aurora-panel rounded-[24px] p-5">
-              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold">Voice capability planning</h3>
-                  <p className="mt-1 text-sm text-muted">
-                    These roadmap panels describe future dictation and ambient-listening posture without implying live provider functionality.
-                  </p>
-                </div>
-                <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium text-muted">
-                  Internal only
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-6 xl:grid-cols-2">
-                <DictationCapabilityPanel />
-                <AmbientCapabilityPanel />
-              </div>
-
-              <div className="mt-6">
-                <AmbientInternalWorkbench />
-              </div>
-            </section>
+            <Link
+              href="/dashboard/internal#template-planning"
+              className="aurora-secondary-button inline-flex rounded-xl px-4 py-2 text-sm font-semibold"
+            >
+              Open Internal Workbench
+            </Link>
           </div>
-        </details>
+        </section>
       </div>
     </AppShell>
   );

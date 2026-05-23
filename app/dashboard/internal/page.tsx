@@ -2,6 +2,10 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AppShell } from '@/components/layout/app-shell';
 import { InternalSurfaceNotice } from '@/components/layout/internal-surface-notice';
+import { AmbientInternalWorkbench } from '@/components/settings/ambient-internal-workbench';
+import { AmbientCapabilityPanel } from '@/components/settings/ambient-capability-panel';
+import { DictationCapabilityPanel } from '@/components/settings/dictation-capability-panel';
+import { ProviderBetaOperationsPanel } from '@/components/settings/provider-beta-operations-panel';
 import { INTERNAL_MODE_ENABLED } from '@/lib/veranote/access-mode';
 
 const internalTools = [
@@ -106,6 +110,51 @@ export default function InternalWorkbenchPage() {
             </Link>
           </div>
         ))}
+      </section>
+
+      <section id="template-planning" className="mt-6 grid gap-6 scroll-mt-28">
+        <section className="aurora-panel rounded-[28px] p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-sm font-semibold uppercase tracking-[0.16em] text-cyan-100">Template planning overflow</div>
+              <h2 className="mt-1 text-2xl font-semibold text-white">Internal planning lives here, not inside provider settings</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-7 text-cyan-50/84">
+                These panels still matter for product operations, beta readiness, dictation posture, and ambient listening design. They are intentionally contained here so Templates and Profiles can stay focused on real provider-facing defaults.
+              </p>
+            </div>
+            <Link
+              href="/dashboard/templates"
+              className="aurora-secondary-button inline-flex rounded-xl px-4 py-2 text-sm font-semibold"
+            >
+              Back to Templates
+            </Link>
+          </div>
+        </section>
+
+        <ProviderBetaOperationsPanel />
+
+        <section className="aurora-panel rounded-[28px] p-6">
+          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">Voice capability planning</h3>
+              <p className="mt-1 text-sm text-muted">
+                Roadmap panels for dictation, ambient listening, and internal workbench behavior. These describe capability posture without implying that a provider should use them as normal settings.
+              </p>
+            </div>
+            <div className="aurora-pill rounded-full px-3 py-1 text-xs font-medium text-muted">
+              Internal only
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-6 xl:grid-cols-2">
+            <DictationCapabilityPanel />
+            <AmbientCapabilityPanel />
+          </div>
+
+          <div className="mt-6">
+            <AmbientInternalWorkbench />
+          </div>
+        </section>
       </section>
     </AppShell>
   );

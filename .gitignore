@@ -8,3 +8,6 @@ tsconfig.tsbuildinfo
 *.log
 .DS_Store
 .vercel
+test-results/*
+!test-results/.last-run.json
+supabase/.temp/
