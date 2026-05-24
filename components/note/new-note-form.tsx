@@ -7707,7 +7707,7 @@ export function NewNoteForm() {
               </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-4 grid gap-3">
               {currentCheckpoint ? (
                 <details className="workspace-utility-details w-full rounded-[18px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] px-3.5 py-2.5">
                   <summary className="cursor-pointer list-none">
@@ -7765,39 +7765,57 @@ export function NewNoteForm() {
                   </div>
                 </details>
               ) : null}
-              <span className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 text-xs font-medium text-cyan-50">
-                Style: {outputStyle}
-              </span>
-              <span className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 text-xs font-medium text-cyan-50">
-                Format: {format}
-              </span>
-              <span className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 text-xs font-medium text-cyan-50">
-                Sections: {sectionPlan.sections.length || 'None'}
-              </span>
-              {activePreset ? (
-                <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-100">
-                  Preset: {activePreset.name}
-                </span>
-              ) : null}
-            </div>
-
-            <div className="mt-4 grid gap-2 md:grid-cols-2">
-              <label className="rounded-[16px] border border-cyan-200/10 bg-[rgba(255,255,255,0.04)] px-3 py-2.5 text-sm text-cyan-50">
-                <div className="flex items-center gap-3">
-                  <input type="checkbox" checked={flagMissingInfo} onChange={(event) => setFlagMissingInfo(event.target.checked)} />
-                  <div>
-                    <div className="font-semibold text-white">Keep missing details visible</div>
+              <details className="workspace-utility-details rounded-[18px] border border-cyan-200/10 bg-white/[0.03] px-3.5 py-2.5">
+                <summary className="cursor-pointer list-none">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="text-sm font-semibold text-cyan-50">Draft settings</div>
+                      <div className="mt-1 text-xs text-cyan-50/58">
+                        {outputStyle} • {format} • {sectionPlan.sections.length || 'no custom'} sections
+                      </div>
+                    </div>
+                    <div className="text-xs text-cyan-50/58">
+                      {activePreset ? `Preset: ${activePreset.name}` : 'Default lane'}
+                    </div>
+                  </div>
+                </summary>
+                <div className="mt-3 grid gap-3">
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 text-xs font-medium text-cyan-50">
+                      Style: {outputStyle}
+                    </span>
+                    <span className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 text-xs font-medium text-cyan-50">
+                      Format: {format}
+                    </span>
+                    <span className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 text-xs font-medium text-cyan-50">
+                      Sections: {sectionPlan.sections.length || 'None'}
+                    </span>
+                    {activePreset ? (
+                      <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-100">
+                        Preset: {activePreset.name}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <label className="rounded-[16px] border border-cyan-200/10 bg-[rgba(255,255,255,0.04)] px-3 py-2.5 text-sm text-cyan-50">
+                      <div className="flex items-center gap-3">
+                        <input type="checkbox" checked={flagMissingInfo} onChange={(event) => setFlagMissingInfo(event.target.checked)} />
+                        <div>
+                          <div className="font-semibold text-white">Keep missing details visible</div>
+                        </div>
+                      </div>
+                    </label>
+                    <label className="rounded-[16px] border border-cyan-200/10 bg-[rgba(255,255,255,0.04)] px-3 py-2.5 text-sm text-cyan-50">
+                      <div className="flex items-center gap-3">
+                        <input type="checkbox" checked={keepCloserToSource} onChange={(event) => setKeepCloserToSource(event.target.checked)} />
+                        <div>
+                          <div className="font-semibold text-white">Stay closer to source wording</div>
+                        </div>
+                      </div>
+                    </label>
                   </div>
                 </div>
-              </label>
-              <label className="rounded-[16px] border border-cyan-200/10 bg-[rgba(255,255,255,0.04)] px-3 py-2.5 text-sm text-cyan-50">
-                <div className="flex items-center gap-3">
-                  <input type="checkbox" checked={keepCloserToSource} onChange={(event) => setKeepCloserToSource(event.target.checked)} />
-                  <div>
-                    <div className="font-semibold text-white">Stay closer to source wording</div>
-                  </div>
-                </div>
-              </label>
+              </details>
             </div>
 
             <details className="workspace-utility-details mt-3 rounded-[18px] border border-cyan-200/10 bg-white/[0.03] px-3.5 py-2.5">
