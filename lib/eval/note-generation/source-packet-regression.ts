@@ -2685,6 +2685,98 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
       { label: 'continuity instruction leaked', pattern: /Continuity safety rule|Patient Continuity Context|do not silently copy/i },
     ],
   },
+  {
+    id: 'messy-paragraph-inpatient-followup-reorders-source-without-inventing-normal-mse',
+    title: 'Messy inpatient follow-up paragraph is reorganized into clinical note flow without inventing normal MSE',
+    specialty: 'Psychiatry',
+    role: 'Psychiatric NP',
+    ehr: 'Netsmart myAvatar',
+    noteType: 'Inpatient Psych Progress Note',
+    customInstructions: 'Provider preference: make the note read cleanly even if the pasted source is out of order. Keep source-supported MSE limits visible.',
+    sourceSections: {
+      intakeCollateral: [
+        'Nursign / MAR dump with typos:',
+        '- sleep aprox 3 hrs, up pacing halls.',
+        '- refused morning group.',
+        '- took sched meds; PRN hydroxyzine 25 mg at 0210 for anxity.',
+        '- no restraint, no seclusion.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Provider pasted paragraph out of order:',
+        'Plan maybe keep observation same for now, but first patient says wants discharge and "I am not suciidal." MSE later: irritable, pacing, speech pressured at times, thought process tangential but redirectable. Says meds make him sleepy though MAR says he took them. HPI should mention sleep bad and still anxious. No med changes documented. Need follow up note not huge.',
+      ].join('\n'),
+      patientTranscript: [
+        'Ambient transcript with misspellings:',
+        'Patient: "I ain’t suicidal. I just want out of here."',
+        'Patient: "The medicine makes me sleepy but I took it."',
+      ].join('\n'),
+      objectiveData: [
+        'Provider Add-On:',
+        '- Reorder into interval/HPI, MSE, safety, assessment/plan.',
+        '- Do not document appearance, cognition, insight, or judgment as normal.',
+        '- Do not invent a medication change.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'sleep/pacing detail preserved despite typos', pattern: /3 hrs|3 hours|pacing/i },
+      { label: 'group refusal preserved', pattern: /refused.*group|group.*refused/i },
+      { label: 'PRN hydroxyzine preserved', pattern: /hydroxyzine|PRN/i },
+      { label: 'patient suicide denial preserved', pattern: /not suicidal|denies?.{0,60}suicidal|denies?.{0,20}SI/i },
+      { label: 'source-supported MSE details preserved', pattern: /irritable|pressured|tangential|redirectable/i },
+    ],
+    forbidden: [
+      { label: 'unsupported normal MSE invented', pattern: /appearance (?:is )?(?:normal|appropriate)|cognition (?:is )?(?:intact|normal)|insight and judgment (?:are )?(?:good|intact|fair)/i },
+      { label: 'medication change invented', pattern: /(?:increase|decrease|start|stop|discontinue|restart).{0,60}(?:medication|hydroxyzine|antipsychotic|mood stabilizer)/i },
+      { label: 'provider instruction leaked', pattern: /Provider Add-On|Reorder into interval|Do not document appearance/i },
+    ],
+  },
+  {
+    id: 'provider-two-paragraph-followup-prompt-preserves-source-conflicts',
+    title: 'Provider two-paragraph prompt shapes output while preserving source conflicts and pending data',
+    specialty: 'Psychiatry',
+    role: 'Psychiatric NP',
+    ehr: 'Practice Fusion',
+    noteType: 'Outpatient Psych Follow-Up',
+    customInstructions: 'Provider preference: write the follow-up as two concise paragraphs. Paragraph one should cover interval/HPI. Paragraph two should cover MSE, assessment, and plan. Preserve conflicts and missing data.',
+    sourceSections: {
+      intakeCollateral: [
+        'Pre-visit / prior-note recall:',
+        '- Prior note: escitalopram 10 mg daily, nausea last visit.',
+        '- PHQ-9 imported score: 15, date unclear.',
+        '- Lab fax mentions TSH pending, not resulted.',
+      ].join('\n'),
+      clinicianNotes: [
+        'Live typed note:',
+        '- Pt says mood "a bit less heavy" but anxity still bad at work.',
+        '- Missed escitalopram 3 days last week due nausea, then restarted.',
+        '- Denies SI/HI.',
+        '- MSE: tired appearing, cooperative, speech normal rate, mood anxious, affect constricted.',
+      ].join('\n'),
+      patientTranscript: [
+        'Ambient:',
+        'Patient: "I skipped it a few days because my stomach was upset. I am taking it again."',
+        'Patient: "I do not want to hurt myself."',
+      ].join('\n'),
+      objectiveData: [
+        'Provider Add-On:',
+        '- Do not say medication adherence is good.',
+        '- Do not say TSH normal.',
+        '- Keep two-paragraph style if possible.',
+      ].join('\n'),
+    },
+    required: [
+      { label: 'partial mood improvement preserved', pattern: /less heavy|partial|some improvement|a bit/i },
+      { label: 'anxiety at work preserved despite typo', pattern: /anxi(?:ety|ous).*work|work.*anxi/i },
+      { label: 'missed escitalopram due nausea preserved', pattern: /missed|skipped|nausea|stomach.*upset/i },
+      { label: 'TSH pending preserved', pattern: /TSH.*pending|pending.*TSH/i },
+      { label: 'SI/HI denial preserved', pattern: /denies?.{0,60}(?:SI\/HI|suicidal|homicidal)|do not want to hurt myself/i },
+    ],
+    forbidden: [
+      { label: 'adherence overstated', pattern: /adherence (?:is )?good|taking as prescribed|fully adherent|compliant/i },
+      { label: 'TSH result invented', pattern: /TSH (?:is )?(?:normal|within normal limits|WNL)|normal TSH/i },
+      { label: 'provider prompt leaked', pattern: /Provider preference|Paragraph one|Paragraph two|Keep two-paragraph/i },
+    ],
+  },
 ];
 
 function loadEvaluationEnv() {

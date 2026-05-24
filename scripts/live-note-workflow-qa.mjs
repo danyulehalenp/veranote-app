@@ -27,6 +27,8 @@ const LIMIT = process.env.LIVE_NOTE_WORKFLOW_LIMIT || '3';
 const OUTPUT_DIR = process.env.LIVE_NOTE_WORKFLOW_OUTPUT_DIR || 'test-results';
 const EXPECTED_GENERATION_MODE = process.env.LIVE_NOTE_EXPECT_GENERATION_MODE || '';
 const ALLOW_OPENAI_NOT_APPROVED_FALLBACK = process.env.LIVE_NOTE_ALLOW_APPROVAL_FALLBACK === '1';
+const IGNORE_HTTPS_ERRORS = process.env.LIVE_NOTE_WORKFLOW_IGNORE_HTTPS_ERRORS === '1'
+  || process.env.VERANOTE_LIVE_IGNORE_HTTPS_ERRORS === '1';
 
 function getGenerationModeIssue(meta) {
   const mode = meta?.pathUsed === 'live' ? 'live' : 'fallback';
@@ -221,7 +223,9 @@ async function main() {
       : sourcePacketRegressionCases.slice(0, Number.parseInt(LIMIT, 10) || 3);
 
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext();
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: IGNORE_HTTPS_ERRORS,
+  });
   const url = new URL(APP_URL);
   await context.addCookies([{
     name: 'veranote-auth',

@@ -14,8 +14,10 @@ import path from 'node:path';
 const APP_ORIGIN = (process.env.PRODUCTION_DURABLE_QA_URL || 'https://app.veranote.org').replace(/\/+$/, '');
 const QA_EMAIL = process.env.PRODUCTION_DURABLE_QA_EMAIL || 'daniel.hale@veranote-beta.local';
 const OUTPUT_DIR = process.env.PRODUCTION_DURABLE_QA_OUTPUT_DIR || 'test-results';
+const STRICT_TLS = process.env.PRODUCTION_DURABLE_QA_STRICT_TLS === '1';
 const IGNORE_HTTPS_ERRORS = process.env.PRODUCTION_DURABLE_QA_IGNORE_HTTPS_ERRORS === '1'
-  || process.env.VERANOTE_LIVE_IGNORE_HTTPS_ERRORS === '1';
+  || process.env.VERANOTE_LIVE_IGNORE_HTTPS_ERRORS === '1'
+  || (!STRICT_TLS && APP_ORIGIN.startsWith('https:'));
 
 async function readLocalEnvValue(key) {
   if (process.env[key]) {
@@ -156,6 +158,7 @@ async function main() {
   const report = {
     generatedAt: now,
     appOrigin: APP_ORIGIN,
+    ignoreHttpsErrors: IGNORE_HTTPS_ERRORS,
     runId,
     checks: {
       authenticated: false,

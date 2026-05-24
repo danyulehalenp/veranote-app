@@ -21,6 +21,8 @@ const QA_EMAIL = process.env.LIVE_WORKSPACE_RAIL_QA_EMAIL || 'daniel.hale@verano
 const OUTPUT_DIR = process.env.LIVE_WORKSPACE_RAIL_OUTPUT_DIR || 'test-results';
 const SHOULD_START_SERVER = process.env.LIVE_WORKSPACE_RAIL_START_SERVER !== '0';
 const TEST_PROVIDER_ID = 'provider-brandy-norris-beta';
+const IGNORE_HTTPS_ERRORS = process.env.LIVE_WORKSPACE_RAIL_IGNORE_HTTPS_ERRORS === '1'
+  || process.env.VERANOTE_LIVE_IGNORE_HTTPS_ERRORS === '1';
 
 async function readLocalEnvValue(key) {
   if (process.env[key]) {
@@ -45,10 +47,15 @@ async function readLocalEnvValue(key) {
 function requestUrl(url) {
   return new Promise((resolve) => {
     const client = url.startsWith('https:') ? https : http;
-    const request = client.get(url, (response) => {
-      response.resume();
-      resolve(Boolean(response.statusCode && response.statusCode < 500));
-    });
+    const request = url.startsWith('https:') && IGNORE_HTTPS_ERRORS
+      ? client.get(url, { rejectUnauthorized: false }, (response) => {
+          response.resume();
+          resolve(Boolean(response.statusCode && response.statusCode < 500));
+        })
+      : client.get(url, (response) => {
+          response.resume();
+          resolve(Boolean(response.statusCode && response.statusCode < 500));
+        });
     request.on('error', () => resolve(false));
     request.setTimeout(1500, () => {
       request.destroy();
@@ -170,6 +177,7 @@ async function gotoWorkspace(page, appUrl) {
 async function createContext(browser, options = {}) {
   const appUrl = new URL(APP_URL);
   const context = await browser.newContext({
+    ignoreHTTPSErrors: IGNORE_HTTPS_ERRORS,
     viewport: options.viewport || { width: 900, height: 800 },
   });
   await context.addCookies([{

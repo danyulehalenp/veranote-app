@@ -183,6 +183,19 @@ async function ensureComposeSourceVisible(page) {
     await clickFirstVisible(page.getByRole('button', { name: /Source Packet/i }));
     await clickFirstVisible(page.getByRole('button', { name: /Source Documents/i }));
     await clickFirstVisible(page.getByRole('button', { name: /Paste Source/i }));
+
+    const documentOptions = page.locator('#document-source-intake').locator('xpath=ancestor::details[1]');
+    const optionsCount = await documentOptions.count().catch(() => 0);
+    if (optionsCount > 0) {
+      const isOpen = await documentOptions.first().evaluate((details) => details instanceof HTMLDetailsElement && details.open).catch(() => false);
+      if (!isOpen) {
+        await documentOptions.first().evaluate((details) => {
+          if (details instanceof HTMLDetailsElement) {
+            details.open = true;
+          }
+        });
+      }
+    }
   }
 
   await reviewText.waitFor({ state: 'visible', timeout: 30000 });

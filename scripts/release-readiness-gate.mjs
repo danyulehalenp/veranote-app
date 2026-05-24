@@ -14,6 +14,11 @@ const APP_ORIGIN = (process.env.VERANOTE_RELEASE_APP_ORIGIN || 'https://app.vera
 const ATLAS_SCENARIO = process.env.VERANOTE_RELEASE_ATLAS_SCENARIO || 'diagnostic-to-medication-switch-with-typo-followup';
 const NOTE_WORKFLOW_LIMIT = process.env.VERANOTE_RELEASE_NOTE_WORKFLOW_LIMIT || '1';
 const RUN_FULL_E2E = process.env.VERANOTE_RELEASE_RUN_FULL_E2E !== '0';
+const LIVE_BROWSER_QA_ENV = APP_ORIGIN.startsWith('https:')
+  ? {
+      VERANOTE_LIVE_IGNORE_HTTPS_ERRORS: process.env.VERANOTE_LIVE_IGNORE_HTTPS_ERRORS || '1',
+    }
+  : {};
 
 const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
@@ -84,6 +89,7 @@ async function main() {
       command: npmBin,
       args: ['run', 'production:durable'],
       env: {
+        ...LIVE_BROWSER_QA_ENV,
         PRODUCTION_DURABLE_QA_URL: APP_ORIGIN,
       },
     },
@@ -92,6 +98,7 @@ async function main() {
       command: npmBin,
       args: ['run', 'live:note:qa'],
       env: {
+        ...LIVE_BROWSER_QA_ENV,
         LIVE_NOTE_WORKFLOW_URL: `${APP_ORIGIN}/dashboard/new-note?fresh=release-gate-note-workflow`,
         LIVE_NOTE_WORKFLOW_LIMIT: NOTE_WORKFLOW_LIMIT,
       },
@@ -101,6 +108,7 @@ async function main() {
       command: npmBin,
       args: ['run', 'live:workspace-rail'],
       env: {
+        ...LIVE_BROWSER_QA_ENV,
         LIVE_WORKSPACE_RAIL_URL: `${APP_ORIGIN}/dashboard/new-note?fresh=release-gate-workspace-rail`,
         LIVE_WORKSPACE_RAIL_START_SERVER: '0',
       },
@@ -110,6 +118,7 @@ async function main() {
       command: npmBin,
       args: ['run', 'atlas:live-conversation'],
       env: {
+        ...LIVE_BROWSER_QA_ENV,
         LIVE_ASSISTANT_QA_URL: `${APP_ORIGIN}/dashboard/new-note?fresh=release-gate-atlas-conversation`,
         LIVE_ASSISTANT_QA_START_SERVER: '0',
         LIVE_ASSISTANT_QA_SCENARIO: ATLAS_SCENARIO,
@@ -123,6 +132,7 @@ async function main() {
       command: npmBin,
       args: ['run', 'live:note:e2e'],
       env: {
+        ...LIVE_BROWSER_QA_ENV,
         LIVE_NOTE_E2E_URL: `${APP_ORIGIN}/dashboard/new-note?fresh=release-gate-full-e2e`,
         LIVE_NOTE_E2E_START_SERVER: '0',
       },

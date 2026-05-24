@@ -20,6 +20,12 @@ const QA_EMAIL = process.env.LIVE_ASSISTANT_QA_EMAIL || 'daniel.hale@veranote-be
 const SHOULD_START_SERVER = process.env.LIVE_ASSISTANT_QA_START_SERVER !== '0';
 const STRICT = process.env.LIVE_ASSISTANT_QA_STRICT !== '0';
 const SCENARIO_ID = process.env.LIVE_ASSISTANT_QA_SCENARIO || 'all';
+const IGNORE_HTTPS_ERRORS = process.env.LIVE_ASSISTANT_QA_IGNORE_HTTPS_ERRORS === '1'
+  || process.env.VERANOTE_LIVE_IGNORE_HTTPS_ERRORS === '1';
+const TURN_DELAY_MS = Number(process.env.LIVE_ASSISTANT_QA_TURN_DELAY_MS || 1200);
+const SCENARIO_DELAY_MS = Number(process.env.LIVE_ASSISTANT_QA_SCENARIO_DELAY_MS || 1000);
+const RATE_LIMIT_RETRY_COUNT = Number(process.env.LIVE_ASSISTANT_QA_RATE_LIMIT_RETRIES || 2);
+const RATE_LIMIT_RETRY_DELAY_MS = Number(process.env.LIVE_ASSISTANT_QA_RATE_LIMIT_RETRY_DELAY_MS || 4500);
 
 async function readLocalEnvValue(key) {
   if (process.env[key]) {
@@ -65,10 +71,15 @@ function parseArgs(argv) {
 function requestUrl(url) {
   return new Promise((resolve) => {
     const client = url.startsWith('https:') ? https : http;
-    const request = client.get(url, (response) => {
-      response.resume();
-      resolve(response.statusCode && response.statusCode < 500);
-    });
+    const request = url.startsWith('https:') && IGNORE_HTTPS_ERRORS
+      ? client.get(url, { rejectUnauthorized: false }, (response) => {
+          response.resume();
+          resolve(response.statusCode && response.statusCode < 500);
+        })
+      : client.get(url, (response) => {
+          response.resume();
+          resolve(response.statusCode && response.statusCode < 500);
+        });
     request.on('error', () => resolve(false));
     request.setTimeout(1500, () => {
       request.destroy();
@@ -126,6 +137,13 @@ async function waitForVisible(locator, timeout = 2500) {
   } catch {
     return false;
   }
+}
+
+async function sleep(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function waitForAnyVisible(locators, timeout = 30000) {
@@ -310,7 +328,7 @@ async function gotoWorkspace(page, appUrl) {
   }
 }
 
-async function askVisibleAssistantTurn(page, prompt) {
+async function askVisibleAssistantTurnOnce(page, prompt) {
   const input = page.getByTestId('assistant-composer-input');
   const send = page.getByTestId('assistant-send-button');
   await input.waitFor({ state: 'visible', timeout: 15000 });
@@ -381,6 +399,22 @@ async function askVisibleAssistantTurn(page, prompt) {
   };
 }
 
+async function askVisibleAssistantTurn(page, prompt) {
+  let lastResult = null;
+  for (let attempt = 0; attempt <= RATE_LIMIT_RETRY_COUNT; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(RATE_LIMIT_RETRY_DELAY_MS);
+    }
+
+    lastResult = await askVisibleAssistantTurnOnce(page, prompt);
+    if (!/rate limit exceeded/i.test(lastResult.answer)) {
+      return lastResult;
+    }
+  }
+
+  return lastResult;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const appUrl = args.appUrl;
@@ -413,6 +447,7 @@ async function main() {
   const serverProcess = await ensureServer(appUrl, args.shouldStartServer);
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
+    ignoreHTTPSErrors: IGNORE_HTTPS_ERRORS,
     viewport: { width: 1440, height: 940 },
   });
   const url = new URL(appUrl);
@@ -434,6 +469,7 @@ async function main() {
 
       const turns = [];
       for (const turn of scenario.turns) {
+        await sleep(TURN_DELAY_MS);
         const result = await askVisibleAssistantTurn(page, turn.prompt);
         turns.push(result);
       }
@@ -449,6 +485,7 @@ async function main() {
       evaluated.passed = evaluated.turnResults.every((turn) => turn.passed);
       results.push(evaluated);
       await page.close();
+      await sleep(SCENARIO_DELAY_MS);
     }
   } finally {
     await browser.close();
