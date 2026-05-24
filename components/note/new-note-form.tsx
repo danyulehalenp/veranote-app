@@ -5230,6 +5230,11 @@ export function NewNoteForm() {
               </div>
 
               <div id="generated-note-workspace" className="grid gap-4 sm:max-h-[calc(100vh-10rem)] sm:overflow-y-auto sm:pr-1">
+                <ReviewWorkspace
+                  initialSession={generatedSession}
+                  embedded
+                  onBackToEdit={handleReturnToCompose}
+                />
                 <AtlasReviewDock
                   statusLabel={atlasStatusLabel}
                   detail={atlasDetail}
@@ -5245,11 +5250,6 @@ export function NewNoteForm() {
                   review={sourceEvidenceReview}
                   onFocusSource={focusSourceEvidenceLane}
                   hasDraft={hasGeneratedDraft}
-                />
-                <ReviewWorkspace
-                  initialSession={generatedSession}
-                  embedded
-                  onBackToEdit={handleReturnToCompose}
                 />
               </div>
             </div>
@@ -6858,29 +6858,29 @@ export function NewNoteForm() {
 
 		              <div className="grid gap-4 xl:min-h-0 xl:overflow-hidden xl:pl-2">
 	      {generatedSession ? (
-	      <div id="generated-note-workspace" className="grid gap-4 sm:max-h-[calc(100vh-9rem)] sm:overflow-y-auto sm:pr-1 xl:min-h-0">
-        <AtlasReviewDock
-          statusLabel={atlasStatusLabel}
-          detail={atlasDetail}
-          noteType={generatedSession.noteType}
-          sourceCompletionLabel={atlasSourceCompletionLabel}
-          attentionCount={atlasAttentionCount}
-          hasDraft={hasGeneratedDraft}
-          actions={atlasReviewActions}
-          assistantName={assistantPersona.name}
-          assistantAvatar={assistantPersona.avatar}
-        />
-        <SourceEvidenceReviewPanel
-          review={sourceEvidenceReview}
-          onFocusSource={focusSourceEvidenceLane}
-          hasDraft={hasGeneratedDraft}
-        />
-	        <ReviewWorkspace
-	          initialSession={generatedSession}
-	          embedded
-	          onBackToEdit={handleReturnToCompose}
+		      <div id="generated-note-workspace" className="grid gap-4 sm:max-h-[calc(100vh-9rem)] sm:overflow-y-auto sm:pr-1 xl:min-h-0">
+		        <ReviewWorkspace
+		          initialSession={generatedSession}
+		          embedded
+		          onBackToEdit={handleReturnToCompose}
+		        />
+	        <AtlasReviewDock
+	          statusLabel={atlasStatusLabel}
+	          detail={atlasDetail}
+	          noteType={generatedSession.noteType}
+	          sourceCompletionLabel={atlasSourceCompletionLabel}
+	          attentionCount={atlasAttentionCount}
+	          hasDraft={hasGeneratedDraft}
+	          actions={atlasReviewActions}
+	          assistantName={assistantPersona.name}
+	          assistantAvatar={assistantPersona.avatar}
 	        />
-      </div>
+	        <SourceEvidenceReviewPanel
+	          review={sourceEvidenceReview}
+	          onFocusSource={focusSourceEvidenceLane}
+	          hasDraft={hasGeneratedDraft}
+	        />
+	      </div>
       ) : (
       <div id="generated-note-workspace" className="workspace-panel flex flex-col rounded-[28px] p-4 text-sm text-cyan-50/72 sm:max-h-[calc(100vh-9rem)] sm:min-h-0 sm:overflow-y-auto xl:sticky xl:top-4 xl:min-h-[560px]">
         <div className="rounded-[24px] border border-cyan-200/12 bg-[rgba(255,255,255,0.04)] p-4">
@@ -6928,49 +6928,24 @@ export function NewNoteForm() {
           </div>
         </div>
 
-        <div className="mt-3">
-          <SourceEvidenceReviewPanel
-            review={sourceEvidenceReview}
-            onFocusSource={focusSourceEvidenceLane}
-            hasDraft={hasGeneratedDraft}
-          />
-        </div>
-
-        <div className="mt-3 rounded-[18px] border border-cyan-200/10 bg-white/[0.03] px-3.5 py-2.5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/54">{assistantPersona.name} Review</div>
-              <div className="mt-1 text-sm font-semibold text-white">{hasSource ? 'Waiting for draft' : 'Inactive until source exists'}</div>
-            </div>
-            <span className="rounded-full border border-cyan-200/12 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-50/62">
-              {atlasStatusLabel}
-            </span>
-          </div>
-        </div>
-
-        <details className="mt-3 rounded-[18px] border border-cyan-200/10 bg-white/[0.025] px-3.5 py-2.5">
-          <summary className="cursor-pointer text-sm font-semibold text-cyan-50">Options & help</summary>
-          <div className="mt-3 grid gap-3 text-sm leading-6 text-cyan-50/70">
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={scrollToDraftControls}
-                className="aurora-secondary-button rounded-xl px-3.5 py-2 text-sm font-medium"
-              >
-                Draft settings
-              </button>
-              <button
-                type="button"
-                onClick={handleLoadExample}
-                className="aurora-secondary-button rounded-xl px-3.5 py-2 text-sm font-medium"
-              >
-                Load example
-              </button>
-            </div>
-            <p>After generation, the draft replaces this panel and stays beside the source for review, copy, and export.</p>
-          </div>
-        </details>
-      </div>
+	        <div className="mt-3 rounded-[18px] border border-cyan-200/10 bg-white/[0.025] px-3.5 py-2.5">
+	          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+	            <div>
+	              <div className="text-sm font-semibold text-white">Review tools appear after draft generation.</div>
+	              <p className="mt-1 text-xs leading-5 text-cyan-50/62">
+	                {assistantPersona.name}, source evidence, and export checks stay out of the way until there is a draft to review.
+	              </p>
+	            </div>
+	            <button
+	              type="button"
+	              onClick={handleLoadExample}
+	              className="aurora-secondary-button rounded-xl px-3.5 py-2 text-sm font-medium"
+	            >
+	              Load example
+	            </button>
+	          </div>
+	        </div>
+	      </div>
       )}
               </div>
             </div>

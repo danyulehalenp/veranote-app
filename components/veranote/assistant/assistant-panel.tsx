@@ -414,7 +414,7 @@ export const AssistantPanel = memo(function AssistantPanel({
     setShowCurrentCues(false);
     setEditingMemoryKey(null);
     setEditingMemoryValue('');
-  }, [context.providerAddressingName, context.veraInteractionStyle, context.veraProactivityLevel, stage]);
+  }, [stage]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {

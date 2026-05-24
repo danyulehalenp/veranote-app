@@ -1721,11 +1721,50 @@ function formatDraftWithExpandedDetails(draftText: string) {
         .replace(/\s+/g, ' ')
         .replace(/\b(no|not)\s+documented\b/gi, 'not documented')
         .trim();
-      return `${section.heading}:\n${text}`;
+      const sentences = text
+        .split(/(?<=[.!?])\s+/)
+        .map((sentence) => sentence.trim())
+        .filter(Boolean);
+
+      if (sentences.length <= 1) {
+        return `${section.heading}:\n${text}`;
+      }
+
+      const detailLead = getExpandedDraftDetailLead(section.heading);
+      const expandedText = [
+        sentences[0],
+        ...sentences.slice(1).map((sentence) => `${detailLead}: ${sentence}`),
+      ].join(' ');
+
+      return `${section.heading}:\n${expandedText}`;
     })
     .join('\n\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+function getExpandedDraftDetailLead(heading: string) {
+  if (sectionMatches(heading, [/\bhpi\b/, /\bsubjective\b/, /\binterval\b/])) {
+    return 'Additional HPI detail';
+  }
+
+  if (sectionMatches(heading, [/\bmse\b/, /\bmental status\b/, /\bobjective\b/])) {
+    return 'Additional MSE detail';
+  }
+
+  if (sectionMatches(heading, [/\bassessment\b/, /\bimpression\b/])) {
+    return 'Additional assessment detail';
+  }
+
+  if (sectionMatches(heading, [/\bplan\b/, /\brecommendation\b/])) {
+    return 'Additional plan detail';
+  }
+
+  if (sectionMatches(heading, [/\brisk\b/, /\bsafety\b/])) {
+    return 'Additional risk detail';
+  }
+
+  return 'Additional documented detail';
 }
 
 function cleanDraftClinicalAbbreviations(text: string) {

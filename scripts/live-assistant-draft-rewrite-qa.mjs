@@ -234,12 +234,31 @@ async function installActionCapture(page) {
   });
 }
 
+async function getAssistantThreadSnapshot(page) {
+  return page.evaluate(() => {
+    const messages = Array.from(document.querySelectorAll('[data-testid="assistant-message"]'));
+    const latest = document.querySelector('[data-testid="assistant-message"][data-assistant-message-latest="true"]');
+    const latestBody = latest?.querySelector('[data-testid="assistant-message-body"]');
+    const earlierToggle = Array.from(document.querySelectorAll('button'))
+      .map((button) => button.textContent || '')
+      .find((text) => /Show earlier messages \(\d+\)/i.test(text));
+    const earlierCount = Number(earlierToggle?.match(/\((\d+)\)/)?.[1] || 0);
+
+    return {
+      messageCount: messages.length,
+      latestId: latest instanceof HTMLElement ? latest.dataset.assistantMessageId || null : null,
+      latestText: latestBody?.textContent || '',
+      earlierCount,
+    };
+  });
+}
+
 async function askAssistant(page, prompt) {
   const input = page.getByTestId('assistant-composer-input');
   const send = page.getByTestId('assistant-send-button');
   await input.waitFor({ state: 'visible', timeout: 15000 });
   await send.waitFor({ state: 'visible', timeout: 15000 });
-  const beforeAssistantCount = await page.locator('[data-testid="assistant-message"]').count();
+  const beforeSnapshot = await getAssistantThreadSnapshot(page);
   await input.fill(prompt);
   await page.waitForFunction(
     () => {
@@ -250,17 +269,36 @@ async function askAssistant(page, prompt) {
     { timeout: 5000 },
   );
   await send.click();
-  await page.waitForFunction(
-    (previousCount) => {
-      const assistantMessages = document.querySelectorAll('[data-testid="assistant-message"]');
-      const latest = assistantMessages.item(assistantMessages.length - 1);
-      const latestBody = latest?.querySelector('[data-testid="assistant-message-body"]');
-      return assistantMessages.length > previousCount && Boolean(latestBody?.textContent?.trim());
-    },
-    beforeAssistantCount,
-    { timeout: 30000 },
-  );
-  const latest = page.locator('[data-testid="assistant-message"]').last();
+  try {
+    await page.waitForFunction(
+      (before) => {
+        const messages = Array.from(document.querySelectorAll('[data-testid="assistant-message"]'));
+        const latest = document.querySelector('[data-testid="assistant-message"][data-assistant-message-latest="true"]');
+        const earlierToggle = Array.from(document.querySelectorAll('button'))
+          .map((button) => button.textContent || '')
+          .find((text) => /Show earlier messages \(\d+\)/i.test(text));
+        const earlierCount = Number(earlierToggle?.match(/\((\d+)\)/)?.[1] || 0);
+        const latestId = latest instanceof HTMLElement ? latest.dataset.assistantMessageId || null : null;
+        const latestBody = latest?.querySelector('[data-testid="assistant-message-body"]');
+        const latestText = latestBody?.textContent || '';
+
+        return messages.length > before.messageCount
+          || earlierCount > before.earlierCount
+          || (latestId && latestId !== before.latestId)
+          || (latestText && latestText !== before.latestText);
+      },
+      beforeSnapshot,
+      { timeout: 30000 },
+    );
+  } catch (error) {
+    const safePrompt = prompt.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'turn';
+    await page.screenshot({
+      path: path.resolve('test-results', `live-assistant-draft-rewrite-timeout-${safePrompt}.png`),
+      fullPage: true,
+    });
+    throw error;
+  }
+  const latest = page.locator('[data-testid="assistant-message"][data-assistant-message-latest="true"]');
   await latest.scrollIntoViewIfNeeded();
   return latest.locator('[data-testid="assistant-message-body"]').innerText();
 }
@@ -353,6 +391,24 @@ async function main() {
     results.push({ step: 'shorter', passed: true });
 
     await publishDraftContext(page);
+    const longerAnswer = await askAssistant(page, 'make it longer and include more details without adding new facts');
+    assertIncludes(longerAnswer, /more detailed format/i, 'more detailed format label');
+    assertIncludes(longerAnswer, /forgot escitalopram twice/i, 'longer med adherence fact');
+    assertIncludes(longerAnswer, /therapy referral/i, 'longer plan fact');
+    assertNotIncludes(longerAnswer, /safe Veranote answer|Get the source in cleanly|What should I focus on/i, 'longer workflow fallback');
+    const longerAction = await clickLatestApplyToDraft(page);
+    if (longerAction?.rewriteLabel !== 'more detailed format') {
+      throw new Error(`Expected more detailed rewrite label, received ${longerAction?.rewriteLabel}`);
+    }
+    if ((longerAction?.draftText || '').length <= ACTIVE_DRAFT.length) {
+      throw new Error('Longer action draft text was not longer than the active draft.');
+    }
+    assertIncludes(longerAction.draftText || '', /forgot escitalopram twice/i, 'longer action med adherence fact');
+    assertIncludes(longerAction.draftText || '', /therapy referral/i, 'longer action plan fact');
+    assertNotIncludes(longerAction.draftText || '', /newly added|invented|unreported/i, 'longer action invented-fact language');
+    results.push({ step: 'longer-more-detailed', passed: true });
+
+    await publishDraftContext(page);
     const storyAnswer = await askAssistant(page, 'make this follow up note flow like a narritive story but do not add facts');
     assertIncludes(storyAnswer, /narrative story-flow format/i, 'narrative story-flow label');
     assertIncludes(storyAnswer, /forgot escitalopram twice/i, 'story med adherence fact');
@@ -411,6 +467,11 @@ async function main() {
         type: shorterAction.type,
         rewriteLabel: shorterAction.rewriteLabel,
         draftTextLength: shorterAction.draftText?.length || 0,
+      },
+      longerAction: {
+        type: longerAction.type,
+        rewriteLabel: longerAction.rewriteLabel,
+        draftTextLength: longerAction.draftText?.length || 0,
       },
       storyAction: {
         type: storyAction.type,
