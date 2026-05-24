@@ -28,12 +28,16 @@ const adapters = read('src/target-adapters.ts');
   'copy-transfer-section',
   'paste-transfer-section',
   'mark-transfer-done',
+  'draft-import-text',
+  'import-draft-clipboard',
+  'parse-draft-text',
   'ehr-target',
 ].forEach((expected) => assertIncludes('renderer/index.html', html, expected));
 
 [
   'copyTransferSection',
   'pasteTransferSection',
+  'readClipboardText',
   'setCompactMode',
   'hideWindow',
 ].forEach((expected) => assertIncludes('src/preload.ts', preload, expected));
@@ -41,6 +45,7 @@ const adapters = read('src/target-adapters.ts');
 [
   'overlay:copy-transfer-section',
   'overlay:paste-transfer-section',
+  'overlay:read-clipboard-text',
   'overlay:set-compact-mode',
   'overlay:hide-window',
   'explicit provider click',
@@ -57,6 +62,9 @@ const adapters = read('src/target-adapters.ts');
   'icanotes',
   'generic',
   'NOTE_PACKAGES',
+  'parseDraftBlocks',
+  'importDraftIntoTransferQueue',
+  'classifyDraftHeading',
 ].forEach((expected) => assertIncludes('renderer/overlay.js', renderer, expected));
 
 [
@@ -64,6 +72,7 @@ const adapters = read('src/target-adapters.ts');
   '.section-tab.active',
   '.is-compact',
   '.transfer-card',
+  '.draft-import-card',
 ].forEach((expected) => assertIncludes('renderer/overlay.css', styles, expected));
 
 [

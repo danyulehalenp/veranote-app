@@ -19,8 +19,20 @@ Mini Veranote is provider-controlled:
 - EHR target selector for WellSky, Tebra/Kareo, Epic, athenaOne, Valant, TherapyNotes, SimplePractice, ICANotes, and Generic EHR.
 - Note package selector for psych follow-up, psych evaluation, therapy progress, and discharge/transition notes.
 - Section queue with editable text, copy, paste, next section, mark done, and reset checklist actions.
+- Import Veranote draft flow that reads clipboard text or manual paste, then splits common note headings into the transfer queue.
 - Active EHR field confirmation using the existing macOS desktop-context bridge.
 - Existing dictation bridge remains available in a secondary panel.
+
+## Draft Import Workflow
+
+1. Finalize or review the note in Veranote.
+2. Copy the final note text.
+3. Open Mini Veranote and use **Import Clipboard**.
+4. Review the parsed sections in the transfer queue.
+5. Click the destination EHR field, then use **Copy Section** or **Paste into Active Field**.
+6. Mark each section done after verifying it landed correctly.
+
+The parser recognizes common headings such as HPI, history, subjective, MSE, objective, assessment, formulation, impression, plan, risk, safety, billing, CPT, and MDM. If a heading is not recognized, the text stays in the narrative section for provider review.
 
 ## Running Locally
 
@@ -66,7 +78,7 @@ npm --prefix desktop-overlay run validate:desktop
 
 ## Next Product Steps
 
-1. Feed final Veranote draft sections from the web app directly into the transfer queue.
+1. Add one-click handoff from the web app review page into the desktop transfer queue.
 2. Add EHR-specific field recipes after observing real provider copy/paste workflows.
 3. Add source evidence badges beside each section so providers can confirm traceability before transfer.
 4. Package and notarize the overlay after the workflow is stable.

@@ -62,6 +62,11 @@
   const transferProgressBar = document.getElementById('transfer-progress-bar');
   const transferProgressCopy = document.getElementById('transfer-progress-copy');
   const transferStatusCopy = document.getElementById('transfer-status-copy');
+  const draftImportText = document.getElementById('draft-import-text');
+  const importDraftClipboardButton = document.getElementById('import-draft-clipboard');
+  const parseDraftTextButton = document.getElementById('parse-draft-text');
+  const clearDraftImportButton = document.getElementById('clear-draft-import');
+  const draftImportStatus = document.getElementById('draft-import-status');
 
   let pollTimer = null;
   let mediaStream = null;
@@ -129,6 +134,7 @@
     stopSession: async () => ({ stopped: true }),
     openDraft: async () => ({ opened: false }),
     pasteCurrentField: async () => ({ detail: 'Browser preview cannot paste into desktop apps.' }),
+    readClipboardText: async () => ({ text: '', readAt: new Date().toISOString() }),
   };
 
   const EHR_LABELS = {
@@ -447,6 +453,148 @@
     if (miniSummaryCopy) {
       miniSummaryCopy.textContent = message;
     }
+  }
+
+  function setDraftImportStatus(message) {
+    if (draftImportStatus) {
+      draftImportStatus.textContent = message;
+    }
+  }
+
+  function normalizeHeading(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^[#*\-\s]+/, '')
+      .replace(/[:*\-\s]+$/, '')
+      .replace(/[^a-z0-9/ &-]/g, ' ')
+      .replace(/\s+/g, ' ');
+  }
+
+  function classifyDraftHeading(rawHeading) {
+    const heading = normalizeHeading(rawHeading);
+    if (!heading) {
+      return '';
+    }
+    if (/\b(billing|cpt|coding|time|mdm|medical decision|level of service|los)\b/.test(heading)) {
+      return 'billing';
+    }
+    if (/\b(risk|safety|suicid|homicid|violence|means|protective|crisis)\b/.test(heading)) {
+      return 'risk';
+    }
+    if (/\b(plan|recommendation|follow up|aftercare|disposition|intervention|homework)\b/.test(heading)) {
+      return 'plan';
+    }
+    if (/\b(assessment|formulation|impression|diagnos|progress|clinical status)\b/.test(heading)) {
+      return 'assessment';
+    }
+    if (/\b(mse|mental status|objective|observation|exam|psych exam)\b/.test(heading)) {
+      return 'mse';
+    }
+    if (/\b(hpi|history|interval|subjective|reason|chief|course|session focus|presenting)\b/.test(heading)) {
+      return 'hpi';
+    }
+    return '';
+  }
+
+  function parseDraftBlocks(draftText) {
+    const normalized = String(draftText || '').replace(/\r\n/g, '\n').trim();
+    if (!normalized) {
+      return [];
+    }
+
+    const lines = normalized.split('\n');
+    const blocks = [];
+    let current = { heading: 'Imported narrative', id: 'hpi', lines: [] };
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) {
+        if (current.lines.length) {
+          current.lines.push('');
+        }
+        continue;
+      }
+
+      const colonMatch = line.match(/^(.{3,80}?):\s*(.*)$/);
+      const standaloneHeading = /^[A-Z][A-Za-z0-9 /&()-]{2,80}$/.test(line) && line.split(/\s+/).length <= 8;
+      const headingText = colonMatch?.[1] || (standaloneHeading ? line : '');
+      const classified = classifyDraftHeading(headingText);
+
+      if (classified) {
+        if (current.lines.some((item) => item.trim())) {
+          blocks.push(current);
+        }
+        current = {
+          heading: headingText,
+          id: classified,
+          lines: [],
+        };
+        if (colonMatch?.[2]?.trim()) {
+          current.lines.push(colonMatch[2].trim());
+        }
+        continue;
+      }
+
+      current.lines.push(line);
+    }
+
+    if (current.lines.some((item) => item.trim())) {
+      blocks.push(current);
+    }
+
+    return blocks.map((block) => ({
+      id: block.id,
+      heading: block.heading,
+      text: block.lines.join('\n').replace(/\n{3,}/g, '\n\n').trim(),
+    })).filter((block) => block.text);
+  }
+
+  function buildImportedSections(draftText) {
+    const blocks = parseDraftBlocks(draftText);
+    const baseSections = makeTransferSections(transferState.ehr, transferState.notePackage);
+
+    if (!blocks.length) {
+      const fallback = baseSections.find((section) => section.id === 'hpi') || baseSections[0];
+      fallback.text = String(draftText || '').trim();
+      fallback.done = false;
+      return baseSections;
+    }
+
+    return baseSections.map((section) => {
+      const matchingBlocks = blocks.filter((block) => block.id === section.id);
+      if (!matchingBlocks.length) {
+        return {
+          ...section,
+          text: '',
+          done: false,
+        };
+      }
+      return {
+        ...section,
+        text: matchingBlocks.map((block) => block.text).join('\n\n'),
+        done: false,
+      };
+    }).filter((section) => section.text.trim() || section.id !== 'billing');
+  }
+
+  function importDraftIntoTransferQueue(draftText, sourceLabel) {
+    const text = String(draftText || '').trim();
+    if (!text) {
+      setDraftImportStatus('No draft text found to import.');
+      setTransferStatus('No draft text found to import.', 'error');
+      return false;
+    }
+
+    transferState.sections = buildImportedSections(text);
+    transferState.activeIndex = 0;
+    persistTransferState();
+    renderTransferDock();
+    const importedCount = transferState.sections.filter((section) => section.text.trim()).length;
+    const message = `Imported ${importedCount} section${importedCount === 1 ? '' : 's'} from ${sourceLabel}. Review before transfer.`;
+    setDraftImportStatus(message);
+    setTransferStatus(message, 'success');
+    return true;
   }
 
   function renderTransferDock() {
@@ -1118,6 +1266,30 @@
   resetTransferChecklistButton?.addEventListener('click', () => {
     resetTransferSections();
     setTransferStatus('Transfer checklist reset. Review each section before sending anything to the EHR.', 'neutral');
+  });
+
+  importDraftClipboardButton?.addEventListener('click', () => {
+    void overlayApi.readClipboardText().then((payload) => {
+      if (draftImportText) {
+        draftImportText.value = payload?.text || '';
+      }
+      importDraftIntoTransferQueue(payload?.text || '', 'clipboard');
+    }).catch((error) => {
+      const message = error instanceof Error ? error.message : 'Unable to read clipboard.';
+      setDraftImportStatus(message);
+      setTransferStatus(message, 'error');
+    });
+  });
+
+  parseDraftTextButton?.addEventListener('click', () => {
+    importDraftIntoTransferQueue(draftImportText?.value || '', 'manual paste');
+  });
+
+  clearDraftImportButton?.addEventListener('click', () => {
+    if (draftImportText) {
+      draftImportText.value = '';
+    }
+    setDraftImportStatus('Draft import box cleared.');
   });
 
   startButton?.addEventListener('click', () => {

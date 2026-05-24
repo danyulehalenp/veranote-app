@@ -68,6 +68,26 @@
         </div>
         <div class="panel-copy tight" id="transfer-progress-copy">0 of 0 sections transferred.</div>
 
+        <details class="draft-import-card">
+          <summary>
+            <span>Import Veranote draft</span>
+            <strong>Split final note into sections</strong>
+          </summary>
+          <div class="panel-copy">
+            Copy the finalized Veranote note, then import it here. Mini Veranote parses common headings into the transfer queue for provider review.
+          </div>
+          <label class="section-editor">
+            <span>Draft text to import</span>
+            <textarea id="draft-import-text" spellcheck="true" placeholder="Paste finalized Veranote draft here, or use Import Clipboard."></textarea>
+          </label>
+          <div class="button-row transfer-actions">
+            <button id="import-draft-clipboard" class="primary" type="button">Import Clipboard</button>
+            <button id="parse-draft-text" type="button">Split into Queue</button>
+            <button id="clear-draft-import" type="button">Clear</button>
+          </div>
+          <div class="panel-copy" id="draft-import-status">No draft imported yet.</div>
+        </details>
+
         <div class="section-tabs" id="transfer-section-tabs"></div>
 
         <label class="section-editor">

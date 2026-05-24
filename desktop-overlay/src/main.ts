@@ -729,6 +729,13 @@ ipcMain.handle('overlay:paste-transfer-section', async (_event: unknown, input: 
   return lastMiniTransferAction;
 });
 
+ipcMain.handle('overlay:read-clipboard-text', async () => {
+  return {
+    text: clipboard.readText(),
+    readAt: new Date().toISOString(),
+  };
+});
+
 ipcMain.handle('overlay:set-compact-mode', async (_event: unknown, input: { compact: boolean }) => {
   if (overlayWindow) {
     overlayWindow.setSize(input.compact ? 360 : 500, input.compact ? 118 : 720);

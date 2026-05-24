@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('veranoteOverlay', {
     ehrLabel?: string;
     text: string;
   }) => ipcRenderer.invoke('overlay:paste-transfer-section', input),
+  readClipboardText: () => ipcRenderer.invoke('overlay:read-clipboard-text'),
   setCompactMode: (input: { compact: boolean }) => ipcRenderer.invoke('overlay:set-compact-mode', input),
   hideWindow: () => ipcRenderer.invoke('overlay:hide-window'),
   commitCommand: (input: {
