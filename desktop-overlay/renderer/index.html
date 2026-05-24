@@ -3,59 +3,126 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Veranote Dictation Overlay</title>
+    <title>Mini Veranote Transfer Dock</title>
     <link rel="stylesheet" href="./overlay.css" />
   </head>
   <body>
-    <main class="overlay-shell">
+    <main class="overlay-shell" id="overlay-shell">
       <div class="overlay-header">
         <div>
-          <div class="eyebrow">Veranote</div>
-          <h1>Dictation Overlay</h1>
+          <div class="eyebrow">Mini Veranote</div>
+          <h1>EHR Transfer Dock</h1>
         </div>
-        <div class="status-pill" id="capture-state-pill">Idle</div>
+        <div class="header-actions">
+          <div class="status-pill" id="capture-state-pill">Idle</div>
+          <button class="ghost-button" id="mini-mode-toggle" type="button">Minimize</button>
+          <button class="ghost-button danger" id="hide-window" type="button">Hide</button>
+        </div>
       </div>
 
-      <section class="signal-card">
-        <div class="signal-label">Speech box</div>
-        <div class="signal-value" id="speech-box-state">Overlay ready</div>
-        <p class="signal-copy">
-          This desktop layer now previews queued transcript and can route accepted segments back into a linked Veranote draft.
-        </p>
+      <section class="mini-summary" id="mini-summary">
+        <div>
+          <strong id="mini-summary-label">Ready to transfer</strong>
+          <span id="mini-summary-copy">Choose an EHR, click a note section, then paste into the active EHR field.</span>
+        </div>
+        <button class="primary" id="mini-open-button" type="button">Open</button>
       </section>
 
-      <section class="grid">
-        <div class="panel">
-          <div class="panel-label">Current target</div>
-          <div class="panel-value" id="current-target">Veranote source mode</div>
-          <div class="panel-copy" id="current-target-copy">Direct EHR insertion comes after backend bridge and target routing are wired.</div>
+      <section class="transfer-card">
+        <div class="panel-kicker">Provider-controlled transfer</div>
+        <div class="transfer-toolbar">
+          <label>
+            <span>EHR target</span>
+            <select id="ehr-target">
+              <option value="wellsky">WellSky</option>
+              <option value="tebra">Tebra / Kareo</option>
+              <option value="epic">Epic</option>
+              <option value="athena">athenaOne</option>
+              <option value="valant">Valant</option>
+              <option value="therapynotes">TherapyNotes</option>
+              <option value="simplepractice">SimplePractice</option>
+              <option value="icanotes">ICANotes</option>
+              <option value="generic">Generic EHR</option>
+            </select>
+          </label>
+          <label>
+            <span>Note package</span>
+            <select id="note-package">
+              <option value="psych-followup">Psych follow-up</option>
+              <option value="psych-eval">Psych evaluation</option>
+              <option value="therapy-progress">Therapy progress</option>
+              <option value="discharge">Discharge / transition</option>
+            </select>
+          </label>
         </div>
-        <div class="panel">
-          <div class="panel-label">Hotkey</div>
-          <div class="panel-value">Cmd/Ctrl + Shift + D</div>
-          <div class="panel-copy">Toggles the floating speech box.</div>
+
+        <div class="step-strip" aria-label="Transfer steps">
+          <span>1. Review section</span>
+          <span>2. Click EHR field</span>
+          <span>3. Copy or paste</span>
+          <span>4. Mark done</span>
+        </div>
+
+        <div class="transfer-progress">
+          <div id="transfer-progress-bar"></div>
+        </div>
+        <div class="panel-copy tight" id="transfer-progress-copy">0 of 0 sections transferred.</div>
+
+        <div class="section-tabs" id="transfer-section-tabs"></div>
+
+        <label class="section-editor">
+          <span id="active-section-label">Current section</span>
+          <textarea id="active-section-text" spellcheck="true"></textarea>
+        </label>
+
+        <div class="button-row transfer-actions">
+          <button id="copy-transfer-section" class="primary" type="button">Copy Section</button>
+          <button id="paste-transfer-section" type="button">Paste into Active Field</button>
+          <button id="mark-transfer-done" type="button">Mark Done</button>
+        </div>
+        <div class="button-row transfer-actions secondary-row">
+          <button id="previous-transfer-section" type="button">Previous</button>
+          <button id="next-transfer-section" type="button">Next Section</button>
+          <button id="reset-transfer-checklist" type="button">Reset Checklist</button>
+          <button id="confirm-target" type="button">Confirm EHR Field</button>
+        </div>
+        <div class="panel-copy" id="transfer-status-copy">
+          Nothing transfers automatically. The provider chooses the section and clicks copy or paste.
         </div>
       </section>
 
-      <section class="panel">
-        <div class="panel-label">Field target</div>
-        <div class="panel-value" id="field-target-label">No field target loaded</div>
+      <details class="panel" open>
+        <summary>
+          <span>Active EHR target</span>
+          <strong id="field-target-label">No field target loaded</strong>
+        </summary>
         <div class="panel-copy" id="field-target-copy">The overlay will load the provider’s destination-aware field workflow here.</div>
-        <div class="button-row">
-          <button id="previous-target">Previous field</button>
-          <button id="next-target">Next field</button>
-          <button id="confirm-target">Confirm active app target</button>
+        <div class="grid compact-grid">
+          <div>
+            <div class="panel-label">Current target</div>
+            <div class="panel-value" id="current-target">Veranote source mode</div>
+            <div class="panel-copy" id="current-target-copy">Direct EHR insertion uses clipboard fallback unless macOS accessibility confirms a focused field.</div>
+          </div>
+          <div>
+            <div class="panel-label">Hotkey</div>
+            <div class="panel-value">Cmd/Ctrl + Shift + D</div>
+            <div class="panel-copy">Toggles this floating dock.</div>
+          </div>
         </div>
-      </section>
+        <div class="button-row">
+          <button id="previous-target" type="button">Previous field</button>
+          <button id="next-target" type="button">Next field</button>
+        </div>
+      </details>
 
-      <section class="panel">
-        <div class="panel-label">Next integration step</div>
-        <div class="panel-value" id="next-step">Loading...</div>
-        <div class="panel-copy" id="provider-status">Checking overlay status...</div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-label">Overlay controls</div>
+      <details class="panel">
+        <summary>
+          <span>Dictation bridge</span>
+          <strong id="speech-box-state">Overlay ready</strong>
+        </summary>
+        <div class="panel-copy">
+          Dictation can still feed Veranote drafts, but EHR transfer remains review-first and provider-clicked.
+        </div>
         <div class="control-grid">
           <label>
             <span>Encounter id</span>
@@ -79,37 +146,47 @@
           </label>
         </div>
         <div class="button-row">
-          <button id="refresh-status">Refresh status</button>
-          <button id="start-session" class="primary">Start session</button>
-          <button id="pause-session">Pause mic</button>
-          <button id="resume-session">Resume mic</button>
-          <button id="stop-session">Stop session</button>
+          <button id="refresh-status" type="button">Refresh status</button>
+          <button id="start-session" class="primary" type="button">Start dictation</button>
+          <button id="pause-session" type="button">Pause mic</button>
+          <button id="resume-session" type="button">Resume mic</button>
+          <button id="stop-session" type="button">Stop session</button>
         </div>
         <div class="panel-copy" id="capture-status-copy">Microphone capture is idle.</div>
-      </section>
+      </details>
 
-      <section class="panel">
-        <div class="panel-label">Stored commands</div>
-        <div class="panel-value" id="command-summary">Provider dictation commands will appear here.</div>
-        <div class="panel-copy">Use these like a compact Fluency-style command tray. Commands still route into the linked Veranote draft, not directly into another app yet.</div>
-        <div class="segment-list" id="command-tray"></div>
-      </section>
-
-      <section class="panel transcript-panel">
-        <div class="panel-label">Live transcript queue</div>
-        <div class="panel-value" id="queue-summary">No queued transcript yet</div>
+      <details class="panel">
+        <summary>
+          <span>Queued transcript</span>
+          <strong id="queue-summary">No queued transcript yet</strong>
+        </summary>
         <div class="panel-copy" id="interim-preview">Interim transcript will appear here while the overlay session is active.</div>
         <div class="segment-list" id="pending-segments"></div>
-      </section>
+      </details>
+
+      <details class="panel">
+        <summary>
+          <span>Stored commands</span>
+          <strong id="command-summary">Provider dictation commands will appear here.</strong>
+        </summary>
+        <div class="panel-copy">Compact command tray for provider-defined dictation commands.</div>
+        <div class="segment-list" id="command-tray"></div>
+      </details>
 
       <section class="panel">
         <div class="panel-label">Linked Veranote draft</div>
         <div class="panel-value" id="draft-link-state">Not linked yet</div>
         <div class="panel-copy" id="draft-link-copy">The first accepted segment will create a connected draft checkpoint.</div>
         <div class="button-row">
-          <button id="open-draft">Open in Veranote</button>
-          <button id="paste-latest">Paste current field</button>
+          <button id="open-draft" type="button">Open in Veranote</button>
+          <button id="paste-latest" type="button">Paste current field buffer</button>
         </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-label">Next integration step</div>
+        <div class="panel-value" id="next-step">Loading...</div>
+        <div class="panel-copy" id="provider-status">Checking overlay status...</div>
       </section>
     </main>
 

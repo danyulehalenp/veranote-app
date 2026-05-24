@@ -13,6 +13,7 @@ declare module 'electron' {
     hide(): void;
     show(): void;
     focus(): void;
+    setSize(width: number, height: number): void;
   }
 
   export const globalShortcut: {

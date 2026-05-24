@@ -17,6 +17,20 @@ contextBridge.exposeInMainWorld('veranoteOverlay', {
   previousTarget: () => ipcRenderer.invoke('overlay:previous-target'),
   confirmTarget: () => ipcRenderer.invoke('overlay:confirm-target'),
   pasteCurrentField: () => ipcRenderer.invoke('overlay:paste-current-field'),
+  copyTransferSection: (input: {
+    sectionId: string;
+    sectionLabel: string;
+    ehrLabel?: string;
+    text: string;
+  }) => ipcRenderer.invoke('overlay:copy-transfer-section', input),
+  pasteTransferSection: (input: {
+    sectionId: string;
+    sectionLabel: string;
+    ehrLabel?: string;
+    text: string;
+  }) => ipcRenderer.invoke('overlay:paste-transfer-section', input),
+  setCompactMode: (input: { compact: boolean }) => ipcRenderer.invoke('overlay:set-compact-mode', input),
+  hideWindow: () => ipcRenderer.invoke('overlay:hide-window'),
   commitCommand: (input: {
     commandId: string;
     targetSection?: string;

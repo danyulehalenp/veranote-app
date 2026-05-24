@@ -2,12 +2,13 @@
   "name": "veranote-dictation-overlay",
   "version": "0.1.0",
   "private": true,
-  "description": "Desktop overlay scaffold for always-on-top Veranote dictation.",
+  "description": "Desktop overlay scaffold for always-on-top Mini Veranote transfer and dictation.",
   "main": "dist/main.js",
   "scripts": {
     "dev": "electron ./dist/main.js",
     "build": "tsc -p tsconfig.json",
-    "validate:desktop": "node dist/validate-desktop-insertion.js"
+    "validate:desktop": "node dist/validate-desktop-insertion.js",
+    "validate:transfer-dock": "node scripts/validate-transfer-dock.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",

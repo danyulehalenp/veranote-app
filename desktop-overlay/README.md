@@ -1,36 +1,72 @@
-# Veranote Dictation Overlay
+# Mini Veranote Transfer Dock
 
-This is the desktop scaffold for the future always-on-top dictation speech box.
+This package is the desktop companion for Veranote. It runs as an always-on-top Electron window that can sit over a provider's EHR while the provider transfers reviewed note sections.
 
-## Purpose
+## Safety Model
 
-The web module is now strong at:
+Mini Veranote is provider-controlled:
 
-- mic capture
-- backend transcription sessions
-- review-first insertion
-- provider selection and fallback visibility
-- stored command expansion
+- It does not silently write into an EHR.
+- It copies or pastes only after an explicit button click.
+- If macOS accessibility insertion is unavailable, it falls back to clipboard-only transfer.
+- The provider still chooses the destination EHR field and reviews the text before transfer.
 
-This desktop package is the next layer for:
+## Current Features
 
-- always-on-top speech box
-- global hotkeys
-- desktop target routing
-- future EHR field insertion
+- Always-on-top floating dock.
+- Frameless draggable header.
+- Minimized mode and hide button.
+- EHR target selector for WellSky, Tebra/Kareo, Epic, athenaOne, Valant, TherapyNotes, SimplePractice, ICANotes, and Generic EHR.
+- Note package selector for psych follow-up, psych evaluation, therapy progress, and discharge/transition notes.
+- Section queue with editable text, copy, paste, next section, mark done, and reset checklist actions.
+- Active EHR field confirmation using the existing macOS desktop-context bridge.
+- Existing dictation bridge remains available in a secondary panel.
 
-## Current State
+## Running Locally
 
-- Electron shell scaffold
-- frameless always-on-top overlay window
-- preload bridge
-- placeholder overlay UI
-- status IPC seam
+Build first:
 
-## Next Steps
+```bash
+npm --prefix desktop-overlay run build
+```
 
-1. Wire overlay controls to `/api/dictation/providers`
-2. Start / pause / stop backend dictation sessions from the overlay
-3. Show live transcript preview in the floating speech box
-4. Route reviewed text back into Veranote source lanes
-5. Add target picker for EHR field workflows
+Then launch:
+
+```bash
+npm --prefix desktop-overlay run dev
+```
+
+The global hotkey is:
+
+```text
+Cmd/Ctrl + Shift + D
+```
+
+## Validation
+
+Static transfer-dock wiring:
+
+```bash
+npm --prefix desktop-overlay run validate:transfer-dock
+```
+
+TypeScript build:
+
+```bash
+npm --prefix desktop-overlay run build
+```
+
+Desktop insertion smoke check:
+
+```bash
+npm --prefix desktop-overlay run validate:desktop
+```
+
+`validate:desktop` can be blocked by macOS Accessibility permissions or by not having a text field focused. That does not mean the provider-controlled clipboard fallback is broken.
+
+## Next Product Steps
+
+1. Feed final Veranote draft sections from the web app directly into the transfer queue.
+2. Add EHR-specific field recipes after observing real provider copy/paste workflows.
+3. Add source evidence badges beside each section so providers can confirm traceability before transfer.
+4. Package and notarize the overlay after the workflow is stable.

@@ -39,6 +39,15 @@ let lastOverlayPasteBuffer: {
   preferredBehavior?: string;
   insertionNote?: string;
 } | null = null;
+let lastMiniTransferAction: {
+  sectionId: string;
+  sectionLabel: string;
+  ehrLabel?: string;
+  action: 'copied' | 'pasted';
+  mode: string;
+  detail: string;
+  completedAt: string;
+} | null = null;
 let overlayFieldBuffers: Record<string, {
   text: string;
   fieldTargetId: string;
@@ -324,13 +333,15 @@ function updateCurrentFieldBuffer(text: string) {
 
 function createOverlayWindow() {
   overlayWindow = new BrowserWindow({
-    width: 420,
-    height: 320,
+    width: 500,
+    height: 720,
+    minWidth: 360,
+    minHeight: 118,
     frame: false,
     alwaysOnTop: true,
     transparent: false,
     resizable: true,
-    title: 'Veranote Dictation Overlay',
+    title: 'Mini Veranote Transfer Dock',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -398,6 +409,7 @@ ipcMain.handle('overlay:get-status', async () => {
       activeDraftId: activeOverlayDraftId || null,
       activeDraftUrl: activeOverlayDraftUrl || null,
       pasteBuffer: lastOverlayPasteBuffer,
+      lastMiniTransferAction,
       currentFieldBuffer: getCurrentFieldBuffer(),
       confirmedDesktopTarget,
       insertionStrategies: resolveDesktopInsertionStrategies({
@@ -428,6 +440,7 @@ ipcMain.handle('overlay:get-status', async () => {
       activeDraftId: activeOverlayDraftId || null,
       activeDraftUrl: activeOverlayDraftUrl || null,
       pasteBuffer: lastOverlayPasteBuffer,
+      lastMiniTransferAction,
       currentFieldBuffer: getCurrentFieldBuffer(),
       confirmedDesktopTarget,
       insertionStrategies: resolveDesktopInsertionStrategies({
@@ -646,6 +659,86 @@ ipcMain.handle('overlay:paste-current-field', async () => {
     ...result,
     pasteBuffer: currentFieldBuffer,
   };
+});
+
+ipcMain.handle('overlay:copy-transfer-section', async (_event: unknown, input: {
+  sectionId: string;
+  sectionLabel: string;
+  ehrLabel?: string;
+  text: string;
+}) => {
+  const text = input.text.trim();
+  if (!text) {
+    throw new Error('No section text is ready to copy.');
+  }
+
+  clipboard.writeText(text);
+  const completedAt = new Date().toISOString();
+  lastMiniTransferAction = {
+    sectionId: input.sectionId,
+    sectionLabel: input.sectionLabel,
+    ehrLabel: input.ehrLabel,
+    action: 'copied',
+    mode: 'clipboard_only',
+    detail: `${input.sectionLabel} copied to clipboard for provider-controlled paste.`,
+    completedAt,
+  };
+  lastOverlayPasteBuffer = {
+    text,
+    fieldTargetLabel: input.sectionLabel,
+    destinationLabel: input.ehrLabel,
+    committedAt: completedAt,
+    preferredBehavior: 'append',
+    insertionNote: 'Mini Veranote copied this section only after an explicit provider click.',
+  };
+
+  return lastMiniTransferAction;
+});
+
+ipcMain.handle('overlay:paste-transfer-section', async (_event: unknown, input: {
+  sectionId: string;
+  sectionLabel: string;
+  ehrLabel?: string;
+  text: string;
+}) => {
+  const text = input.text.trim();
+  if (!text) {
+    throw new Error('No section text is ready to paste.');
+  }
+
+  const result = await insertTextIntoCurrentField(text);
+  const completedAt = new Date().toISOString();
+  lastMiniTransferAction = {
+    sectionId: input.sectionId,
+    sectionLabel: input.sectionLabel,
+    ehrLabel: input.ehrLabel,
+    action: 'pasted',
+    mode: result.mode,
+    detail: result.detail,
+    completedAt,
+  };
+  lastOverlayPasteBuffer = {
+    text,
+    fieldTargetLabel: input.sectionLabel,
+    destinationLabel: input.ehrLabel,
+    committedAt: completedAt,
+    preferredBehavior: 'append',
+    insertionNote: 'Mini Veranote attempted insertion only after an explicit provider click; clipboard fallback remains available.',
+  };
+
+  return lastMiniTransferAction;
+});
+
+ipcMain.handle('overlay:set-compact-mode', async (_event: unknown, input: { compact: boolean }) => {
+  if (overlayWindow) {
+    overlayWindow.setSize(input.compact ? 360 : 500, input.compact ? 118 : 720);
+  }
+  return { compact: input.compact };
+});
+
+ipcMain.handle('overlay:hide-window', async () => {
+  overlayWindow?.hide();
+  return { hidden: true };
 });
 
 ipcMain.handle('overlay:upload-chunk', async (_event: unknown, input: {

@@ -42,6 +42,26 @@
   const nextTargetButton = document.getElementById('next-target');
   const previousTargetButton = document.getElementById('previous-target');
   const confirmTargetButton = document.getElementById('confirm-target');
+  const overlayShell = document.getElementById('overlay-shell');
+  const miniModeToggle = document.getElementById('mini-mode-toggle');
+  const miniOpenButton = document.getElementById('mini-open-button');
+  const hideWindowButton = document.getElementById('hide-window');
+  const miniSummaryLabel = document.getElementById('mini-summary-label');
+  const miniSummaryCopy = document.getElementById('mini-summary-copy');
+  const ehrTarget = document.getElementById('ehr-target');
+  const notePackage = document.getElementById('note-package');
+  const transferSectionTabs = document.getElementById('transfer-section-tabs');
+  const activeSectionLabel = document.getElementById('active-section-label');
+  const activeSectionText = document.getElementById('active-section-text');
+  const copyTransferSectionButton = document.getElementById('copy-transfer-section');
+  const pasteTransferSectionButton = document.getElementById('paste-transfer-section');
+  const markTransferDoneButton = document.getElementById('mark-transfer-done');
+  const previousTransferSectionButton = document.getElementById('previous-transfer-section');
+  const nextTransferSectionButton = document.getElementById('next-transfer-section');
+  const resetTransferChecklistButton = document.getElementById('reset-transfer-checklist');
+  const transferProgressBar = document.getElementById('transfer-progress-bar');
+  const transferProgressCopy = document.getElementById('transfer-progress-copy');
+  const transferStatusCopy = document.getElementById('transfer-status-copy');
 
   let pollTimer = null;
   let mediaStream = null;
@@ -52,6 +72,274 @@
   let captureUploadEnabled = false;
   let recordedAudioChunks = [];
   let reviewPending = false;
+  const TRANSFER_STATE_KEY = 'veranote-mini-transfer-dock-v1';
+  const COMPACT_STATE_KEY = 'veranote-mini-transfer-dock-compact-v1';
+  const overlayApi = window.veranoteOverlay || {
+    getStatus: async () => ({
+      appName: 'Mini Veranote Transfer Dock',
+      mode: 'browser-preview',
+      overlayVisible: true,
+      activeSessionId: null,
+      activeDraftId: null,
+      activeDraftUrl: null,
+      pasteBuffer: null,
+      lastMiniTransferAction: null,
+      currentFieldBuffer: null,
+      confirmedDesktopTarget: null,
+      insertionStrategies: ['clipboard_only'],
+      providers: [{ providerId: 'mock-stt', providerLabel: 'Preview provider', engineLabel: 'Browser preview', available: true }],
+      commandLibrary: [],
+      workflowProfile: null,
+      activeFieldTarget: null,
+      defaultSelection: { requestedProvider: 'mock-stt' },
+      sessionState: null,
+      interimSegment: null,
+      pendingSegments: [],
+      providerStatus: 'Browser preview mode. Electron bridge actions use safe mock responses.',
+      nextStep: 'Run the Electron app to connect this dock to desktop clipboard and EHR-field detection.',
+    }),
+    copyTransferSection: async (input) => ({
+      sectionId: input.sectionId,
+      sectionLabel: input.sectionLabel,
+      ehrLabel: input.ehrLabel,
+      action: 'copied',
+      mode: 'browser_preview',
+      detail: `${input.sectionLabel} would be copied in the Electron overlay.`,
+      completedAt: new Date().toISOString(),
+    }),
+    pasteTransferSection: async (input) => ({
+      sectionId: input.sectionId,
+      sectionLabel: input.sectionLabel,
+      ehrLabel: input.ehrLabel,
+      action: 'pasted',
+      mode: 'browser_preview',
+      detail: `${input.sectionLabel} would paste into the active field in the Electron overlay.`,
+      completedAt: new Date().toISOString(),
+    }),
+    setCompactMode: async (input) => ({ compact: input.compact }),
+    hideWindow: async () => ({ hidden: true }),
+    uploadChunk: async () => ({}),
+    nextTarget: async () => ({}),
+    previousTarget: async () => ({}),
+    confirmTarget: async () => ({}),
+    commitCommand: async () => ({}),
+    discardSegment: async () => ({}),
+    acceptSegment: async () => ({}),
+    startSession: async () => ({ sessionId: 'browser-preview-session' }),
+    stopSession: async () => ({ stopped: true }),
+    openDraft: async () => ({ opened: false }),
+    pasteCurrentField: async () => ({ detail: 'Browser preview cannot paste into desktop apps.' }),
+  };
+
+  const EHR_LABELS = {
+    wellsky: 'WellSky',
+    tebra: 'Tebra / Kareo',
+    epic: 'Epic',
+    athena: 'athenaOne',
+    valant: 'Valant',
+    therapynotes: 'TherapyNotes',
+    simplepractice: 'SimplePractice',
+    icanotes: 'ICANotes',
+    generic: 'Generic EHR',
+  };
+
+  const EHR_SECTION_LABELS = {
+    wellsky: {
+      hpi: 'Narrative summary / interval update',
+      mse: 'Mental status',
+      assessment: 'Assessment',
+      plan: 'Assessment-plan / treatment plan',
+      risk: 'Risk / safety narrative',
+      billing: 'Billing support note',
+    },
+    tebra: {
+      hpi: 'Subjective / HPI',
+      mse: 'Mental functional / MSE',
+      assessment: 'Assessment',
+      plan: 'Plan',
+      risk: 'Risk / safety',
+      billing: 'Coding support',
+    },
+    epic: {
+      hpi: 'HPI',
+      mse: 'Psych exam / MSE',
+      assessment: 'Assessment',
+      plan: 'Plan',
+      risk: 'Safety / risk',
+      billing: 'LOS support',
+    },
+    athena: {
+      hpi: 'HPI',
+      mse: 'Physical exam / psych',
+      assessment: 'Assessment',
+      plan: 'Plan',
+      risk: 'Risk / safety',
+      billing: 'Billing notes',
+    },
+    valant: {
+      hpi: 'Presenting problem / interval',
+      mse: 'Mental status exam',
+      assessment: 'Clinical assessment',
+      plan: 'Treatment plan',
+      risk: 'Safety planning',
+      billing: 'Service / coding support',
+    },
+    therapynotes: {
+      hpi: 'Session narrative',
+      mse: 'Current mental status',
+      assessment: 'Assessment',
+      plan: 'Plan / follow-up',
+      risk: 'Risk / safety',
+      billing: 'Service details',
+    },
+    simplepractice: {
+      hpi: 'Subjective',
+      mse: 'Objective / MSE',
+      assessment: 'Assessment',
+      plan: 'Plan',
+      risk: 'Risk / safety',
+      billing: 'Billing support',
+    },
+    icanotes: {
+      hpi: 'History / interval update',
+      mse: 'MSE',
+      assessment: 'Assessment',
+      plan: 'Plan',
+      risk: 'Risk assessment',
+      billing: 'Coding support',
+    },
+    generic: {
+      hpi: 'HPI / interval',
+      mse: 'MSE',
+      assessment: 'Assessment',
+      plan: 'Plan',
+      risk: 'Risk / safety',
+      billing: 'Billing support',
+    },
+  };
+
+  const NOTE_PACKAGES = {
+    'psych-followup': [
+      {
+        id: 'hpi',
+        label: 'HPI / interval',
+        text: 'Patient seen for follow-up. Interval symptoms, sleep, appetite, medication adherence, side effects, psychosocial stressors, and functional status should be summarized here from the finalized Veranote draft.',
+      },
+      {
+        id: 'mse',
+        label: 'MSE',
+        text: 'Mental status exam: appearance, behavior, speech, mood, affect, thought process, thought content, perception, cognition, insight, judgment, and risk elements should only include source-supported findings.',
+      },
+      {
+        id: 'assessment',
+        label: 'Assessment',
+        text: 'Assessment should reconcile interval history, response to treatment, medication tolerance, risk changes, diagnostic uncertainty, and source conflicts without overstating unsupported conclusions.',
+      },
+      {
+        id: 'plan',
+        label: 'Plan',
+        text: 'Plan should include provider-reviewed medication plan, therapy/supportive interventions, monitoring, follow-up, education, and safety instructions that belong in the chart.',
+      },
+      {
+        id: 'risk',
+        label: 'Risk / safety',
+        text: 'Risk documentation should preserve patient report, observed findings, collateral information, protective factors, safety planning, and any conflicts without false reassurance.',
+      },
+      {
+        id: 'billing',
+        label: 'Billing support',
+        text: 'Optional billing support: summarize time, complexity cues, psychotherapy add-on documentation, care coordination, and MDM support for provider review. This is not autonomous billing advice.',
+      },
+    ],
+    'psych-eval': [
+      {
+        id: 'hpi',
+        label: 'HPI / history',
+        text: 'Initial evaluation history should summarize chief concern, timeline, current symptoms, prior episodes, treatment history, substance use, medical factors, family history, social context, and collateral/source conflicts.',
+      },
+      {
+        id: 'mse',
+        label: 'MSE',
+        text: 'Mental status exam should document only source-supported observations across appearance, behavior, speech, mood, affect, thought process/content, perception, cognition, insight, judgment, and risk.',
+      },
+      {
+        id: 'assessment',
+        label: 'Formulation',
+        text: 'Assessment/formulation should synthesize diagnosis considerations, rule-outs, medical/substance confounders, severity, functional impact, strengths, and uncertainty without diagnosing from sparse data.',
+      },
+      {
+        id: 'plan',
+        label: 'Plan',
+        text: 'Plan should include provider-reviewed treatment recommendations, medication considerations, labs/monitoring, therapy level of care, follow-up, safety planning, and coordination needs.',
+      },
+      {
+        id: 'risk',
+        label: 'Risk / safety',
+        text: 'Risk section should separate reported, denied, observed, and collateral information for SI/HI, psychosis, impulsivity, access to means, protective factors, and safety steps.',
+      },
+      {
+        id: 'billing',
+        label: 'Billing support',
+        text: 'Optional billing support: summarize complexity and time elements for provider review after the note is complete.',
+      },
+    ],
+    'therapy-progress': [
+      {
+        id: 'hpi',
+        label: 'Session focus',
+        text: 'Session focus should summarize presenting concern, interval update, therapy themes, interventions used, patient response, and functioning since last session.',
+      },
+      {
+        id: 'mse',
+        label: 'Observations',
+        text: 'Observations should include only supported affect, engagement, speech, cognition, thought content, and risk-related details relevant to therapy documentation.',
+      },
+      {
+        id: 'assessment',
+        label: 'Progress',
+        text: 'Progress should connect symptoms, goals, response to intervention, barriers, and clinical impressions without unsupported certainty.',
+      },
+      {
+        id: 'plan',
+        label: 'Plan / homework',
+        text: 'Plan should include next-session focus, homework, coping practice, coordination, and follow-up.',
+      },
+      {
+        id: 'risk',
+        label: 'Risk / safety',
+        text: 'Risk/safety should preserve any screening results, denials, disclosures, collateral conflicts, and safety planning.',
+      },
+    ],
+    discharge: [
+      {
+        id: 'hpi',
+        label: 'Course summary',
+        text: 'Course summary should describe presenting problem, interval course, treatment response, unresolved issues, and discharge/transition rationale from source-supported material.',
+      },
+      {
+        id: 'mse',
+        label: 'Discharge MSE',
+        text: 'Discharge MSE should include only supported findings and avoid inventing normal findings.',
+      },
+      {
+        id: 'assessment',
+        label: 'Discharge assessment',
+        text: 'Discharge assessment should summarize stability, residual symptoms, risk context, diagnoses/uncertainty, and source conflicts.',
+      },
+      {
+        id: 'plan',
+        label: 'Aftercare plan',
+        text: 'Aftercare plan should include medications, follow-up, referrals, safety plan, crisis instructions, and care coordination as reviewed by provider.',
+      },
+      {
+        id: 'risk',
+        label: 'Risk / safety',
+        text: 'Risk/safety should avoid unsupported phrases like cleared or no risk and should preserve relevant denials, collateral, protective factors, and follow-up safety steps.',
+      },
+    ],
+  };
+
+  let transferState = hydrateTransferState();
 
   function normalizeCommandText(value) {
     return String(value || '')
@@ -71,6 +359,176 @@
       Array.isArray(command.spokenPhrases)
       && command.spokenPhrases.some((phrase) => normalizeCommandText(phrase) === normalized)
     )) || null;
+  }
+
+  function getCurrentEhrLabel() {
+    return EHR_LABELS[transferState.ehr] || 'Generic EHR';
+  }
+
+  function makeTransferSections(ehrValue, packageValue) {
+    const baseSections = NOTE_PACKAGES[packageValue] || NOTE_PACKAGES['psych-followup'];
+    const ehrLabels = EHR_SECTION_LABELS[ehrValue] || EHR_SECTION_LABELS.generic;
+
+    return baseSections.map((section) => ({
+      ...section,
+      ehrLabel: ehrLabels[section.id] || section.label,
+      done: false,
+    }));
+  }
+
+  function hydrateTransferState() {
+    const defaultState = {
+      ehr: 'wellsky',
+      notePackage: 'psych-followup',
+      activeIndex: 0,
+      sections: makeTransferSections('wellsky', 'psych-followup'),
+    };
+
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(TRANSFER_STATE_KEY) || 'null');
+      if (!parsed || !Array.isArray(parsed.sections) || !parsed.sections.length) {
+        return defaultState;
+      }
+      return {
+        ...defaultState,
+        ...parsed,
+        activeIndex: Math.max(0, Math.min(Number(parsed.activeIndex) || 0, parsed.sections.length - 1)),
+        sections: parsed.sections.map((section) => ({
+          id: String(section.id || 'section'),
+          label: String(section.label || 'Section'),
+          ehrLabel: String(section.ehrLabel || section.label || 'Section'),
+          text: String(section.text || ''),
+          done: Boolean(section.done),
+        })),
+      };
+    } catch {
+      return defaultState;
+    }
+  }
+
+  function persistTransferState() {
+    window.localStorage.setItem(TRANSFER_STATE_KEY, JSON.stringify(transferState));
+  }
+
+  function resetTransferSections() {
+    transferState.sections = makeTransferSections(transferState.ehr, transferState.notePackage);
+    transferState.activeIndex = 0;
+    persistTransferState();
+    renderTransferDock();
+  }
+
+  function getActiveTransferSection() {
+    if (!transferState.sections.length) {
+      resetTransferSections();
+    }
+    if (transferState.activeIndex < 0 || transferState.activeIndex >= transferState.sections.length) {
+      transferState.activeIndex = 0;
+    }
+    return transferState.sections[transferState.activeIndex];
+  }
+
+  function moveTransferSection(direction) {
+    if (!transferState.sections.length) {
+      resetTransferSections();
+      return;
+    }
+    transferState.activeIndex = (
+      transferState.activeIndex + direction + transferState.sections.length
+    ) % transferState.sections.length;
+    persistTransferState();
+    renderTransferDock();
+  }
+
+  function setTransferStatus(message, tone) {
+    if (transferStatusCopy) {
+      transferStatusCopy.textContent = message;
+      transferStatusCopy.dataset.tone = tone || 'neutral';
+    }
+    if (miniSummaryCopy) {
+      miniSummaryCopy.textContent = message;
+    }
+  }
+
+  function renderTransferDock() {
+    if (ehrTarget) {
+      ehrTarget.value = transferState.ehr;
+    }
+    if (notePackage) {
+      notePackage.value = transferState.notePackage;
+    }
+
+    const section = getActiveTransferSection();
+    const doneCount = transferState.sections.filter((item) => item.done).length;
+    const totalCount = transferState.sections.length;
+    const progress = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
+
+    if (transferProgressBar) {
+      transferProgressBar.style.width = `${progress}%`;
+    }
+    if (transferProgressCopy) {
+      transferProgressCopy.textContent = `${doneCount} of ${totalCount} sections transferred for ${getCurrentEhrLabel()}.`;
+    }
+    if (miniSummaryLabel) {
+      miniSummaryLabel.textContent = `${doneCount}/${totalCount} transferred`;
+    }
+    if (activeSectionLabel) {
+      activeSectionLabel.textContent = `${section.ehrLabel} (${section.label})`;
+    }
+    if (activeSectionText && activeSectionText.value !== section.text) {
+      activeSectionText.value = section.text;
+    }
+    if (markTransferDoneButton) {
+      markTransferDoneButton.textContent = section.done ? 'Marked Done' : 'Mark Done';
+    }
+
+    if (transferSectionTabs) {
+      transferSectionTabs.innerHTML = '';
+      transferState.sections.forEach((item, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `section-tab${index === transferState.activeIndex ? ' active' : ''}${item.done ? ' done' : ''}`;
+        button.textContent = item.ehrLabel;
+        button.addEventListener('click', () => {
+          transferState.activeIndex = index;
+          persistTransferState();
+          renderTransferDock();
+        });
+        transferSectionTabs.appendChild(button);
+      });
+    }
+  }
+
+  function setCompactMode(compact) {
+    overlayShell?.classList.toggle('is-compact', compact);
+    if (miniModeToggle) {
+      miniModeToggle.textContent = compact ? 'Expand' : 'Minimize';
+    }
+    window.localStorage.setItem(COMPACT_STATE_KEY, compact ? 'true' : 'false');
+    void overlayApi.setCompactMode({ compact }).catch(() => {});
+  }
+
+  async function copyActiveTransferSection() {
+    const section = getActiveTransferSection();
+    const result = await overlayApi.copyTransferSection({
+      sectionId: section.id,
+      sectionLabel: section.ehrLabel,
+      ehrLabel: getCurrentEhrLabel(),
+      text: section.text,
+    });
+    setTransferStatus(result?.detail || `${section.ehrLabel} copied to clipboard.`, 'success');
+    setCaptureState('copied', `${section.ehrLabel} copied to clipboard.`);
+  }
+
+  async function pasteActiveTransferSection() {
+    const section = getActiveTransferSection();
+    const result = await overlayApi.pasteTransferSection({
+      sectionId: section.id,
+      sectionLabel: section.ehrLabel,
+      ehrLabel: getCurrentEhrLabel(),
+      text: section.text,
+    });
+    setTransferStatus(result?.detail || `${section.ehrLabel} sent to active field.`, 'success');
+    setCaptureState('pasted', result?.detail || `${section.ehrLabel} sent to active field.`);
   }
 
   function setCaptureState(nextState, detail) {
@@ -166,7 +624,7 @@
       capturedAt: new Date().toISOString(),
     };
 
-    await window.veranoteOverlay.uploadChunk(payload);
+    await overlayApi.uploadChunk(payload);
   }
 
   async function stopLocalCapture() {
@@ -310,11 +768,11 @@
       apply.textContent = command.action === 'navigate_target' ? 'Move target' : 'Insert command';
       apply.addEventListener('click', () => {
         if (command.action === 'navigate_target') {
-          void window.veranoteOverlay.nextTarget().then(refreshStatus);
+          void overlayApi.nextTarget().then(refreshStatus);
           return;
         }
 
-        void window.veranoteOverlay.commitCommand({
+        void overlayApi.commitCommand({
           commandId: command.id,
           targetSection: targetSection?.value || 'clinicianNotes',
         }).then(refreshStatus);
@@ -422,19 +880,19 @@
       }
       accept.addEventListener('click', () => {
         if (commandMatch?.action === 'navigate_target') {
-          void window.veranoteOverlay.nextTarget().then(async () => {
-            await window.veranoteOverlay.discardSegment(segment.id);
+          void overlayApi.nextTarget().then(async () => {
+            await overlayApi.discardSegment(segment.id);
             await refreshStatus();
           });
           return;
         }
 
         if (commandMatch?.outputText) {
-          void window.veranoteOverlay.commitCommand({
+          void overlayApi.commitCommand({
             commandId: commandMatch.id,
             targetSection: segment.targetSection || targetSection?.value || 'clinicianNotes',
           }).then(async () => {
-            await window.veranoteOverlay.discardSegment(segment.id);
+            await overlayApi.discardSegment(segment.id);
             await refreshStatus();
           });
           return;
@@ -442,15 +900,15 @@
 
         reviewPending = true;
         void stopLocalCapture()
-          .then(() => window.veranoteOverlay.acceptSegment(segment.id))
-          .then(() => window.veranoteOverlay.stopSession().catch(() => {}))
+          .then(() => overlayApi.acceptSegment(segment.id))
+          .then(() => overlayApi.stopSession().catch(() => {}))
           .then(refreshStatus);
       });
 
       const discard = document.createElement('button');
       discard.textContent = 'Discard';
       discard.addEventListener('click', () => {
-        void window.veranoteOverlay.discardSegment(segment.id).then(refreshStatus);
+        void overlayApi.discardSegment(segment.id).then(refreshStatus);
       });
 
       actions.appendChild(accept);
@@ -461,7 +919,7 @@
   }
 
   async function refreshStatus() {
-    const status = await window.veranoteOverlay.getStatus();
+    const status = await overlayApi.getStatus();
     activeSessionId = status.activeSessionId || '';
     commandLibrary = Array.isArray(status.commandLibrary) ? status.commandLibrary : [];
     const queuedForReview = Array.isArray(status.pendingSegments) && status.pendingSegments.length > 0;
@@ -552,6 +1010,11 @@
     renderFieldTarget(status);
     renderCommandTray(status);
     renderPendingSegments(status);
+    renderTransferDock();
+
+    if (status.lastMiniTransferAction?.detail) {
+      setTransferStatus(status.lastMiniTransferAction.detail, 'neutral');
+    }
 
     if (pollTimer) {
       window.clearTimeout(pollTimer);
@@ -564,8 +1027,11 @@
   }
 
   try {
+    renderTransferDock();
+    setCompactMode(window.localStorage.getItem(COMPACT_STATE_KEY) === 'true');
     await refreshStatus();
   } catch (error) {
+    renderTransferDock();
     if (nextStep) {
       nextStep.textContent = 'Overlay scaffold ready';
     }
@@ -578,8 +1044,84 @@
     void refreshStatus();
   });
 
+  miniModeToggle?.addEventListener('click', () => {
+    setCompactMode(!overlayShell?.classList.contains('is-compact'));
+  });
+
+  miniOpenButton?.addEventListener('click', () => {
+    setCompactMode(false);
+  });
+
+  hideWindowButton?.addEventListener('click', () => {
+    void overlayApi.hideWindow();
+  });
+
+  ehrTarget?.addEventListener('change', () => {
+    transferState.ehr = ehrTarget.value || 'generic';
+    transferState.sections = makeTransferSections(transferState.ehr, transferState.notePackage);
+    transferState.activeIndex = 0;
+    persistTransferState();
+    renderTransferDock();
+    setTransferStatus(`EHR target changed to ${getCurrentEhrLabel()}. Review each section before transfer.`, 'neutral');
+  });
+
+  notePackage?.addEventListener('change', () => {
+    transferState.notePackage = notePackage.value || 'psych-followup';
+    transferState.sections = makeTransferSections(transferState.ehr, transferState.notePackage);
+    transferState.activeIndex = 0;
+    persistTransferState();
+    renderTransferDock();
+    setTransferStatus('Note package changed. Review the generated section queue before transfer.', 'neutral');
+  });
+
+  activeSectionText?.addEventListener('input', () => {
+    const section = getActiveTransferSection();
+    section.text = activeSectionText.value;
+    section.done = false;
+    persistTransferState();
+    renderTransferDock();
+  });
+
+  copyTransferSectionButton?.addEventListener('click', () => {
+    void copyActiveTransferSection().catch((error) => {
+      setCaptureState('error', error instanceof Error ? error.message : 'Unable to copy transfer section.');
+      setTransferStatus(error instanceof Error ? error.message : 'Unable to copy transfer section.', 'error');
+    });
+  });
+
+  pasteTransferSectionButton?.addEventListener('click', () => {
+    void pasteActiveTransferSection().catch((error) => {
+      setCaptureState('error', error instanceof Error ? error.message : 'Unable to paste transfer section.');
+      setTransferStatus(error instanceof Error ? error.message : 'Unable to paste transfer section.', 'error');
+    });
+  });
+
+  markTransferDoneButton?.addEventListener('click', () => {
+    const section = getActiveTransferSection();
+    section.done = !section.done;
+    persistTransferState();
+    renderTransferDock();
+    setTransferStatus(section.done
+      ? `${section.ehrLabel} marked transferred.`
+      : `${section.ehrLabel} marked incomplete.`,
+    section.done ? 'success' : 'neutral');
+  });
+
+  previousTransferSectionButton?.addEventListener('click', () => {
+    moveTransferSection(-1);
+  });
+
+  nextTransferSectionButton?.addEventListener('click', () => {
+    moveTransferSection(1);
+  });
+
+  resetTransferChecklistButton?.addEventListener('click', () => {
+    resetTransferSections();
+    setTransferStatus('Transfer checklist reset. Review each section before sending anything to the EHR.', 'neutral');
+  });
+
   startButton?.addEventListener('click', () => {
-    void window.veranoteOverlay.startSession({
+    void overlayApi.startSession({
       encounterId: encounterId?.value || 'overlay-demo-encounter',
       targetSection: targetSection?.value || 'clinicianNotes',
       requestedProviderId: requestedProvider?.value || 'mock-stt',
@@ -588,7 +1130,7 @@
       try {
         await startLocalCapture(session.sessionId);
       } catch (error) {
-        await window.veranoteOverlay.stopSession().catch(() => {});
+        await overlayApi.stopSession().catch(() => {});
         setCaptureState('error', error instanceof Error ? error.message : 'Unable to start microphone capture.');
       }
       await refreshStatus();
@@ -607,30 +1149,30 @@
 
   stopButton?.addEventListener('click', () => {
     void stopLocalCapture().then(() => (
-      window.veranoteOverlay.stopSession().then(refreshStatus)
+      overlayApi.stopSession().then(refreshStatus)
     ));
   });
 
   previousTargetButton?.addEventListener('click', () => {
-    void window.veranoteOverlay.previousTarget().then(refreshStatus);
+    void overlayApi.previousTarget().then(refreshStatus);
   });
 
   nextTargetButton?.addEventListener('click', () => {
-    void window.veranoteOverlay.nextTarget().then(refreshStatus);
+    void overlayApi.nextTarget().then(refreshStatus);
   });
 
   confirmTargetButton?.addEventListener('click', () => {
-    void window.veranoteOverlay.confirmTarget().then(refreshStatus).catch((error) => {
+    void overlayApi.confirmTarget().then(refreshStatus).catch((error) => {
       setCaptureState('error', error instanceof Error ? error.message : 'Unable to confirm the active desktop target.');
     });
   });
 
   openDraftButton?.addEventListener('click', () => {
-    void window.veranoteOverlay.openDraft();
+    void overlayApi.openDraft();
   });
 
   pasteLatestButton?.addEventListener('click', () => {
-    void window.veranoteOverlay.pasteCurrentField().then((result) => {
+    void overlayApi.pasteCurrentField().then((result) => {
       setCaptureState('capturing', result?.detail || 'Pasted the current field buffer.');
       return refreshStatus();
     }).catch((error) => {
