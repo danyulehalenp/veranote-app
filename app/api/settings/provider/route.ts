@@ -18,11 +18,16 @@ export async function GET(request: Request) {
 
   const providerId = resolveScopedProviderIdentityId(searchParams.get('providerId') || undefined, authorizedProvider.providerIdentityId);
   const settings = await getProviderSettings(providerId);
+  const workflowSettings = {
+    ...DEFAULT_PROVIDER_SETTINGS,
+    ...settings,
+  };
+
   return NextResponse.json({
     settings,
     workflowProfile: buildDictationInsertionWorkflowProfile(
-      settings.outputDestination,
-      settings.outputNoteFocus,
+      workflowSettings.outputDestination,
+      workflowSettings.outputNoteFocus,
     ),
   });
 }

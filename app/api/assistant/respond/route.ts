@@ -22,7 +22,7 @@ import { evaluateLOS } from '@/lib/veranote/defensibility/los-evaluator';
 import { evaluateMedicalNecessity } from '@/lib/veranote/defensibility/medical-necessity-engine';
 import { enforceFidelity } from '@/lib/veranote/assistant-fidelity-guard';
 import { buildInternalKnowledgeHelp } from '@/lib/veranote/assistant-internal-knowledge';
-import { buildClinicalTaskPriorityPayload, classifyClinicalTaskOverride } from '@/lib/veranote/assistant-clinical-task';
+import { buildClinicalTaskPriorityPayload, buildProviderHistoryMedicationScenarioFastPayload, classifyClinicalTaskOverride } from '@/lib/veranote/assistant-clinical-task';
 import { buildGeneralKnowledgeHelp, buildReferenceLookupHelp, buildStructuredKnowledgeReminder } from '@/lib/veranote/assistant-knowledge';
 import { buildDiagnosticGeneralConceptReferenceHelp } from '@/lib/veranote/assistant-diagnostic-general-reference';
 import { buildDiagnosticSafetyGateHelp } from '@/lib/veranote/assistant-diagnostic-safety-gate';
@@ -3447,6 +3447,14 @@ function shouldPreferClinicalTaskBeforeAtlasBlueprint(input: {
     input.context?.noteType || '',
     recentText,
   ].join(' '));
+  const currentMessage = normalizeMessageForClinicalRouting(input.message);
+
+  if (
+    /\b(?:how do i|how should i|what(?:'s| is) the safest way to)\b.{0,80}\bdocument\b.{0,80}\b(?:medication )?over objection\b/.test(currentMessage)
+    || /\b(?:medication )?over objection\b.{0,80}\b(?:local policy|legal|capacity|consent|court|authority)\b/.test(currentMessage)
+  ) {
+    return false;
+  }
 
   return [
     /\bdo not give me a sanitized violence-risk answer\b/,
@@ -4435,6 +4443,55 @@ export async function POST(request: Request) {
             knowledgeIntent: 'medication_help',
             answerMode: earlyMedicationReferencePayload.answerMode,
             routePriority: 'medication-reference-direct',
+          },
+        } : {}),
+      });
+    }
+    const fastProviderHistoryMedicationPayload = buildProviderHistoryMedicationScenarioFastPayload({
+      message: assistantMessageForRouting,
+      sourceText: sanitizedSourceText,
+      currentDraftText: sanitizedDraftText,
+      stage: body.stage === 'review' ? 'review' : 'compose',
+      noteType: body.context?.noteType,
+    });
+    if (fastProviderHistoryMedicationPayload && !standaloneMedicationDocumentationPrompt) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const rehydratedFastPayload = rehydrateAssistantPayload(fastProviderHistoryMedicationPayload, phiEntities);
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'reference_help',
+          answerMode: rehydratedFastPayload.answerMode || 'medication_reference_answer',
+          builderFamily: rehydratedFastPayload.builderFamily || 'medication-boundary',
+          routePriority: 'provider-history-medication-fast-path',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...rehydratedFastPayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: rehydratedFastPayload.message,
+            warnings: [],
+            knowledgeIntent: 'reference_help',
+            answerMode: rehydratedFastPayload.answerMode,
+            builderFamily: rehydratedFastPayload.builderFamily,
+            routePriority: 'provider-history-medication-fast-path',
           },
         } : {}),
       });

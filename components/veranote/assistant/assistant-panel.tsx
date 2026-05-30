@@ -30,6 +30,7 @@ type AssistantPanelProps = {
 };
 
 const MODE_STORAGE_KEY_PREFIX = 'veranote-assistant-mode';
+const ASSISTANT_RESPONSE_TIMEOUT_MS = 30_000;
 
 type VeraCueCard = {
   id: string;
@@ -596,10 +597,14 @@ export const AssistantPanel = memo(function AssistantPanel({
     setShowFollowupIdeas(false);
     setIsLoading(true);
 
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), ASSISTANT_RESPONSE_TIMEOUT_MS);
+
     try {
       const response = await fetch('/api/assistant/respond', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({ stage, mode, message, context, recentMessages }),
       });
 
@@ -625,12 +630,19 @@ export const AssistantPanel = memo(function AssistantPanel({
       setActions(data.actions || []);
       setShowSuggestions(false);
     } catch (error) {
+      const errorMessage = error instanceof DOMException && error.name === 'AbortError'
+        ? `${assistantName} took too long to answer. Try again, or ask a narrower question while this response path is reviewed.`
+        : error instanceof Error
+          ? error.message
+          : 'Unable to load assistant help right now.';
+
       setMessages((current) => [
         ...current,
-        createMessage('assistant', error instanceof Error ? error.message : 'Unable to load assistant help right now.'),
+        createMessage('assistant', errorMessage),
       ]);
       setActions([]);
     } finally {
+      window.clearTimeout(timeout);
       setIsLoading(false);
     }
   }

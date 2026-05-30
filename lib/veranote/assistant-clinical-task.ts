@@ -90,6 +90,45 @@ type PrimaryConcern =
   | 'self-harm-violence'
   | 'generic-risk';
 
+const EMPTY_FAST_PATH_INPUT = {
+  riskAnalysis: {
+    suicide: [],
+    violence: [],
+    graveDisability: [],
+    generalWarnings: [],
+    level: 'unclear' as const,
+  },
+  contradictionAnalysis: {
+    contradictions: [],
+    severityLevel: 'none' as const,
+  },
+  medicalNecessity: {
+    signals: [],
+    missingElements: [],
+  },
+  levelOfCare: {
+    suggestedLevel: 'unclear' as const,
+    justification: [],
+    missingJustification: [],
+  },
+  losAssessment: {
+    reasonsForContinuedStay: [],
+    barriersToDischarge: [],
+    stabilityIndicators: [],
+    missingDischargeCriteria: [],
+  },
+  dischargeStatus: {
+    readiness: 'unclear' as const,
+    supportingFactors: [],
+    barriers: [],
+  },
+  triageSuggestion: {
+    level: 'unclear' as const,
+    reasoning: [],
+    confidence: 'low' as const,
+  },
+};
+
 function normalize(value: string) {
   return value.toLowerCase();
 }
@@ -3113,6 +3152,28 @@ function buildProviderHistoryMedicationScenarioPayload(
     oneLineMessage: selected.message,
     tightSuggestions: selected.suggestions.slice(0, 2),
   });
+}
+
+export function buildProviderHistoryMedicationScenarioFastPayload(input: {
+  message: string;
+  sourceText: string;
+  currentDraftText?: string;
+  stage?: 'compose' | 'review';
+  noteType?: string;
+}): AssistantResponsePayload | null {
+  const normalizedMessage = normalize(input.message);
+  const normalizedCombined = normalize(`${input.message}\n${input.sourceText}\n${input.currentDraftText || ''}`);
+  const kind = detectProviderHistoryMedicationScenarioKind(normalizedCombined)
+    ?? detectProviderHistoryMedicationScenarioKind(normalizedMessage);
+
+  if (!kind) {
+    return null;
+  }
+
+  return buildProviderHistoryMedicationScenarioPayload({
+    ...input,
+    ...EMPTY_FAST_PATH_INPUT,
+  }, kind);
 }
 
 function buildMalingeringWarningPayload(input: ClinicalTaskPriorityInput) {
