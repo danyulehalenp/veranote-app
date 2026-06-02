@@ -79,6 +79,7 @@ describe('phase 2 provider simulation regression suite', () => {
       'routing issue': 0,
       'unsafe simplification': 0,
     };
+    const conversationIssueDetails: string[] = [];
 
     for (const conversation of phaseTwoProviderSimulationRegressionConversations) {
       const recentMessages: AssistantThreadTurn[] = [];
@@ -121,11 +122,17 @@ describe('phase 2 provider simulation regression suite', () => {
         }
 
         for (const requiredPhrase of turn.requiredPhrases) {
-          expect(includesPhrase(message, requiredPhrase)).toBe(true);
+          expect(
+            includesPhrase(message, requiredPhrase),
+            `${conversation.id} ${turn.label} missing required phrase: ${requiredPhrase}\n\n${message}`,
+          ).toBe(true);
         }
 
         for (const forbiddenPhrase of turn.forbiddenPhrases || []) {
-          expect(includesPhrase(message, forbiddenPhrase)).toBe(false);
+          expect(
+            includesPhrase(message, forbiddenPhrase),
+            `${conversation.id} ${turn.label} included forbidden phrase: ${forbiddenPhrase}\n\n${message}`,
+          ).toBe(false);
         }
 
         recentMessages.push({ role: 'provider', content: turn.prompt });
@@ -145,11 +152,14 @@ describe('phase 2 provider simulation regression suite', () => {
         passed += 1;
       } else {
         failed += 1;
+        conversationIssueDetails.push(`${conversation.id}: ${Array.from(issues).join(', ')}`);
       }
     }
 
-    expect(passed).toBe(phaseTwoProviderSimulationRegressionTargets.passed);
-    expect(failed).toBe(phaseTwoProviderSimulationRegressionTargets.failed);
+    const issueSummary = conversationIssueDetails.join('\n');
+
+    expect(passed, issueSummary).toBe(phaseTwoProviderSimulationRegressionTargets.passed);
+    expect(failed, issueSummary).toBe(phaseTwoProviderSimulationRegressionTargets.failed);
     expect(aggregateIssues['generic fallback']).toBe(
       phaseTwoProviderSimulationRegressionTargets.genericFallbackCount,
     );

@@ -3772,7 +3772,7 @@ function buildWithdrawalMedicalBoundaryPayload(input: {
     }
 
     return {
-      message: 'Clinical explanation: Overlap differential remains active. Urgent medical assessment considerations remain because withdrawal or delirium risk can be clinically significant. Avoid behavioral-only framing while withdrawal, delirium, catatonia, medication-effect, or medical contributors remain plausible. Alcohol withdrawal remains in the differential because autonomic symptoms remain documented and visual-perceptual symptoms remain documented. Temporal relationship must stay explicit. Tox/withdrawal limits remain important because the source does not yet settle withdrawal versus primary psychosis, so do not collapse the differential prematurely or force a false single-choice answer from this source alone. Reassessment after sobriety or stabilization should be documented before making a more definitive diagnosis. Source labels where relevant should separate patient report, collateral/source report, chart data, and observed symptoms.',
+      message: 'Clinical explanation: Overlap differential remains active. Urgent medical assessment considerations remain because withdrawal or delirium risk can be clinically significant. Avoid behavioral-only framing while withdrawal, delirium, catatonia, medication-effect, or medical contributors remain plausible. Alcohol withdrawal remains in the differential because autonomic symptoms remain documented and visual-perceptual symptoms remain documented. Timing after alcohol cessation must stay explicit. Tox/withdrawal limits remain important because the source does not yet settle withdrawal versus primary psychosis, so do not collapse the differential prematurely or force a false single-choice answer from this source alone. Reassessment after sobriety or stabilization should be documented before making a more definitive diagnosis. Source labels where relevant should separate patient report, collateral/source report, chart data, and observed symptoms.',
       suggestions: [
         'Keep autonomic or timing features explicit, including timing after alcohol cessation.',
         'Brief missing-data checklist: last alcohol/substance use, withdrawal signs, tox/UDS results if relevant, symptom onset, vitals/autonomic signs, sleep timeline, collateral reliability, and persistence after sobriety or stabilization.',
@@ -4785,13 +4785,21 @@ export async function POST(request: Request) {
       recentMessages: body.recentMessages,
     }) || /\b(?:hypoxia|o2 dipping|cannula|medical instability|medical contributor)\b/i.test(rawAssistantMessageForRouting);
     const activeDraftForFormatting = Boolean((sanitizedDraftText || body.context?.currentDraftText || '').trim());
-    const explicitCurrentDraftFormattingRequest = /\bcurrent draft\b.{0,80}\b(one paragraph|shorter|longer|more detailed|narrative|story flow)\b|\b(one paragraph|shorter|longer|more detailed|narrative|story flow)\b.{0,80}\bcurrent draft\b/i.test(rawAssistantMessageForRouting)
+    const explicitNamedCurrentDraftFormattingRequest = /\bcurrent draft\b.{0,80}\b(one paragraph|shorter|longer|more detailed|narrative|story flow)\b|\b(one paragraph|shorter|longer|more detailed|narrative|story flow)\b.{0,80}\bcurrent draft\b/i.test(rawAssistantMessageForRouting);
+    const clinicalFollowupShouldPreserveSpecializedRoute = routeCoreNoteBuilderBeforeDraftFormatting
+      || providerHistoryRegressionTaskShouldUseClinicalTask
+      || Boolean(priorClinicalState?.answerMode || priorClinicalState?.builderFamily);
+    const explicitCurrentDraftFormattingRequest = explicitNamedCurrentDraftFormattingRequest
       || (
+        !clinicalFollowupShouldPreserveSpecializedRoute
+        &&
         activeDraftForFormatting
         && /\b(make|rewrite|format|turn|convert)\b/i.test(rawAssistantMessageForRouting)
         && /\b(remove unsupported|unsupported statements?|more conservative|source[-\s]?bound|less certain|closer to source)\b/i.test(rawAssistantMessageForRouting)
       )
       || (
+        !clinicalFollowupShouldPreserveSpecializedRoute
+        &&
         activeDraftForFormatting
         && /\b(one|single|1)\s+paragraph\b|\bshorter|more concise|concise\b/i.test(rawAssistantMessageForRouting)
         && /\b(make|format|rewrite|turn|convert|chart ready|chart-ready|keep|matters?|what matters|preserve|same facts?)\b/i.test(rawAssistantMessageForRouting)
@@ -5141,6 +5149,7 @@ export async function POST(request: Request) {
     if (
       earlyWithdrawalMedicalBoundaryPayload
       && !standaloneMedicationDocumentationPrompt
+      && !providerHistoryRegressionTaskShouldUseClinicalTask
       && !forceAtlasBlueprintForContext
     ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';

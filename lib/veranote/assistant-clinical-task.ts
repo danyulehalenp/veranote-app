@@ -4902,6 +4902,7 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
   if (
     (override?.builderFamily === 'acute-hpi'
       || hasAcuteInpatientHpiGeneration(normalizedCombined)
+      || (admissionLikeNote && input.currentDraftText?.trim() && isUiRewriteRequest(input.message))
       || (admissionLikeNote && hasAny(normalizedMessage, [/\bneed hpi\b/, /\bhpi fast\b/, /\bchart(?:-|\s)?ready hpi\b/, /\bkeep admit reason\b/, /\bdon'?t invent timeline\b/])))
     && (!override?.answerMode || override.answerMode === 'chart_ready_wording')
   ) {
