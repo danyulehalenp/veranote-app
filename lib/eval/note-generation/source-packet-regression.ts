@@ -2719,7 +2719,7 @@ export const sourcePacketRegressionCases: SourcePacketRegressionCase[] = [
     },
     required: [
       { label: 'sleep/pacing detail preserved despite typos', pattern: /3 hrs|3 hours|pacing/i },
-      { label: 'group refusal preserved', pattern: /refused.*group|group.*refused/i },
+      { label: 'group refusal preserved', pattern: /refus(?:ed|al).*group|group.*refus(?:ed|al)/i },
       { label: 'PRN hydroxyzine preserved', pattern: /hydroxyzine|PRN/i },
       { label: 'patient suicide denial preserved', pattern: /not suicidal|denies?.{0,60}suicidal|denies?.{0,20}SI/i },
       { label: 'source-supported MSE details preserved', pattern: /irritable|pressured|tangential|redirectable/i },

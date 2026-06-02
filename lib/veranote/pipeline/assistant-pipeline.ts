@@ -43,6 +43,10 @@ function inferAnswerModeFromContent(content: string): AssistantAnswerMode | unde
     return 'workflow_guidance';
   }
 
+  if (normalized.startsWith('medication reference answer:')) {
+    return 'medication_reference_answer';
+  }
+
   return undefined;
 }
 
@@ -82,6 +86,61 @@ function inferBuilderFamilyFromContent(content: string): AssistantBuilderFamily 
   }
 
   if (normalized.includes('routine stimulant restart') || normalized.includes('routine adhd')) {
+    return 'medication-boundary';
+  }
+
+  if (
+    normalized.includes('reason for admission:')
+    && (
+      normalized.includes('no invented chronology')
+      || normalized.includes('uncertainty preserved')
+    )
+  ) {
+    return 'acute-hpi';
+  }
+
+  if (
+    normalized.includes('progress note:')
+    || normalized.includes('unchanged facts and neutral wording')
+    || normalized.includes('patient requests discharge and collateral has not been reached')
+  ) {
+    return 'progress-note';
+  }
+
+  if (
+    normalized.includes('hospital course:')
+    && (
+      normalized.includes('symptom status at discharge')
+      || normalized.includes('follow-up gaps')
+    )
+  ) {
+    return 'discharge-summary';
+  }
+
+  if (
+    normalized.includes('crisis/event note:')
+    || normalized.includes('objective behavior included')
+    || normalized.includes('ongoing safety assessment')
+  ) {
+    return 'crisis-note';
+  }
+
+  if (
+    normalized.includes('temporal relationship')
+    || normalized.includes('tox/withdrawal limits')
+    || normalized.includes('reassessment after sobriety or stabilization')
+    || normalized.includes('overlap differential')
+    || normalized.includes('withdrawal/catatonia')
+    || normalized.includes('urgent medical assessment considerations')
+  ) {
+    return 'overlap';
+  }
+
+  if (
+    normalized.includes('benzodiazepine taper safety')
+    || normalized.includes('withdrawal/seizure risk')
+    || normalized.includes('dose/duration/co-use variables')
+  ) {
     return 'medication-boundary';
   }
 

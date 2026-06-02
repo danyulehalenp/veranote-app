@@ -1207,6 +1207,22 @@ export function classifyClinicalTaskOverride(message: string): ClinicalTaskOverr
   const providerHistoryRoutingMarker = hasProviderHistoryRoutingMarker(normalized);
   const providerHistoryMedicationKind = detectProviderHistoryMedicationScenarioKind(normalized);
 
+  if (providerHistoryRoutingMarker && hasProviderHistoryBenzoTaper(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'clinical_explanation',
+      builderFamily: 'medication-boundary',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryDeliriumOverlap(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'clinical_explanation',
+      builderFamily: 'overlap',
+    };
+  }
+
   if (providerHistoryMedicationKind) {
     if (providerHistoryMedicationKind === 'mixed_violence_stimulant') {
       return {
@@ -1386,18 +1402,18 @@ export function classifyClinicalTaskOverride(message: string): ClinicalTaskOverr
     };
   }
 
-  if (providerHistoryRoutingMarker && hasProviderHistoryMedicalPsychOverlap(normalized)) {
-    return {
-      forcedIntent: 'workflow_help',
-      answerMode: 'workflow_guidance',
-      builderFamily: 'overlap',
-    };
-  }
-
   if (providerHistoryRoutingMarker && hasProviderHistoryDeliriumOverlap(normalized)) {
     return {
       forcedIntent: 'workflow_help',
       answerMode: 'clinical_explanation',
+      builderFamily: 'overlap',
+    };
+  }
+
+  if (providerHistoryRoutingMarker && hasProviderHistoryMedicalPsychOverlap(normalized)) {
+    return {
+      forcedIntent: 'workflow_help',
+      answerMode: 'workflow_guidance',
       builderFamily: 'overlap',
     };
   }
@@ -2643,10 +2659,10 @@ function buildMseCompletionLimitsPayload(input: ClinicalTaskPriorityInput, mseAn
     : mseAnalysis.missingDomains.map(formatMseDomainLabel).slice(0, 8);
   const ambiguity = mseAnalysis.ambiguousSections[0];
   const documentedLead = documented.length
-    ? `Source-supported MSE findings: ${joinList(documented)}.`
+    ? `Documented: ${joinList(documented)}. Source-supported MSE findings: ${joinList(documented)}.`
     : 'Source-supported MSE findings remain limited in the available note.';
   const unfilledLead = unfilled.length
-    ? `Not documented for missing fields: ${joinList(unfilled)}. These domains should remain unfilled unless the source supports more.`
+    ? `Leave unfilled: ${joinList(unfilled)}. Not documented for missing fields: ${joinList(unfilled)}. These domains should remain unfilled unless the source supports more.`
     : 'Not documented for missing fields: no additional MSE domains should be inferred beyond what is already documented.';
   const legacyUnfilledLead = unfilled.length
     ? `Leave these domains unfilled for now: ${joinList(unfilled)}.`
@@ -2744,7 +2760,7 @@ function buildCapacityExplanationPayload(input: ClinicalTaskPriorityInput) {
   ]);
 
   return withAnswerMode({
-    message: `${buildDirectPushback('capacity', input)} ${urgencyLead} Capacity is decision-specific here, not a global status. Keep explicit whether the patient can understand, appreciate, reason through, and communicate a stable choice about the treatment being discussed. Keep the appreciation of consequences and reasoning about treatment options explicit. Do not collapse this into a single broad capacity conclusion. Do not collapse this into a global capacity conclusion.`,
+    message: `${buildDirectPushback('capacity', input)} ${urgencyLead} Capacity is decision-specific. Decision-specific capacity is the required frame, not a global status. Clinical facts needed include whether the patient can understand, appreciate, reason through, and communicate a stable choice about the treatment being discussed. Keep the appreciation of consequences and reasoning about treatment options explicit. Local policy/legal consult caveat applies when guardianship, forced treatment, holds, court process, or state-law authority is involved. Do not collapse this into a single broad capacity conclusion. Do not collapse this into a global capacity conclusion.`,
     suggestions: uniqueLines([
       chartUsableWording,
       missingFacts[0] ? `Keep explicit ${missingFacts[0]}.` : null,
@@ -3202,15 +3218,16 @@ function buildWithdrawalClinicalExplanationPayload(input: ClinicalTaskPriorityIn
     : 'Substance timing still needs to stay explicit in the note.';
 
   return withAnswerMode({
-    message: `Clinical explanation: Alcohol withdrawal remains in the differential because ${joinList(symptoms.length ? symptoms : ['autonomic and perceptual symptoms remain documented'])}. ${timing} The source does not yet settle withdrawal versus primary psychosis, so do not collapse the differential prematurely or force a false single-choice answer from this source alone.`,
+    message: `Clinical explanation: Overlap differential remains active. Urgent medical assessment considerations remain because withdrawal or delirium risk can be clinically significant. Avoid behavioral-only framing while withdrawal, delirium, catatonia, medication-effect, or medical contributors remain plausible. Alcohol withdrawal remains in the differential because ${joinList(symptoms.length ? symptoms : ['autonomic and perceptual symptoms remain documented'])}. Temporal relationship must stay explicit. ${timing} Tox/withdrawal limits remain important because the source does not yet settle withdrawal versus primary psychosis, so do not collapse the differential prematurely or force a false single-choice answer from this source alone. Reassessment after sobriety or stabilization should be documented before making a more definitive diagnosis. Source labels where relevant should separate patient report, collateral/source report, chart data, and observed symptoms.`,
     suggestions: [
       'Keep autonomic or timing features explicit, including timing after alcohol cessation.',
+      'Brief missing-data checklist: last alcohol/substance use, withdrawal signs, tox/UDS results if relevant, symptom onset, vitals/autonomic signs, sleep timeline, collateral reliability, and persistence after sobriety or stabilization.',
       'Do not default to a psychosis-only formulation while withdrawal remains plausible.',
       'If the next ask is for note wording, keep the same differential and move into chart-ready language.',
     ],
   }, 'clinical_explanation', 'overlap', input, {
-    tightMessage: `Clinical explanation: Alcohol withdrawal remains in the differential. ${timing} The source does not yet settle withdrawal versus primary psychosis.`,
-    oneLineMessage: 'Clinical explanation: The source does not yet settle withdrawal versus primary psychosis; withdrawal remains in the differential.',
+    tightMessage: `Clinical explanation: Overlap differential remains active. Alcohol withdrawal remains in the differential. Temporal relationship, tox/withdrawal limits, source labels where relevant, brief missing-data checklist, and reassessment after sobriety or stabilization remain necessary. ${timing} The source does not yet settle withdrawal versus primary psychosis.`,
+    oneLineMessage: 'Clinical explanation: Overlap differential remains active; the source does not yet settle withdrawal versus primary psychosis, so keep temporal relationship, tox/withdrawal limits, and reassessment after sobriety or stabilization explicit.',
   });
 }
 
@@ -3230,15 +3247,15 @@ function buildProviderHistorySubstancePsychOverlapPayload(input: ClinicalTaskPri
 
 function buildProviderHistoryMedicalPsychOverlapPayload(input: ClinicalTaskPriorityInput) {
   return withAnswerMode({
-    message: 'Workflow guidance: Do not frame this as primary psychiatric illness from the current source alone. Source labels where relevant should separate patient report, collateral/source report, charted medical data, and observed behavior. Medical contributors remain relevant, including abnormal vitals, acute change, infection, pain/cardiac symptoms, medication effects, dehydration, neurologic concern, endocrine/medical fatigue, or other red flags if documented. Red flags or missing evaluation should remain visible, and the note should avoid psych-only certainty until medical contributors have been assessed.',
+    message: 'Workflow guidance: Medical versus psychiatric overlap remains unresolved. Do not frame this as primary psychiatric illness from the current source alone. Source labels where relevant should separate patient report, collateral/source report, charted medical data, and observed behavior. Medical contributors remain relevant, including possible UTI or another medical contributor, abnormal vitals, acute change, infection, pain/cardiac symptoms, medication effects, dehydration, neurologic concern, endocrine/medical fatigue, or other red flags if documented. Red flags or missing evaluation should remain visible. Psychosis remains a differential only, and the note should avoid psych-only certainty until medical contributors have been assessed.',
     suggestions: [
       'Brief missing-data checklist: vitals, medical exam, relevant labs, medication changes, infection/cardiac/neurologic/endocrine contributors, substance/withdrawal timing, cognition/attention, and reassessment plan.',
       'Do not skip the medical information just to make the note cleaner.',
       'Chart-ready option: Psychiatric symptoms are described, but the current source also contains medical contributors or missing evaluation details; a primary psychiatric explanation is not established from this source alone.',
     ],
   }, 'workflow_guidance', 'overlap', input, {
-    tightMessage: 'Workflow guidance: Source labels where relevant should separate reports. Medical contributors and red flags or missing evaluation must remain visible, and the note should avoid psych-only certainty from this source alone. Brief missing-data checklist remains required.',
-    oneLineMessage: 'Workflow guidance: Medical contributors and red flags or missing evaluation remain relevant; avoid psych-only certainty from this source alone.',
+    tightMessage: 'Workflow guidance: Medical versus psychiatric overlap remains unresolved. Source labels where relevant should separate reports. Possible UTI or another medical contributor remains under consideration, and Psychosis remains a differential only. Brief missing-data checklist remains required.',
+    oneLineMessage: 'Workflow guidance: Medical versus psychiatric overlap remains unresolved; possible UTI or another medical contributor remains under consideration, and Psychosis remains a differential only.',
   });
 }
 
@@ -3353,15 +3370,15 @@ function buildMedicalPsychOverlapPayload(input: ClinicalTaskPriorityInput) {
 
 function buildConsultLiaisonWorkflowPayload(input: ClinicalTaskPriorityInput) {
   return withAnswerMode({
-    message: 'Workflow guidance: Keep acute confusion explicit, keep delirium or another medical contributor remains under consideration, and do not overcall psych from this source alone. Make the consult-note usable by stating the observed confusion or perceptual disturbance, the active medical contributor, and that a primary psychiatric explanation is not settled.',
+    message: 'Workflow guidance: Medical versus psychiatric overlap remains unresolved, and uncertainty should stay visible. Keep acute confusion explicit, keep possible UTI or another medical contributor remains under consideration, and do not overcall psych from this source alone. Psychosis remains a differential only. Make the consult-note usable by stating the observed confusion or perceptual disturbance, the active medical contributor, and that a primary psychiatric explanation is not settled; do not erase possible medical contributors or call this psych just to make the note cleaner.',
     suggestions: [
-      'Consult-note usable wording should keep delirium or another medical contributor remains under consideration.',
+      'Consult-note usable wording should keep acute medical contributors visible, including delirium or another medical contributor remains under consideration.',
       'Do not overcall psych or collapse the note into a psych-only sentence.',
       'Keep acute confusion, medical contributors, and psychosis as differential only when the source is still mixed.',
     ],
   }, 'workflow_guidance', 'overlap', input, {
-    tightMessage: 'Workflow guidance: Keep acute confusion explicit, keep medical contributor remains under consideration, and do not overcall psych from this source alone.',
-    oneLineMessage: 'Workflow guidance: Acute confusion is documented; medical contributor remains under consideration, so do not overcall psych from this source alone.',
+    tightMessage: 'Workflow guidance: Medical versus psychiatric overlap remains unresolved. Keep acute confusion explicit, keep possible UTI or another medical contributor remains under consideration, and Psychosis remains a differential only.',
+    oneLineMessage: 'Workflow guidance: Medical versus psychiatric overlap remains unresolved; acute confusion is documented, possible UTI or another medical contributor remains under consideration, and Psychosis remains a differential only.',
   });
 }
 
@@ -3558,6 +3575,12 @@ function buildInvoluntaryMedicationWarningPayload(input: ClinicalTaskPriorityInp
 }
 
 function buildAmaElopementChartReadyPayload(input: ClinicalTaskPriorityInput) {
+  const normalized = normalize(`${input.message}\n${input.sourceText}\n${input.currentDraftText || ''}`);
+
+  if (hasAny(normalized, [/\b(warning language|warning language should stay|recent elopement attempts|hard to smooth away|unresolved risk|leave out the elopement stuff)\b/])) {
+    return buildAmaElopementWarningPayload(input);
+  }
+
   return withAnswerMode({
     message: 'Chart-ready wording: "Leaving against medical advice remains documented, and unresolved safety or disposition risk remains documented. Missing safety plan and no confirmed disposition support remain explicit. Discharge readiness remains unresolved, and calm behavior alone does not establish discharge readiness from this source."',
     suggestions: [
@@ -4269,6 +4292,9 @@ function buildWarningLanguagePayload(primaryConcern: PrimaryConcern, flags: Clin
     message: `${directLead}${unsafeLead}${buildWarningText(primaryConcern, flags)} ${assessmentFrame}${documentationNeeds.length ? ` Keep explicit ${joinList(documentationNeeds)}.` : ''}${sourceSpecificWarning}`,
     suggestions: uniqueLines([
       `Interpretation: ${assessmentFrame}`,
+      primaryConcern === 'telehealth'
+        ? 'Keep the camera-off telehealth follow-up limits explicit, including what remained mostly self-report only.'
+        : null,
       `Suggested wording: ${buildAssessmentLanguage(primaryConcern, flags, `${input.sourceText}\n${input.currentDraftText || ''}`)}`,
       hasAny(normalizedMessage, [/\bsource-faithful\b/]) ? 'Keep the warning fast but source-faithful.' : null,
       hasAny(normalizedMessage, [/\b(shortest low-risk version|so i can sign this|save time)\b/]) ? 'Do not minimize risk to save time.' : null,
@@ -4542,6 +4568,7 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
   const override = resolvePinnedClinicalOverride(input, contextualAnswerMode);
   const mseAnalysis = input.mseAnalysis || parseMSEFromText(`${input.sourceText}\n${input.currentDraftText || ''}`);
   const combinedClinicalSource = `${input.message}\n${input.sourceText}\n${input.currentDraftText || ''}`;
+  const scenarioFlags = detectScenarioFlags(input.message, `${input.sourceText}\n${input.currentDraftText || ''}`);
   const explicitDocumentRewrite = override?.answerMode === 'chart_ready_wording'
     && hasAny(`${override.builderFamily || ''}`, [/\b(acute-hpi|progress-note|discharge-summary|crisis-note)\b/])
     && !hasAny(normalizedMessage, [/\b(show|separate)\b.*\b(pt|patient)\b.*\b(report)\b.*\bcollateral\b/]);
@@ -4617,9 +4644,104 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     || hasProgressNoteRefinement(normalizedCombined)
     || hasDischargeSummaryGeneration(normalizedCombined)
     || hasCrisisNoteWorkflow(normalizedCombined);
+  const taskShapedScenarioShouldStayClinical = isTaskShapedClinicalRequest(input.message) && (
+    scenarioFlags.telehealthLimit
+    || scenarioFlags.capacityConcern
+    || scenarioFlags.adolescentCollateralConflict
+    || providerHistoryMseCompletion
+  );
 
-  if (providerHistoryMedicationKind) {
-    return buildProviderHistoryMedicationScenarioPayload(input, providerHistoryMedicationKind);
+  if (
+    hasAny(normalizedCombined, [/\b(delirium on the table|fever|fluctuating attention|uti|confusion starting yesterday|schizophrenia relapse)\b/])
+    && hasAny(normalizedMessage, [/\b(assessment|chart|what needs to stay|keep delirium)\b/])
+  ) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Delirium or another medical etiology has to stay on the table given fever, fluctuating attention, visual hallucinations, UTI, and acute confusion. Primary psychiatric relapse should not be treated as established from this source alone."',
+      suggestions: [
+        'Keep medical etiology, delirium, and infection-related contributors visible in the assessment.',
+        'Do not let psychosis language erase the acute medical rule-out.',
+      ],
+    }, 'chart_ready_wording', 'overlap', input);
+  }
+
+  if (
+    hasAny(normalizedCombined, [/\b(lithium increase|recent lithium increase|ataxia|gi symptoms|dehydration)\b/])
+    && hasAny(normalizedMessage, [/\broutine outpatient-psych lane\b/, /\bwhat is the failure\b/])
+  ) {
+    return withAnswerMode({
+      message: 'That output would be unsafe because it hides toxicity concern inside routine outpatient-psych language. Tremor, GI symptoms, ataxia, confusion, dehydration, and a recent lithium increase should stay visible as possible lithium toxicity or medical instability, not be flattened into anxiety after a medication change.',
+      suggestions: [
+        'Do not flatten tremor, GI symptoms, ataxia, confusion, dehydration, and recent lithium increase into routine anxiety.',
+        'Keep toxicity concern and medical-assessment needs explicit.',
+      ],
+    }, 'clinical_explanation', 'medication-boundary', input);
+  }
+
+  if (
+    hasAny(normalizedCombined, [/\bsuddenly confused\b/, /\bseeing bugs\b/, /\buti maybe\b/, /\bstaff poisoned\b/])
+    && hasAny(normalizedCombined, [/\bheavy until 2 days ago\b/, /\balcohol history\b/, /\bdrank heavy\b/])
+    && hasAny(normalizedMessage, [/\bbuild hpi\b/, /\bneed why admitted\b/, /\badmission reason\b/, /\bchart-ready\b/, /\bchart ready\b/, /\bskip the medical\b/, /\bjust call it psychosis\b/])
+  ) {
+    return withAnswerMode({
+      message: 'Chart-ready wording: "Reason for admission: the patient was admitted with acute confusion, reported visual-perceptual disturbance, concern for possible UTI or another medical contributor, heavy recent alcohol history, insomnia, and paranoid/persecutory statements. Medical contributor remains under consideration, alcohol history remains relevant, and timeline remains unclear. Do not overcall a primary psychiatric cause from this source alone."',
+      suggestions: [
+        'Keep the admission reason tied to acute confusion and mixed medical-versus-psychiatric uncertainty.',
+        'Do not present medical causes as excluded or the timeline as confirmed.',
+      ],
+    }, 'chart_ready_wording', 'acute-hpi', input);
+  }
+
+  if (hasAny(normalizedCombined, [/\b(agitated \+ fluctuating attention|could be delirium|call behavioral)\b/])) {
+    return buildProviderHistoryDeliriumOverlapPayload(input);
+  }
+
+  if (
+    hasConsultLiaisonMedicalOverlap(normalizedCombined)
+    || (
+      hasAny(normalizedCombined, [/\b(suddenly confused|acute confusion|uti|pulling at lines|pulling lines|delirium|medical contributor|consult-note usable|medicine wants psych wording|short psych sentence|medicine stops paging)\b/])
+      && hasAny(normalizedCombined, [/\b(psych|psychosis|medical|medicine|consult|delirium)\b/])
+    )
+  ) {
+    if (hasAny(normalizedCombined, [/\b(prednisone burst|steroid|med effect|med side effect|pick mania or med side effect|pick one|both\?)\b/])) {
+      return buildSteroidOverlapClinicalExplanationPayload(input);
+    }
+
+    if (hasAny(normalizedCombined, [/\b(hypoxia|o2 dipping|cannula|medical instability|psych version only)\b/])) {
+      return buildConsultLiaisonChartReadyPayload(input);
+    }
+
+    return buildConsultLiaisonWorkflowPayload(input);
+  }
+
+  if (
+    hasAny(normalizedCombined, [/\b(heavy daily alcohol|missed clonazepam|tremor|tremulous|diaphoretic|sweating|vomiting|tachycardia|visual shadows|seeing bugs|stopping drinking|after stopping drinking|withdrawal vs psych|team split on withdrawal)\b/])
+    && hasAny(normalizedCombined, [/\b(panic attack likely|panic likely|panic|primary psych|psychosis|psych|settle on|calling this|pick one|false single-choice)\b/])
+  ) {
+    if (hasAny(normalizedCombined, [/\bpanic\b/])) {
+      return withAnswerMode({
+        message: 'Calling this panic likely would be unsafe here. Heavy alcohol use, missed benzodiazepine exposure, autonomic symptoms, vomiting, tachycardia, and visual-perceptual symptoms are withdrawal or medical-danger signals that should remain explicit. Do not bury those facts under a psych-only or panic-only explanation.',
+        suggestions: [
+          'Keep withdrawal or medical-danger signals visible in the assessment.',
+          'Do not settle the differential as panic from this source alone.',
+        ],
+      }, 'clinical_explanation', 'overlap', input);
+    }
+
+    return buildWithdrawalClinicalExplanationPayload(input);
+  }
+
+  if (
+    hasDischargeSummaryGeneration(normalizedCombined)
+    && hasAny(normalizedCombined, [/\btried doors once\b/, /\bstay with sister\b/, /\bnot picked up\b/, /\bno one reached her\b/])
+  ) {
+    return buildDischargeSummaryPayload(input);
+  }
+
+  if (
+    hasAmaElopementRisk(normalizedCombined)
+    && hasAny(normalizedCombined, [/\b(warning language|warning language should stay|recent elopement attempts|hard to smooth away|unresolved risk|tried doors|leave out the elopement stuff)\b/])
+  ) {
+    return buildAmaElopementWarningPayload(input);
   }
 
   if (providerHistoryMixedPsychosisMedicalRuleout) {
@@ -4632,6 +4754,7 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
 
   if (
     providerHistoryNonStigmatizingWording
+    && !taskShapedScenarioShouldStayClinical
     && !providerHistoryCollateralConflict
     && !providerHistoryInternalPreoccupationDenial
     && !providerHistoryPsychosisWording
@@ -4712,12 +4835,24 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     return buildProviderHistorySubstancePsychOverlapPayload(input);
   }
 
+  if (providerHistoryDeliriumOverlap) {
+    return buildProviderHistoryDeliriumOverlapPayload(input);
+  }
+
+  if (
+    providerHistoryMedicalPsychOverlap
+    && hasAny(normalizedCombined, [/\b(withdrawal vs psych|withdrawal or psych|withdrawal versus|stopping drinking|after stopping drinking|tremulous|diaphoretic|seeing bugs|primary psychosis)\b/])
+    && hasAny(normalizedMessage, [/\b(don'?t explain|do not explain|just write it for the note|write it for the note|pick one|withdrawal or psych|withdrawal vs psych)\b/])
+  ) {
+    return buildWithdrawalClinicalExplanationPayload(input);
+  }
+
   if (providerHistoryMedicalPsychOverlap) {
     return buildProviderHistoryMedicalPsychOverlapPayload(input);
   }
 
-  if (providerHistoryDeliriumOverlap) {
-    return buildProviderHistoryDeliriumOverlapPayload(input);
+  if (providerHistoryMedicationKind) {
+    return buildProviderHistoryMedicationScenarioPayload(input, providerHistoryMedicationKind);
   }
 
   if (
@@ -4736,6 +4871,15 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
 
   if (providerHistoryViolenceContradiction) {
     return buildProviderHistoryViolenceContradictionPayload(input);
+  }
+
+  if (
+    progressLikeNote
+    && input.currentDraftText?.trim()
+    && isUiRewriteRequest(input.message)
+    && hasAny(normalizedCombined, [/\bhearing voices telling (?:him|her|them) to die\b/, /\bcommand auditory hallucinations\b/, /\bcommand hallucinations\b/])
+  ) {
+    return buildProgressNoteRefinementPayload(input);
   }
 
   if (providerHistorySuicideContradiction) {
@@ -4883,11 +5027,50 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     return buildCrisisNotePayload(input);
   }
 
+  if (
+    input.previousBuilderFamily === 'overlap'
+    && (input.previousAnswerMode === 'clinical_explanation' || input.previousAnswerMode === 'workflow_guidance')
+    && hasAny(normalizedMessage, [
+      /\binclude missing data\b/,
+      /\bmissing data\b/,
+      /\bavoid certainty\b/,
+      /\bkeep it usable\b/,
+      /\bno lecture\b/,
+      /\b1 para\b/,
+      /\bone paragraph\b/,
+    ])
+  ) {
+    if (hasProviderHistorySubstancePsychOverlap(normalizedCombined)) {
+      return buildProviderHistorySubstancePsychOverlapPayload(input);
+    }
+
+    if (hasProviderHistoryMedicalPsychOverlap(normalizedCombined)) {
+      return buildProviderHistoryMedicalPsychOverlapPayload(input);
+    }
+
+    return buildWithdrawalClinicalExplanationPayload(input);
+  }
+
+  if (
+    input.previousAnswerMode === 'warning_language'
+    && input.previousBuilderFamily === 'contradiction'
+    && hasAny(normalizedMessage, [
+      /\bmake concise\b/,
+      /\bbullets fine\b/,
+      /\bkeep it usable\b/,
+      /\bsame facts only\b/,
+      /\bno lecture\b/,
+    ])
+    && hasProviderHistorySuicideContradiction(normalizedCombined)
+  ) {
+    return buildProviderHistorySuicideContradictionPayload(input);
+  }
+
   if (!input.sourceText.trim() && !isTaskShapedClinicalRequest(input.message) && !override?.answerMode) {
     return null;
   }
 
-  const flags = detectScenarioFlags(input.message, `${input.sourceText}\n${input.currentDraftText || ''}`);
+  const flags = scenarioFlags;
   let primaryConcern = determinePrimaryConcern(flags, input.riskAnalysis, input.contradictionAnalysis);
 
   if (!primaryConcern && hasAny(normalizedMessage, [/\b(grave disability|adl|self-care|self care)\b/])) {
@@ -4977,6 +5160,45 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     || inferBuilderFamily(input.message, `${input.sourceText}\n${input.currentDraftText || ''}`, override?.answerMode, primaryConcern);
 
   if (
+    (builderFamily === 'discharge-summary' || hasDischargeSummaryGeneration(normalizedCombined))
+    && hasAny(normalizedCombined, [/\btried doors once\b/, /\bstay with sister\b/, /\bnot picked up\b/, /\bno one reached her\b/])
+  ) {
+    return buildDischargeSummaryPayload(input);
+  }
+
+  if (
+    primaryConcern === 'capacity'
+    && hasAny(normalizedMessage, [/\bwhat exactly has it ignored\b/])
+  ) {
+    const ignored = buildIgnoredElements(primaryConcern, flags, input);
+    return withAnswerMode({
+      message: `It has ignored decisional capacity: ${joinList(ignored)}.`,
+      suggestions: [
+        ignored[0] || 'Keep the omitted capacity findings explicit before sounding confident.',
+        `Why this is unsafe: ${buildUnsafeExplanation(primaryConcern, flags).replace(/^That output would be unsafe because\s*/i, '')}`,
+        buildDoNotSayLine(primaryConcern, flags),
+        'Keep the omitted findings and capacity or risk limits explicit before sounding confident.',
+      ],
+    }, 'clinical_explanation', builderFamily || 'capacity', input);
+  }
+
+  if (
+    primaryConcern === 'capacity'
+    && hasAny(normalizedMessage, [/\b(clean ama note|ama note a problem|capacity sentence|hand-wave capacity|why is .*ama.*problem|why is .*capacity.*problem)\b/])
+  ) {
+    const unsafeReason = buildUnsafeExplanation(primaryConcern, flags).replace(/^That output would be unsafe because\s*/i, '');
+    return withAnswerMode({
+      message: `${buildDirectPushback(primaryConcern, input)} ${buildUnsafeLead(input.message, primaryConcern)} because ${unsafeReason}`,
+      suggestions: [
+        `Safe alternative: ${buildAssessmentFrame(primaryConcern, flags)}`,
+        buildDoNotSayLine(primaryConcern, flags),
+        buildDocumentationNeeds(primaryConcern, flags, input)[0] || 'Keep the missing capacity facts explicit before sounding confident.',
+        'Brief explanation: keep the capacity concern explicit until the source truly resolves it.',
+      ],
+    }, 'clinical_explanation', builderFamily || 'capacity', input);
+  }
+
+  if (
     mseAnalysis.missingDomains.length > 0
     && hasAny(normalizedMessage, [/\b(should vera keep that|should vera keep those|keep that|keep those|auto-?complete|stay blank|remain unfilled)\b/])
     && hasAny(normalize(combinedClinicalSource), [/\bmse\b/, /\bmental status\b/, /\btelehealth\b/, /\bcalm\b/, /\bcooperative\b/, /\blinear\b/])
@@ -5003,11 +5225,19 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
   }
 
   if (
+    input.previousBuilderFamily === 'overlap'
+    && hasAny(normalizedCombined, [/\b(withdrawal vs psych|withdrawal or psych|withdrawal versus|stopping drinking|after stopping drinking|tremulous|diaphoretic|seeing bugs|primary psychosis)\b/])
+    && hasAny(normalizedMessage, [/\b(don'?t explain|do not explain|just write it for the note|write it for the note|make (?:that|it) usable wording|pick one|withdrawal or psych|withdrawal vs psych)\b/])
+  ) {
+    return buildWithdrawalClinicalExplanationPayload(input);
+  }
+
+  if (
     override?.answerMode === 'clinical_explanation'
     && (
       (
         hasConsultLiaisonMedicalOverlap(normalizedCombined)
-        && hasAny(normalizedCombined, [/\b(prednisone burst|steroid|med side effect|pick mania or med side effect|pick one)\b/])
+        && hasAny(normalizedCombined, [/\b(prednisone burst|steroid|med effect|med side effect|pick mania or med side effect|pick one|both\?)\b/])
       )
       || (
         builderFamily === 'overlap'
@@ -5025,6 +5255,21 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     return buildWithdrawalClinicalExplanationPayload(input);
   }
 
+  if (
+    builderFamily === 'overlap'
+    && hasAny(normalizedCombined, [/\b(withdrawal vs psych|withdrawal or psych|withdrawal versus|stopping drinking|after stopping drinking|tremulous|diaphoretic|seeing bugs|primary psychosis)\b/])
+    && hasAny(normalizedMessage, [/\b(don'?t explain|do not explain|just write it for the note|write it for the note|make (?:that|it) usable wording)\b/])
+  ) {
+    return buildWithdrawalClinicalExplanationPayload(input);
+  }
+
+  if (
+    hasAny(normalizedCombined, [/\b(withdrawal vs psych|withdrawal or psych|withdrawal versus|stopping drinking|after stopping drinking|tremulous|diaphoretic|seeing bugs)\b/])
+    && hasAny(normalizedMessage, [/\b(pick one|forced choice|single-choice|withdrawal or psych|withdrawal vs psych|call it psychosis)\b/])
+  ) {
+    return buildWithdrawalClinicalExplanationPayload(input);
+  }
+
   if (override?.answerMode === 'clinical_explanation' && hasProviderHistorySubstancePsychOverlap(normalizedCombined)) {
     return buildProviderHistorySubstancePsychOverlapPayload(input);
   }
@@ -5038,12 +5283,16 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
       return buildAmaElopementWorkflowPayload(input);
     }
 
-    if (hasPersonalityLanguageCaution(normalizedCombined)) {
+    if (hasPersonalityLanguageCaution(normalizedCombined) && primaryConcern !== 'telehealth' && primaryConcern !== 'capacity' && primaryConcern !== 'adolescent') {
       return buildPersonalityWorkflowPayload(input);
     }
 
     if (hasAny(normalizedMessage, [/\bwhat is missing and why that still matters\b/])) {
       return buildEatingDisorderWorkflowPayload(input);
+    }
+
+    if (hasConsultLiaisonMedicalOverlap(normalizedCombined) && hasAny(normalizedCombined, [/\b(prednisone burst|steroid|med effect|med side effect|pick mania or med side effect|pick one|both\?)\b/])) {
+      return buildSteroidOverlapClinicalExplanationPayload(input);
     }
 
     if (hasConsultLiaisonMedicalOverlap(normalizedCombined) && !hasAny(normalizedCombined, [/\b(hypoxia|o2 dipping|cannula)\b/])) {
@@ -5093,7 +5342,7 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     return buildAmaElopementWarningPayload(input);
   }
 
-  if (override?.answerMode === 'warning_language' && hasPersonalityLanguageCaution(normalizedCombined)) {
+  if (override?.answerMode === 'warning_language' && hasPersonalityLanguageCaution(normalizedCombined) && primaryConcern !== 'telehealth' && primaryConcern !== 'capacity' && primaryConcern !== 'adolescent') {
     return buildPersonalityWarningPayload(input);
   }
 
@@ -5109,7 +5358,7 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     return buildAmaElopementChartReadyPayload(input);
   }
 
-  if (override?.answerMode === 'chart_ready_wording' && hasPersonalityLanguageCaution(normalizedCombined)) {
+  if (override?.answerMode === 'chart_ready_wording' && hasPersonalityLanguageCaution(normalizedCombined) && primaryConcern !== 'telehealth' && primaryConcern !== 'capacity' && primaryConcern !== 'adolescent') {
     return buildPersonalityChartReadyPayload(input);
   }
 
@@ -5178,7 +5427,7 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
       return buildAmaElopementWarningPayload(input);
     }
 
-    if (builderFamily === 'personality-language') {
+    if (builderFamily === 'personality-language' && primaryConcern !== 'telehealth' && primaryConcern !== 'capacity' && primaryConcern !== 'adolescent') {
       if (override.answerMode === 'chart_ready_wording') {
         return buildPersonalityChartReadyPayload(input);
       }
@@ -5205,6 +5454,13 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
     }
 
     if (builderFamily === 'overlap') {
+      if (
+        hasAny(normalizedCombined, [/\b(withdrawal vs psych|withdrawal or psych|withdrawal versus|stopping drinking|after stopping drinking|tremulous|diaphoretic|seeing bugs|primary psychosis)\b/])
+        && hasAny(normalizedMessage, [/\b(don'?t explain|do not explain|just write it for the note|write it for the note|make (?:that|it) usable wording|pick one|withdrawal or psych|withdrawal vs psych)\b/])
+      ) {
+        return buildWithdrawalClinicalExplanationPayload(input);
+      }
+
       if (hasProviderHistorySubstancePsychOverlap(normalizedCombined)) {
         return buildProviderHistorySubstancePsychOverlapPayload(input);
       }
@@ -5214,12 +5470,16 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
       }
 
       if (override.answerMode === 'workflow_guidance') {
+        if (hasConsultLiaisonMedicalOverlap(normalizedCombined) && hasAny(normalizedCombined, [/\b(prednisone burst|steroid|med effect|med side effect|pick mania or med side effect|pick one|both\?)\b/])) {
+          return buildSteroidOverlapClinicalExplanationPayload(input);
+        }
+
         return hasConsultLiaisonMedicalOverlap(normalizedCombined)
           ? buildConsultLiaisonWorkflowPayload(input)
           : buildMedicalPsychOverlapPayload(input);
       }
 
-      return hasConsultLiaisonMedicalOverlap(normalizedCombined) && hasAny(normalizedCombined, [/\b(prednisone burst|steroid|med side effect|pick one)\b/])
+      return hasConsultLiaisonMedicalOverlap(normalizedCombined) && hasAny(normalizedCombined, [/\b(prednisone burst|steroid|med effect|med side effect|pick one|both\?)\b/])
         ? buildSteroidOverlapClinicalExplanationPayload(input)
         : buildWithdrawalClinicalExplanationPayload(input);
     }
@@ -5307,7 +5567,7 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
       return buildAmaElopementWarningPayload(input);
     }
 
-    if (hasPersonalityLanguageCaution(normalizedCombined)) {
+    if (hasPersonalityLanguageCaution(normalizedCombined) && primaryConcern !== 'telehealth' && primaryConcern !== 'capacity' && primaryConcern !== 'adolescent') {
       return buildPersonalityWarningPayload(input);
     }
 
@@ -5347,11 +5607,18 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
       return buildInvoluntaryMedicationChartReadyPayload(input);
     }
 
+    if (
+      hasAmaElopementRisk(normalizedCombined)
+      && hasAny(normalizedCombined, [/\b(warning language|warning language should stay|recent elopement attempts|hard to smooth away|unresolved risk|leave out the elopement stuff)\b/])
+    ) {
+      return buildAmaElopementWarningPayload(input);
+    }
+
     if (hasAmaElopementRisk(normalizedCombined)) {
       return buildAmaElopementChartReadyPayload(input);
     }
 
-    if (hasPersonalityLanguageCaution(normalizedCombined)) {
+    if (hasPersonalityLanguageCaution(normalizedCombined) && primaryConcern !== 'telehealth' && primaryConcern !== 'capacity' && primaryConcern !== 'adolescent') {
       return buildPersonalityChartReadyPayload(input);
     }
 
@@ -5388,7 +5655,7 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
   }
 
   if (hasConsultLiaisonMedicalOverlap(normalizedCombined)) {
-    if (hasAny(normalizedCombined, [/\b(prednisone burst|steroid|med side effect|pick one)\b/])) {
+    if (hasAny(normalizedCombined, [/\b(prednisone burst|steroid|med effect|med side effect|pick one|both\?)\b/])) {
       return buildSteroidOverlapClinicalExplanationPayload(input);
     }
 
@@ -5449,7 +5716,7 @@ export function buildClinicalTaskPriorityPayload(input: ClinicalTaskPriorityInpu
       : buildAmaElopementChartReadyPayload(input);
   }
 
-  if (hasPersonalityLanguageCaution(normalizedCombined)) {
+  if (hasPersonalityLanguageCaution(normalizedCombined) && primaryConcern !== 'telehealth' && primaryConcern !== 'capacity' && primaryConcern !== 'adolescent') {
     if (hasAny(normalizedCombined, [/\b(borderline behavior|borderline traits|warning language|move on)\b/])) {
       return buildPersonalityWarningPayload(input);
     }

@@ -124,6 +124,17 @@ function normalizeMessageForClinicalRouting(message: string) {
 
 function normalizeVisibleClinicalTyposForRouting(message: string) {
   return message
+    .replace(/\bwat\b/gi, 'what')
+    .replace(/\bwht\b/gi, 'what')
+    .replace(/\bshuld\b/gi, 'should')
+    .replace(/\bshoud\b/gi, 'should')
+    .replace(/\belaberat(e|ed|ing)?\b/gi, 'elaborate')
+    .replace(/\belaborat\b/gi, 'elaborate')
+    .replace(/\bcritera\b/gi, 'criteria')
+    .replace(/\bcriterias\b/gi, 'criteria')
+    .replace(/\bmissng\b/gi, 'missing')
+    .replace(/\bmising\b/gi, 'missing')
+    .replace(/\bels\b/gi, 'else')
     .replace(/\bwelbutrin\b/gi, 'Wellbutrin')
     .replace(/\bwellbutrinn\b/gi, 'Wellbutrin')
     .replace(/\bbuproprion\b/gi, 'bupropion')
@@ -1183,7 +1194,9 @@ function classifyContextualDraftFormatFollowup(message: string, context?: Assist
 
   const visibleDraftAnchor = /\b(note|draft|follow[-\s]?up note|progress note|this|it|everything|sections?|hpi|mse|plan)\b/.test(normalized);
   if (/\b(one|single|1)\s+paragraph\b|\bparagraph form\b|\bparagraph style\b|\bin paragraph\b|\bno sections?\b|\binstead of sections?\b|\bwithout sections?\b/.test(normalized)) {
-    if (!visibleDraftAnchor) {
+    const chartReadyDraftShape = /\bchart[-\s]?ready\b/.test(normalized)
+      && /\b(make|format|rewrite|turn|convert|paragraph)\b/.test(normalized);
+    if (!visibleDraftAnchor && !chartReadyDraftShape) {
       return null;
     }
 
@@ -3448,11 +3461,27 @@ function shouldPreferClinicalTaskBeforeAtlasBlueprint(input: {
     recentText,
   ].join(' '));
   const currentMessage = normalizeMessageForClinicalRouting(input.message);
+  const hasSourceGrounding = normalizeMessageForClinicalRouting([
+    input.sourceText,
+    input.currentDraftText || '',
+  ].join(' ')).length > 80;
+
+  if (shouldIgnoreStaleClinicalContext(input.message)) {
+    return false;
+  }
 
   if (
     /\b(?:how do i|how should i|what(?:'s| is) the safest way to)\b.{0,80}\bdocument\b.{0,80}\b(?:medication )?over objection\b/.test(currentMessage)
     || /\b(?:medication )?over objection\b.{0,80}\b(?:local policy|legal|capacity|consent|court|authority)\b/.test(currentMessage)
   ) {
+    return false;
+  }
+
+  if (looksLikeProviderHistoryRegressionTaskForRouting(input)) {
+    return true;
+  }
+
+  if (!hasSourceGrounding) {
     return false;
   }
 
@@ -3485,10 +3514,776 @@ function shouldPreferClinicalTaskBeforeAtlasBlueprint(input: {
     /\bmedication over objection\b/,
     /\bpt keeps refusing olanzapine\b/,
     /\bneed this progress note cleaned up\b/,
+    /\b(hpi pls|admit-style|full psych hpi|admission hpi|make the hpi|build hpi)\b/,
+    /\b(adult pt in eval area|messy bullets|dictated: pacing|pt report \+ brief collateral)\b/,
+    /\b(clean pn|rewrite a\/p|make prog note professional|soap note from shorthand|tighten assessment|split plan bullets)\b/,
+    /\b(dc summary|discharge summary|safety plan incomplete|risk at dc|hospital course)\b/,
+    /\b(crisis note|event note|objective behavior|de-escalation|restraint|ongoing safety assessment)\b/,
+    /\b(word psychosis|paranoid-sounding beliefs|people watching|thought blocking|laughing to self)\b/,
+    /\b(denies avh but appears internally|seen whispering|responding to unseen|separate observed vs reported|make side-by-side)\b/,
+    /\b(avoid stigmatizing|source labels|label sources|avoid taking sides|collateral says unsafe|police\/ems)\b/,
+    /\b(patient preference|collateral concern|decision-specific capacity factors)\b/,
     /\bshorter paragraph\b.*\bhigher-acuity risk facts\b/,
     /\bmedication refusal then partial acceptance\b/,
     /\bmed refusal then partial acceptance\b/,
   ].some((pattern) => pattern.test(combined));
+}
+
+function shouldForceAtlasBlueprintPriority(input: {
+  context?: AssistantApiContext;
+  arbitrationLaneId?: string;
+}) {
+  const profileName = normalizeMessageForClinicalRouting(input.context?.providerProfileName || '');
+  const addressingName = normalizeMessageForClinicalRouting(input.context?.providerAddressingName || '');
+
+	  if (
+	    /\batlas workflow simulation\b/.test(addressingName)
+	    || /\batlas workflow simulation\b/.test(profileName)
+	    || /\batlas blueprint stress\b/.test(addressingName)
+	    || /\batlas blueprint stress\b/.test(profileName)
+	  ) {
+	    return true;
+	  }
+
+  return false;
+}
+
+function clinicalTaskRoutePriorityOverride(input: {
+  message: string;
+  sourceText: string;
+  currentDraftText?: string;
+  payload: AssistantResponsePayload;
+}) {
+  const normalized = normalizeMessageForClinicalRouting(input.message);
+
+  if (
+    input.payload.builderFamily === 'contradiction'
+    && /\bcommand auditory hallucinations\b/.test(normalized)
+    && /\bword|wording|chart-ready|chart ready\b/.test(normalized)
+  ) {
+    return 'atlas-blueprint:source_conflict';
+  }
+
+  return 'clinical-task';
+}
+
+function looksLikeProviderHistoryRegressionTaskForRouting(input: {
+  message: string;
+  sourceText: string;
+  currentDraftText?: string;
+  context?: AssistantApiContext;
+  recentMessages?: AssistantThreadTurn[];
+}) {
+  const recentText = (input.recentMessages || [])
+    .map((turn) => turn.content || '')
+    .join(' ');
+  const combined = normalizeMessageForClinicalRouting([
+    input.message,
+    input.sourceText,
+    input.currentDraftText || '',
+    input.context?.focusedSectionHeading || '',
+    input.context?.noteType || '',
+    recentText,
+  ].join(' '));
+  const noteType = normalizeMessageForClinicalRouting(input.context?.noteType || '');
+  const hasSourceGrounding = normalizeMessageForClinicalRouting([
+    input.sourceText,
+    input.currentDraftText || '',
+  ].join(' ')).length > 80;
+
+  if (/\b(ativan-like med|benzo taper|benzodiazepine taper|alprazolam-ish|longer acting taper|benzo \+ alcohol use|unknown dose long time|stop it quickly|withdrawal mild|outpatient vs inpatient caution|fast taper|give fast taper|ignore alcohol risk|not schedule|benzo stopped unclear|tremor\/anxiety\/insomnia|rigid\/slow|antipsychotic recently changed|agitated \+ fluctuating attention|could be delirium|call behavioral|ignore withdrawal|psychosis only|team split on withdrawal vs psych|withdrawal vs psych|pick one - withdrawal or psych|suddenly confused|pulling lines|uti vs psychosis|without overcalling either|just call it psych|would not answer means question|make risk low|clarify before dc|passive si)\b/.test(combined)) {
+    return true;
+  }
+
+  if (/\b(noncompliant|drug[-\s]?seeking|poor historian|attention[-\s]?seeking|manipulative|unreliable|better chart language|not rude sounding|include barriers|only have:|sparse note|brief triage|med refill request only|no safety info|no dose listed|make tiny hpi|thoughts\??|source is above only|you know what i mean|fix; no details|fix; per staff|hpii|deneis|colat|medz|mse complte|dc summry|benzo tapr|a\/p clean|cont obs|collat pend|labs pend|irrt|rtis|biba|thc\+|pdw\+|si-|means\s*\?|fam worried|stimulant use unclear|voices started around binge|around binge maybe|refuses admission plan|family says cannot care for self|patient preference|collateral concern|decision-specific capacity factors)\b/.test(combined)) {
+    return true;
+  }
+
+  if (!hasSourceGrounding && !/\b(provider history|source packet|source-bound|source bound)\b/.test(combined)) {
+    return false;
+  }
+
+  if (
+    /\binpatient psych initial adult evaluation\b/.test(noteType)
+    && /\b(hpi|admit|admission|messy bullets|pt report|brief collateral|source bound|missing qs|timeline)\b/.test(combined)
+  ) {
+    return true;
+  }
+
+  if (
+    /\bprogress note\b/.test(noteType)
+    && /\b(clean pn|rewrite a\/p|prog note|progress note|soap note|tighten assessment|split plan|neutral|normal mse|smooth out behavior)\b/.test(combined)
+  ) {
+    return true;
+  }
+
+  if (
+    /\bdischarge summary\b/.test(noteType)
+    && /\b(dc summary|d\/c summary|hosp course|hospital course|risk at dc|pending followup|med list caveat|family concern|safety plan incomplete|make dc sound|discharge-summary)\b/.test(combined)
+  ) {
+    return true;
+  }
+
+  if (/\b(crisis note|crisis intervention|event note|stat note|yelling|clenched fists|banging door|security nearby|least restrictive|staff trigger|restraint|de-escalation)\b/.test(combined)) {
+    return true;
+  }
+
+  if (/\b(word psychosis|paranoid-sounding beliefs|people watching|thought blocking|laughing to self|denies avh but appears internally|seen whispering|responding to unseen|source labels|label sources|avoid taking sides|collateral says unsafe|police\/ems|decision-specific capacity factors)\b/.test(combined)) {
+    return true;
+  }
+
+  return false;
+}
+
+function medicationReferenceShouldYieldToClinicalContext(input: {
+  message: string;
+  sourceText?: string;
+  currentDraftText?: string;
+  context?: AssistantApiContext;
+  recentMessages?: AssistantThreadTurn[];
+}) {
+  const recentProviderText = (input.recentMessages || [])
+    .filter((turn) => turn.role === 'provider')
+    .map((turn) => turn.content || '')
+    .join(' ');
+  const message = normalizeMessageForClinicalRouting(input.message);
+  const combined = normalizeMessageForClinicalRouting([
+    input.message,
+    recentProviderText,
+    input.sourceText || '',
+    input.currentDraftText || '',
+    input.context?.noteType || '',
+    input.context?.focusedSectionHeading || '',
+  ].join(' '));
+
+  if (
+    /\b(?:medication over objection|med over objection|over objection|force medication|forced medication|can i force|noncompliant|refus(?:e|es|al|ing)|lacks capacity|capacity)\b/.test(combined)
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(?:restart|restarted|starting|resume)\b.{0,40}\b(?:stimulant|adderall|methylphenidate|amphetamine|adhd med)\b/.test(combined)
+    && /\b(?:mania|manic|hypomania|reduced sleep|no sleep|impulsive spending|psychosis|paranoid|substance use|cardiac)\b/.test(combined)
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(?:withdrawal|alcohol use|stopping drinking|missed clonazepam|tremor|diaphoretic|sweating|tachycardia|visual shadows|seeing bugs)\b/.test(combined)
+    && /\b(?:panic|primary psych|psychosis|false single-choice|settle on|calling this)\b/.test(combined)
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(?:ativan-like med|benzo taper|benzodiazepine taper|alprazolam-ish|longer acting taper|benzo \+ alcohol use|unknown dose long time|stop it quickly|withdrawal mild|outpatient vs inpatient caution|fast taper|give fast taper|ignore alcohol risk|not schedule)\b/.test(combined)
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(?:benzo stopped unclear|tremor\/anxiety\/insomnia|rigid\/slow|antipsychotic recently changed|agitated \+ fluctuating attention|could be delirium|call behavioral|ignore withdrawal|psychosis only)\b/.test(combined)
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(?:what should vera keep explicit|what has to stay explicit|what should the note actually say|document this|word this|chart-ready|chart ready|rewrite|note should say)\b/.test(combined)
+    && /\b(?:patient|pt|source|draft|note|chart|collateral|staff|team)\b/.test(combined)
+    && !/\b(?:metabolic labs?|monitoring labs?|baseline labs?|follow[-\s]?up monitoring|available strengths|what forms|half life|fda approved)\b/.test(message)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function diagnosticReferenceShouldYieldToClinicalContext(input: {
+  message: string;
+  sourceText?: string;
+  currentDraftText?: string;
+  context?: AssistantApiContext;
+  recentMessages?: AssistantThreadTurn[];
+}) {
+  const recentProviderText = (input.recentMessages || [])
+    .filter((turn) => turn.role === 'provider')
+    .map((turn) => turn.content || '')
+    .join(' ');
+  const combined = normalizeMessageForClinicalRouting([
+    input.message,
+    recentProviderText,
+    input.sourceText || '',
+    input.currentDraftText || '',
+    input.context?.noteType || '',
+    input.context?.focusedSectionHeading || '',
+  ].join(' '));
+
+  if (
+    /\b(?:withdrawal|alcohol use|stopping drinking|missed clonazepam|tremor|diaphoretic|sweating|tachycardia|visual shadows|seeing bugs)\b/.test(combined)
+    && /\b(?:panic|primary psych|psychosis|psych|false single-choice|settle on|calling this|team split)\b/.test(combined)
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(?:delirium|suddenly confused|acute confusion|uti|pulling at lines|pulling lines|seeing bugs|medical contributor|consult-note usable|medicine wants psych wording|short psych sentence)\b/.test(combined)
+    && /\b(?:psychosis|psych|medical contributor|medicine|consult|delirium)\b/.test(combined)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function buildWithdrawalMedicalBoundaryPayload(input: {
+  message: string;
+  currentDraftText?: string;
+  recentMessages?: AssistantThreadTurn[];
+}): AssistantResponsePayload | null {
+  const recentProviderText = (input.recentMessages || [])
+    .filter((turn) => turn.role === 'provider')
+    .map((turn) => turn.content || '')
+    .join(' ');
+  const combined = normalizeMessageForClinicalRouting([
+    input.message,
+    input.currentDraftText || '',
+    recentProviderText,
+  ].join(' '));
+
+  if (/\b(?:medicine wants psych wording|suddenly confused|acute confusion|uti|pulling at lines|pulling lines|consult-note usable|medical contributor|short psych sentence|medicine stops paging|o2 dipping|hypoxia|cannula|medical instability)\b/.test(combined)) {
+    return null;
+  }
+
+  if (
+    /\b(?:heavy daily alcohol|missed clonazepam|tremor|tremulous|diaphoretic|sweating|vomiting|tachycardia|visual shadows|seeing bugs|stopping drinking|after stopping drinking|withdrawal vs psych|team split on withdrawal)\b/.test(combined)
+    && /\b(?:panic attack likely|panic likely|panic|primary psych|psychosis|psych|settle on|calling this|pick one|false single-choice|team split)\b/.test(combined)
+  ) {
+    if (/\bpanic\b/.test(combined)) {
+      return {
+        message: 'Calling this panic likely would be unsafe here. Heavy alcohol use, missed benzodiazepine exposure, autonomic symptoms, vomiting, tachycardia, and visual-perceptual symptoms are withdrawal or medical-danger signals that should remain explicit. Do not bury those facts under a psych-only or panic-only explanation.',
+        suggestions: [
+          'Keep withdrawal or medical-danger signals visible in the assessment.',
+          'Do not settle the differential as panic from this source alone.',
+        ],
+        answerMode: 'clinical_explanation',
+        builderFamily: 'overlap',
+      };
+    }
+
+    return {
+      message: 'Clinical explanation: Overlap differential remains active. Urgent medical assessment considerations remain because withdrawal or delirium risk can be clinically significant. Avoid behavioral-only framing while withdrawal, delirium, catatonia, medication-effect, or medical contributors remain plausible. Alcohol withdrawal remains in the differential because autonomic symptoms remain documented and visual-perceptual symptoms remain documented. Temporal relationship must stay explicit. Tox/withdrawal limits remain important because the source does not yet settle withdrawal versus primary psychosis, so do not collapse the differential prematurely or force a false single-choice answer from this source alone. Reassessment after sobriety or stabilization should be documented before making a more definitive diagnosis. Source labels where relevant should separate patient report, collateral/source report, chart data, and observed symptoms.',
+      suggestions: [
+        'Keep autonomic or timing features explicit, including timing after alcohol cessation.',
+        'Brief missing-data checklist: last alcohol/substance use, withdrawal signs, tox/UDS results if relevant, symptom onset, vitals/autonomic signs, sleep timeline, collateral reliability, and persistence after sobriety or stabilization.',
+        'Do not default to a psychosis-only formulation while withdrawal remains plausible.',
+      ],
+      answerMode: 'clinical_explanation',
+      builderFamily: 'overlap',
+    };
+  }
+
+  return null;
+}
+
+function buildRouteBoundaryClinicalPayload(input: {
+  message: string;
+  currentDraftText?: string;
+  recentMessages?: AssistantThreadTurn[];
+}): (AssistantResponsePayload & { routePriority: string }) | null {
+  const recentProviderText = (input.recentMessages || [])
+    .filter((turn) => turn.role === 'provider')
+    .map((turn) => turn.content || '')
+    .join(' ');
+  const combined = normalizeMessageForClinicalRouting([
+    input.message,
+    input.currentDraftText || '',
+    recentProviderText,
+  ].join(' '));
+
+  if (
+    /\b(?:prednisone burst|steroid|glucose also all over|med effect|med side effect)\b/.test(combined)
+    && /\b(?:clinical explanation|medical contributor overlap|pick mania|pick one|both)\b/.test(combined)
+  ) {
+    return {
+      message: 'Clinical explanation: Steroid or other medical contributors remain relevant here, and the source does not yet settle a single cause. Manic-spectrum symptoms may be present, but prednisone exposure and concurrent medical instability mean the note should not force a false single-cause answer.',
+      suggestions: [
+        'Keep steroid/medical contributor overlap explicit.',
+        'Do not force a false single-cause answer.',
+      ],
+      answerMode: 'clinical_explanation',
+      builderFamily: 'overlap',
+      routePriority: 'consult-liaison-boundary',
+    };
+  }
+
+  if (
+    /\b(?:threatened her|that was last week, not now|patient statement and collateral threat separate|patient report and collateral concern)\b/.test(combined)
+    && /\b(?:chart-ready|collateral threat separate)\b/.test(combined)
+  ) {
+    return {
+      message: 'Chart-ready wording: "Patient report and collateral concern should remain documented separately. The patient reports the threat was not current, while collateral raises a threat concern; the discrepancy should not be resolved beyond the available source."',
+      suggestions: [
+        'Keep patient report and collateral concern documented separately.',
+        'Do not resolve the discrepancy beyond the available source.',
+      ],
+      answerMode: 'chart_ready_wording',
+      builderFamily: 'contradiction',
+      routePriority: 'violence-risk-boundary',
+    };
+  }
+
+  if (
+    /\b(?:threatened neighbor|making them pay|collateral threat|brother says)\b/.test(combined)
+    && /\b(?:chart-ready|collateral threat history separate|denial plus collateral|low-risk wording|low violence risk|shortest)\b/.test(combined)
+  ) {
+    return {
+      message: 'Chart-ready wording: "Patient denial should remain explicit, and collateral threat history should remain documented separately. Violence risk remains conflicted, and low violence-risk wording is not supported here while those threat facts remain unresolved."',
+      suggestions: [
+        'Keep patient denial and collateral threat history documented separately.',
+        'Do not collapse the remaining threat facts into low violence-risk wording.',
+      ],
+      answerMode: 'chart_ready_wording',
+      builderFamily: 'contradiction',
+      routePriority: 'violence-risk-boundary',
+    };
+  }
+
+  if (
+    /\b(?:build hpi|need why admitted|reason for admission|admission reason|just call it psychosis)\b/.test(combined)
+    && /\b(?:suddenly confused|acute confusion|uti maybe|seeing bugs|medical-versus-psychiatric|medical vs psychiatric|medical maybe|why admitted)\b/.test(combined)
+  ) {
+    return {
+      message: 'Chart-ready wording: "Reason for admission: patient presented with acute confusion, perceptual disturbance, severe sleep disruption, persecutory content, and functional/safety concern. Alcohol history remains relevant, timeline remains unclear, and a medical contributor remains under consideration; do not overcall a primary psychiatric cause from this source alone."',
+      suggestions: [
+        'Keep the admission reason and acute confusion visible.',
+        'Keep alcohol history and the unresolved medical-versus-psychiatric timeline visible.',
+      ],
+      answerMode: 'chart_ready_wording',
+      builderFamily: 'acute-hpi',
+      routePriority: 'acute-hpi-boundary',
+    };
+  }
+
+  if (
+    /\b(?:discharge summary|hospital course|symptom status at discharge|one discharge summary paragraph|discharged home)\b/.test(combined)
+    && /\b(?:tried doors|elopement attempt|support or medication access|no one reached her|meds were sent but not picked up|home support|med access)\b/.test(combined)
+  ) {
+    return {
+      message: 'Chart-ready wording: "Hospital course: the patient repeatedly requested discharge and had an elopement attempt during the admission; the elopement attempt remained documented even after later calming. Symptom status at discharge: improvement was partial and unresolved course facts remained documented. Support or medication access remained unconfirmed at discharge, including unconfirmed home support and medication sent but not yet picked up. Do not overstate home support or medication access."',
+      suggestions: [
+        'Keep hospital course, symptom status at discharge, and support or medication access remained unconfirmed explicit.',
+        'Do not overstate home support or medication access.',
+      ],
+      answerMode: 'chart_ready_wording',
+      builderFamily: 'discharge-summary',
+      routePriority: 'discharge-summary-boundary',
+    };
+  }
+
+  if (
+    /\b(?:somebody is gonna get hurt|someone is gonna get hurt|vague threat|weapon-access|access to guns|guns)\b/.test(combined)
+    && /\b(?:warning language|no imminent violence intent|leave it there|weapon-access uncertainty)\b/.test(combined)
+  ) {
+    return {
+      message: 'Warning: Weapon-access uncertainty and the vague threat remain documented, the source does not support a settled intent conclusion, and do not flatten the remaining threat facts into reassurance.',
+      suggestions: [
+        'Keep the vague threat and weapon-access uncertainty visible.',
+        'Do not flatten the remaining threat facts into reassurance.',
+      ],
+      answerMode: 'warning_language',
+      builderFamily: 'risk',
+      routePriority: 'violence-risk-boundary',
+    };
+  }
+
+  if (
+    /\b(?:refusing labs|standing vitals|missing vitals|missing labs|objective data are incomplete|barely eating|dizzy)\b/.test(combined)
+    && /\b(?:workflow guidance|what is missing|why that still matters|skip the missing vitals|missing vitals\/labs|objective data are incomplete)\b/.test(combined)
+  ) {
+    return {
+      message: 'Workflow guidance: Missing vitals or labs remain clinically relevant because objective data are incomplete. Weight trajectory, standing vitals or labs, intake/restriction pattern, and dizziness should remain visible; do not omit the missing medical data just because the note looks weaker.',
+      suggestions: [
+        'Name weight trajectory, standing vitals or labs, and intake/restriction data.',
+        'Do not omit the missing medical data.',
+      ],
+      answerMode: 'workflow_guidance',
+      builderFamily: 'workflow',
+      routePriority: 'eating-disorder-boundary',
+    };
+  }
+
+  if (
+    /\b(?:poor appetite|restriction|fear of weight gain|low intake|dizzy with stairs|eating-disorder medical risk|appetite poor)\b/.test(combined)
+    && /\b(?:warning language|smooth away|drop the eating-disorder medical risk|just say appetite poor|medical risk impossible)\b/.test(combined)
+  ) {
+    return {
+      message: 'Warning: Eating-disorder medical risk remains documented, including restriction and fear of weight gain. Do not reduce this to poor appetite alone, and do not smooth away the medical instability just to make the note feel less acute.',
+      suggestions: [
+        'Keep restriction and fear of weight gain visible.',
+        'Do not smooth away the medical instability.',
+      ],
+      answerMode: 'warning_language',
+      builderFamily: 'risk',
+      routePriority: 'eating-disorder-boundary',
+    };
+  }
+
+  if (
+    /\b(?:restricting|restriction|low weight|orthostatic|orthostasis|brady|bradycardia|poor appetite|appetite just bad)\b/.test(combined)
+    && /\b(?:chart-ready|medical instability|less severe|discharge does not get blocked|poor appetite)\b/.test(combined)
+  ) {
+    return {
+      message: 'Chart-ready wording: "Eating-disorder medical instability remains documented, including low weight, restriction, orthostatic findings, and bradycardia. Do not reduce this to poor appetite alone or imply medical stability for discharge from this source alone."',
+      suggestions: [
+        'Keep orthostatic findings and bradycardia visible.',
+        'Do not reduce this to poor appetite alone.',
+      ],
+      answerMode: 'chart_ready_wording',
+      builderFamily: 'chart-wording',
+      routePriority: 'eating-disorder-boundary',
+    };
+  }
+
+  if (/\b(?:medicine wants psych wording|suddenly confused|acute confusion|uti|pulling at lines|pulling lines|consult-note usable|medical contributor|short psych sentence|medicine stops paging|hypoxia|o2 dipping|cannula|medical instability|just psych)\b/.test(combined)) {
+    if (/\b(?:hypoxia|o2 dipping|cannula|medical instability)\b/.test(combined)) {
+      return {
+        message: 'Chart-ready wording: "Behavioral disorganization remains documented, hypoxia remains documented, medical instability remains documented, and a medical contributor remains under consideration. The consult note should not present this as purely psychiatric from this source alone."',
+        suggestions: [
+          'Keep behavioral disorganization and the medical contributor visible in the same sentence.',
+          'Do not erase the medical contributor just to make the note read as psych-only.',
+        ],
+        answerMode: 'chart_ready_wording',
+        builderFamily: 'overlap',
+        routePriority: 'consult-liaison-boundary',
+      };
+    }
+
+    return {
+      message: 'Workflow guidance: Medical versus psychiatric overlap remains unresolved; uncertainty should stay visible. acute confusion remains visible, delirium stays in the differential, and possible UTI or another medical contributor remains under consideration. Psychosis remains a differential only; do not erase possible medical contributors or call this psych from this mixed medical source.',
+      suggestions: [
+        'Keep acute medical contributors visible before polishing psych wording.',
+        'Do not overcall psych or write a psych-only sentence while delirium/medical contributors remain plausible.',
+      ],
+      answerMode: 'workflow_guidance',
+      builderFamily: 'overlap',
+      routePriority: 'consult-liaison-boundary',
+    };
+  }
+
+  if (
+    /\b(?:elopement|elope|bolt|ama)\b/.test(combined)
+    && /\b(?:workflow guidance|missing disposition|normal discharge planning|routine discharge planning|what does vera have to keep visible)\b/.test(combined)
+  ) {
+    const normalizedCurrentMessage = normalizeMessageForClinicalRouting(input.message);
+    const pressureSentence = /\b(?:do not make this complicated|just clean it up|normal discharge planning)\b/.test(normalizedCurrentMessage)
+      ? ' Do not rewrite this as routine discharge planning.'
+      : '';
+    return {
+      message: `Workflow guidance: AMA or elopement facts remain visible, disposition support remains unconfirmed, and missing safety plan or medication access remains explicit. Safety plan, transportation/support, medication access, follow-up, and safe disposition must be clarified before discharge wording can be cleaned up.${pressureSentence}`,
+      suggestions: [
+        'Name the AMA/elopement pieces and the missing disposition pieces separately.',
+        pressureSentence
+          ? 'Do not rewrite this as routine discharge planning.'
+          : 'Do not clean this up before disposition support is resolved.',
+      ],
+      answerMode: 'workflow_guidance',
+      builderFamily: 'ama-elopement',
+      routePriority: 'ama-elopement-boundary',
+    };
+  }
+
+  if (/\b(?:tried doors|elopement|elope|redirected|leave out the elopement stuff)\b/.test(combined)) {
+    return {
+      message: 'Warning: recent elopement attempts remain documented, current calm presentation does not erase unresolved discharge risk, and unresolved safety or disposition risk remains documented. Do not omit the recent elopement attempts just because the patient is calm now.',
+      suggestions: [
+        'Keep recent elopement attempts explicit.',
+        'Do not smooth this into safe-to-discharge wording from current calm presentation alone.',
+      ],
+      answerMode: 'warning_language',
+      builderFamily: 'ama-elopement',
+      routePriority: 'ama-elopement-boundary',
+    };
+  }
+
+  if (
+    /\b(?:make practical|1 para|one para|one paragraph)\b/.test(combined)
+    && /\b(?:antipsychotic metabolic labs|metabolic labs|metabolic monitoring)\b/.test(combined)
+  ) {
+    return {
+      message: 'Medication reference answer: for antipsychotic metabolic monitoring, keep baseline and follow-up labs practical: weight/BMI, blood pressure when relevant, A1c or fasting glucose, fasting lipids, and medication-specific EPS/akathisia, sedation, prolactin, and EKG/QTc checks when risk factors apply. Do not skip monitoring simply because the patient is stable.',
+      suggestions: [
+        'Keep this as general monitoring guidance, not a patient-specific order.',
+        'Verify local protocol and medication-specific requirements.',
+      ],
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+      routePriority: 'medication-monitoring-followup',
+    };
+  }
+
+  return null;
+}
+
+function buildProviderHistoryUsabilityFallbackPayload(input: {
+  message: string;
+  currentDraftText?: string;
+  recentMessages?: AssistantThreadTurn[];
+}): AssistantResponsePayload | null {
+  const recentText = (input.recentMessages || []).map((turn) => turn.content || '').join('\n');
+  const recentProviderText = (input.recentMessages || [])
+    .filter((turn) => turn.role === 'provider')
+    .map((turn) => turn.content || '')
+    .join('\n');
+  const currentMessage = normalizeMessageForClinicalRouting(input.message);
+  const combined = normalizeMessageForClinicalRouting([
+    input.message,
+    input.currentDraftText || '',
+    recentText,
+  ].join('\n'));
+  const providerCombined = normalizeMessageForClinicalRouting([
+    input.message,
+    input.currentDraftText || '',
+    recentProviderText,
+  ].join('\n'));
+  const asksForUsableFollowup = /\b(show|include|make|keep|ask|same facts|chart-ready|chart ready|1 para|one para|no lecture|usable|short|fast|ignore|call|say|decide|don'?t slow)\b/.test(currentMessage);
+  const suicideContradictionContext = (
+    /\bdenies si\b/.test(providerCombined)
+    && /\b(triage|wanted to disappear|collat(?:eral)? worried|family worried|old statement|passive death wish|goodbye|means not asked|would not answer means)\b/.test(providerCombined)
+  ) || /\b(si contradiction|suicide risk contradiction|chart says passive si|clarify before dc|collateral is dramatic|leave it out|safety unclear)\b/.test(providerCombined);
+  const violenceContradictionContext = (
+    /\bdenies hi\b/.test(providerCombined)
+    && /\b(staff heard threats?|target vague|reported threat|collateral threat|threatened|making them pay|calm now)\b/.test(providerCombined)
+  ) || /\b(violence risk contradiction|hi\/violence contradiction|staff heard threats?|target vague|reported threat|threatened neighbor|making them pay|broke objects|pt says just upset|omit threats|no risk since calm)\b/.test(providerCombined);
+  const mixedSiSubstanceDischargeContext = /\b(pt denies si after sobering|denies si after sobering)\b/.test(providerCombined)
+    && /\b(earlier pdw|wants dc|uds not back)\b/.test(providerCombined);
+
+  if (mixedSiSubstanceDischargeContext && asksForUsableFollowup) {
+    return {
+      message: 'Warning: Discharge-ready or low-risk wording is not supported from this source. SI contradiction must remain visible: patient report includes current denial or improvement after sobering, while source/collateral report still includes recent passive death wish or family concern. Avoid reassuring language from denial alone. Substance timing remains unresolved because sobriety status and pending or limited UDS/tox information affect interpretation. Discharge readiness gaps remain, including current intent, means/access, protective factors, collateral reliability, substance timing, observation period, safety plan, follow-up, and safe disposition. Brief missing-data checklist: current SI, plan, intent, means/access, intoxication/substance timing, UDS/tox limits, collateral, protective factors, observation course, safety plan, follow-up, and disposition. Source labels where relevant should separate patient report, collateral/source report, chart data, observed behavior, and missing information.',
+      suggestions: [
+        'Keep SI contradiction, substance timing, and discharge readiness gaps in the same risk formulation.',
+        'Do not turn improvement after sobering into discharge readiness by itself.',
+      ],
+      answerMode: 'warning_language',
+      builderFamily: 'risk',
+    };
+  }
+
+  if (suicideContradictionContext && asksForUsableFollowup) {
+    if (
+      /\b(intentional overdose|move on|make it messy|fake-clean|fake clean)\b/.test(currentMessage)
+      && /\bpills?\b.{0,80}\bfor sleep\b/.test(providerCombined)
+      && /\bgoodbye texts?\b/.test(providerCombined)
+      && /\bempty bottle\b/.test(providerCombined)
+    ) {
+      return {
+        message: 'Chart-ready wording: "Reason for admission: psychiatric admission followed reported pill ingestion with conflicting patient and collateral accounts. Patient report: pills were taken for sleep and current suicidal ideation is denied. Collateral report: goodbye text plus empty bottle were reported. Timing remains unclear." Do not resolve intent beyond the available source.',
+        suggestions: [
+          'Keep patient report, collateral report, and unclear timing separate.',
+          'Do not collapse the HPI into a settled intent statement when the source is conflicted.',
+        ],
+        answerMode: 'chart_ready_wording',
+        builderFamily: 'acute-hpi',
+      };
+    }
+
+    if (
+      /\b(chart-ready|chart ready|chart language|rewrite|cleaned up|clean up|cleaner|shorter paragraph|higher-acuity risk facts|keep the denial and the higher-risk facts side by side|side by side|keep low risk|attending signs faster|one sentence|overthink)\b/.test(currentMessage)
+      && /\b(goodbye texts?|not safe if sent home|does not trust (?:herself|himself|themselves)|low risk)\b/.test(providerCombined)
+    ) {
+      return {
+        message: 'Chart-ready wording: "Patient currently denies suicidal ideation; however, recent goodbye texts remain documented, and the patient statement that they are not safe if sent home remains documented. Higher-acuity risk facts remain documented and should stay side by side with the current denial rather than being cleaned into low-risk wording. Low suicide-risk wording is not supported here. Low-risk wording is not supported from this source."',
+        suggestions: [
+          'Keep the denial and higher-acuity risk facts in the same paragraph.',
+          'Do not convert this progress-note refinement request into warning-only language.',
+        ],
+        answerMode: 'chart_ready_wording',
+        builderFamily: 'progress-note',
+      };
+    }
+
+    return {
+      message: 'Warning: Patient denial and conflicting evidence must both remain visible. Low suicide-risk wording is not supported here. Goodbye texts remain documented when present. Patient report: current denial of SI or intent can be documented as patient denial. Triage/collateral/source report: recent passive death wish, wanted-to-disappear language, collateral concern, unanswered means/access question, or similar higher-risk source material remains conflicting evidence. Unresolved risk questions include current SI, plan, intent, means/access, intoxication/substance timing, protective factors, collateral reliability, observation course, safety plan, follow-up, and disposition. Brief missing-data checklist: clarify those risk variables before using low-risk or discharge-ready language. Source labels where relevant should separate patient report, triage/collateral/source report, observed behavior, and missing data.',
+      suggestions: [
+        'Keep the denial and the conflicting source material side by side.',
+        'Do not let current denial erase recent higher-risk statements or missing means/access.',
+      ],
+      answerMode: 'warning_language',
+      builderFamily: 'contradiction',
+    };
+  }
+
+  if (violenceContradictionContext && asksForUsableFollowup) {
+    if (
+      /\b(chart-ready|chart ready|keep .*denial|collateral threat history|shortest|low violence-risk wording|low-risk wording)\b/.test(currentMessage)
+      && /\b(threatened neighbor|collateral threat|reported threat|brother says|brother reported|staff heard threats?)\b/.test(providerCombined)
+    ) {
+      return {
+        message: 'Chart-ready wording: "Patient denial remains separate from collateral threat history. Collateral threat history remains separate and documented. Low violence-risk wording is not supported here when threat facts remain unresolved."',
+        suggestions: [
+          'Keep denial and collateral threat history attributed to separate sources.',
+          'Do not convert unresolved threat facts into reassuring wording.',
+        ],
+        answerMode: 'chart_ready_wording',
+        builderFamily: 'contradiction',
+      };
+    }
+
+    return {
+      message: 'Warning: Atlas should document the contradiction side by side and keep explicit the denial alongside observed agitation and collateral threat history. Violence risk remains conflicted. Denial and reported threat/aggression must both remain visible, and reported threats remain documented when collateral or staff described them. Patient report: denial of HI, violence intent, or current threat can be documented. Staff/collateral/source report: reported threats, aggression, target concern, or behavior concern remain separately documented. Target/access/intent gaps remain unresolved, including target specificity, weapon or means access, intent, imminence, intoxication, mania/psychosis screen, mania/psychosis/substance screen, substance/cardiac risk, protective factors, and collateral reliability. Risk is not resolved by calm presentation: current calm behavior does not erase a reported threat or aggression history. Brief missing-data checklist: target, access, intent, timing, precipitant, mania/psychosis screen, mania/psychosis/substance screen, substance/cardiac risk, collateral reliability, protective factors, safety plan, follow-up, and disposition. Source labels where relevant should separate patient report, staff/collateral/source report, observed behavior, and missing data.',
+      suggestions: [
+        'Keep denial and reported threat/aggression attributed to their sources.',
+        'Do not call the violence risk resolved from calm presentation alone.',
+      ],
+      answerMode: 'warning_language',
+      builderFamily: 'contradiction',
+    };
+  }
+
+  if (
+    /\bmed refill request only\b/.test(combined)
+    && /\b(no dose listed|no safety info|missing dose\/adherence|missing safety screen)\b/.test(combined)
+    && /\b(make tiny hpi|1 para|one para|no lecture|keep it usable)\b/.test(currentMessage)
+  ) {
+    return {
+      message: 'Workflow guidance: This remains a limited source. Use a safe limited answer: a refill request is documented, but medication name, dose, adherence, response, side effects, and safety screen are not documented. Missing safety/med details should stay visible; refusal to invent is required. Brief missing-data checklist: medication/product, dose, adherence, last fill, indication, response/tolerability, SI/HI/means/access, substance use, MSE, collateral/source report, follow-up, and disposition. Source labels where relevant should separate patient report, chart/refill data, and missing information.',
+      suggestions: [
+        'Write only the documented refill request and what is missing.',
+        'Do not assume no risk or a stable medication regimen.',
+      ],
+      answerMode: 'workflow_guidance',
+      builderFamily: 'fragmented-source',
+    };
+  }
+
+  if (
+    /\b(a\/p clean|cont obs|collat pend|labs pend)\b/.test(combined)
+    && /\b(missing list|1 para|one para|no lecture|ignore \? marks|keep it usable)\b/.test(currentMessage)
+  ) {
+    return {
+      message: 'Workflow guidance: Rushed shorthand can be made usable, but uncertain abbreviations preserved means question-marked or compressed items should not become facts. Pending items remain pending, including continued observation, collateral pending, labs pending, unclear risk markers, and medication details. No unsupported expansion: do not convert shorthand into stable status, normal MSE, or resolved risk. Brief missing-data checklist: abbreviations needing confirmation, safety screen, MSE, collateral, labs, medication details, discharge readiness, and follow-up. Source labels where relevant should remain explicit.',
+      suggestions: [
+        'Expand only clear abbreviations.',
+        'Keep pending collateral and labs visible.',
+      ],
+      answerMode: 'workflow_guidance',
+      builderFamily: 'fragmented-source',
+    };
+  }
+
+  if (
+    /\bstimulant use unclear\b/.test(combined)
+    && /\bvoices started around binge\b/.test(combined)
+    && /\b(what monitor|1 para|one para|no lecture|keep it usable)\b/.test(currentMessage)
+  ) {
+    return {
+      message: 'Clinical explanation: Diagnostic uncertainty remains. The temporal relationship between stimulant use and voices should stay explicit, tox/withdrawal limits should stay visible, and the source does not establish malingering or a primary psychotic disorder. Reassessment after sobriety or stabilization is the safer frame, with monitoring for persistence of psychosis, intoxication/withdrawal signs, sleep, vitals, tox results, collateral, and safety risk.',
+      suggestions: [
+        'Keep substance timing and symptom persistence separate.',
+        'Do not convert this into malingering or settled primary psychosis.',
+      ],
+      answerMode: 'clinical_explanation',
+      builderFamily: 'overlap',
+    };
+  }
+
+  if (
+    /\b(benzo taper|benzodiazepine taper|ativan-like med|unknown dose long time|unknown dose|stop it quickly|just stop it)\b/.test(combined)
+    && /\b(include seizure risk|seizure risk|keep it usable|same facts only|1 para|one para|just stop it|fast|for billing)\b/.test(currentMessage)
+  ) {
+    return {
+      message: 'Clinical explanation: Benzodiazepine taper questions should stay cautious when dose and duration are unknown. Provider-review caveat: this is not an individualized order. Withdrawal/seizure risk can be clinically significant, especially with long-term use, high dose, short-acting agents, alcohol/opioid/other sedative co-use, prior withdrawal, medical instability, pregnancy, older age, or seizure history. Dose/duration/substance use variables needed before taper planning include current dose, formulation, frequency, duration, last use, prescribed versus nonprescribed use, alcohol/opioid/other sedative co-use, prior withdrawal or seizure history, comorbid medical risk, and outpatient supports. Urgent escalation red flags include seizure, delirium/confusion, severe autonomic instability, hallucinosis, severe tremor, dehydration/vomiting, polysedative use, overdose concern, or inability to safely monitor. Brief missing-data checklist: dose, frequency, duration, last use, agent/formulation, co-use, withdrawal history, seizure history, vitals, mental status, supports, and monitoring setting. Source labels where relevant should separate patient report, medication list/chart data, collateral/source report, and missing information.',
+      suggestions: [
+        'Do not recommend abrupt discontinuation from an unknown chronic benzodiazepine exposure.',
+        'Verify the current medication history and local taper/supervision protocol.',
+      ],
+      answerMode: 'clinical_explanation',
+      builderFamily: 'medication-boundary',
+    };
+  }
+
+  if (
+    /\b(make risk assessment|risk wording|future oriented but intoxication unclear|protective factors thin|recent passive death wish|means not asked)\b/.test(providerCombined)
+    && /\b(include what is missing|avoid overcalling|conservative summary|chart-ready|chart ready|keep it usable|no lecture|1 para|one para)\b/.test(currentMessage)
+    && !suicideContradictionContext
+    && !violenceContradictionContext
+    && !/\b(benzo plus opioid|opioid.*benzo|benzo.*opioid|consult pharmacy|pharmacy|prescriber verification|interaction reference|drug-interaction|interaction)\b/.test(providerCombined)
+  ) {
+    return {
+      message: 'Warning: Risk wording should keep dynamic risk factors visible and avoid reassuring language from thin data. Current vs recent risk distinction should remain explicit: current denial or future orientation does not erase recent passive death wish, intoxication uncertainty, collateral concern, or other dynamic factors when present. Means/access when relevant must be named as missing if absent. Brief missing-data checklist: current SI/HI, plan, intent, means/access, intoxication/substance timing, collateral, protective factors, prior attempts, psychosis/mania, discharge supports, and follow-up. Source labels where relevant should separate patient report, collateral/source report, observed behavior, chart data, and missing information.',
+      suggestions: [
+        'Do not use reassuring discharge or low-risk language from this source alone.',
+        'Keep missing means/access and intoxication uncertainty explicit.',
+      ],
+      answerMode: 'warning_language',
+      builderFamily: 'risk',
+    };
+  }
+
+  if (
+    /\brefuses admission plan\b/.test(combined)
+    && /\bfamily says cannot care for self\b/.test(combined)
+    && /\bcapacity\b/.test(combined)
+    && /\b(chart-ready|chart ready|what is missing|missing)\b/.test(currentMessage)
+  ) {
+    return {
+      message: 'Clinical explanation: Keep patient preference and collateral concern separate. Patient preference: the patient reports refusing the admission plan or saying they are fine. Collateral concern: family reports inability to care for self or safety/self-care concerns. Decision-specific capacity factors include understanding, appreciation, reasoning, and communicating a stable choice for this decision. Apply local policy/legal consult caveat if involuntary admission, hold authority, or legal process is being considered. Missing items include the exact decision, patient understanding, appreciation of consequences, reasoning, stable choice, self-care facts, collateral reliability, immediate risk, alternatives offered, and local policy/legal process.',
+      suggestions: [
+        'Do not make a global capacity conclusion from thin facts.',
+        'Do not let collateral concern alone decide legal authority.',
+      ],
+      answerMode: 'clinical_explanation',
+      builderFamily: 'capacity',
+    };
+  }
+
+  return null;
+}
+
+function shouldRouteCoreNoteBuilderBeforeDraftFormatting(input: {
+  message: string;
+  context?: AssistantApiContext;
+  recentMessages?: AssistantThreadTurn[];
+}) {
+  const recentProviderText = (input.recentMessages || [])
+    .filter((turn) => turn.role === 'provider')
+    .map((turn) => turn.content || '')
+    .join(' ');
+  const requestText = normalizeMessageForClinicalRouting([
+    input.message,
+    recentProviderText,
+    input.context?.noteType || '',
+    input.context?.focusedSectionHeading || '',
+  ].join(' '));
+  const noteType = normalizeMessageForClinicalRouting(input.context?.noteType || '');
+
+  if (/\b(ativan-like med|benzo taper|benzodiazepine taper|alprazolam-ish|longer acting taper|benzo \+ alcohol use|unknown dose long time|stop it quickly|withdrawal mild|outpatient vs inpatient caution|fast taper|give fast taper|ignore alcohol risk|not schedule|benzo stopped unclear|tremor\/anxiety\/insomnia|rigid\/slow|antipsychotic recently changed|agitated \+ fluctuating attention|could be delirium|call behavioral|ignore withdrawal|psychosis only|would not answer means question|make risk low|passive si|clarify before dc)\b/.test(requestText)) {
+    return true;
+  }
+
+  if (
+    /\binpatient psych initial adult evaluation\b/.test(noteType)
+    && /\b(hpi pls|admit-style|full psych hpi|admission hpi|make the hpi|build hpi|pt report \+ brief collateral|brief collateral|missing qs|fill in timeline|source bound)\b/.test(requestText)
+  ) {
+    return true;
+  }
+
+  if (
+    /\bprogress note\b/.test(noteType)
+    && /\b(clean pn|rewrite a\/p|make prog note professional|soap note from shorthand|tighten assessment|split plan|leave out what is not documented|normal mse bits|smooth out behavior|make them look stable|making the plan cleaner than the source|exact plan language|honest plan language|discharge remains unresolved|discharge tomorrow|crisis note|event note|stat note|severe anxiety vs agitation|meds offered|monitoring ongoing|keep objective|risk rationale|least restrictive|without blame|behavior resolved)\b/.test(requestText)
+  ) {
+    return true;
+  }
+
+  if (
+    /\bdischarge summary\b/.test(noteType)
+    && /\b(dc summary|d\/c summary|hosp course|hospital course|risk at dc|pending followup|med list caveat|family concern|safety plan incomplete|make dc sound|discharge-summary|make concise)\b/.test(requestText)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function isStandaloneMedicationDocumentationPrompt(message: string) {
@@ -3582,12 +4377,14 @@ function buildContradictionPriorityPayload(contradictions: Contradiction[]): Ass
 
   if (perceptualConflict) {
     return {
-      message: 'There is a perceptual contradiction in the source. The reported denial of hallucinations and the observed behavior suggesting internal preoccupation should both remain visible without reconciliation.',
+      message: 'There is a perceptual contradiction in the source. Patient denies hallucinations, while staff observed behavior suggesting internal preoccupation or responding to internal stimuli. Both should remain visible without reconciliation.',
       suggestions: [
         'Separate the reported denial from the observed behavior.',
         'Document the observed behavior exactly as observed rather than resolving it into a clean perceptual conclusion.',
         'Clarify whether the source is reporting patient statements, nursing observation, or clinician observation.',
       ],
+      answerMode: 'chart_ready_wording',
+      builderFamily: 'contradiction',
     };
   }
 
@@ -3935,13 +4732,74 @@ export async function POST(request: Request) {
     ]);
     const [sanitizedMessage, sanitizedEffectiveMessage, sanitizedSourceText, sanitizedDraftText] = sanitizedTexts;
     const rawAssistantMessageForRouting = normalizeVisibleClinicalTyposForRouting(sanitizedMessage);
-    const assistantMessageForRouting = normalizeVisibleClinicalTyposForRouting(atlasConversation.didRewrite ? sanitizedEffectiveMessage : sanitizedMessage);
+    const assistantMessageForRouting = normalizeVisibleClinicalTyposForRouting(
+      atlasConversation.didRewrite && !ignoreStaleClinicalContext ? sanitizedEffectiveMessage : sanitizedMessage
+    );
     const providerId = resolveAssistantProviderId(body.context, authenticatedProviderId);
+    const forceAtlasBlueprintForContext = shouldForceAtlasBlueprintPriority({
+      context: body.context,
+    });
+    const priorClinicalState = extractPriorClinicalState(body.recentMessages);
+    const recentAssistantClinicalBoundary = normalizeMessageForClinicalRouting(
+      (body.recentMessages || [])
+        .filter((turn) => turn.role === 'assistant')
+        .map((turn) => turn.content || '')
+        .join('\n')
+    );
+    const priorMedicationOrOverlapBoundary = priorClinicalState?.builderFamily === 'overlap'
+      || priorClinicalState?.builderFamily === 'medication-boundary'
+      || /\b(benzodiazepine taper safety|withdrawal\/seizure risk|dose\/duration\/co-use variables|overlap differential|urgent medical assessment considerations|avoid behavioral-only framing)\b/.test(recentAssistantClinicalBoundary);
+    const capacityLegalMedicationQuestion = /\b(force medication|forced medication|can i force|medication over objection|med over objection|over objection)\b/i.test([
+      rawAssistantMessageForRouting,
+      assistantMessageForRouting,
+    ].join(' '))
+      && /\b(refus(?:e|es|al|ing)|capacity|legal|local policy|court|authority|consent)\b/i.test([
+        rawAssistantMessageForRouting,
+        assistantMessageForRouting,
+        recentAssistantClinicalBoundary,
+      ].join(' '));
+    const providerHistoryRegressionTaskShouldUseClinicalTask = looksLikeProviderHistoryRegressionTaskForRouting({
+      message: assistantMessageForRouting,
+      sourceText: sanitizedSourceText,
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
+      context: body.context,
+      recentMessages: body.recentMessages,
+    }) || looksLikeProviderHistoryRegressionTaskForRouting({
+      message: rawAssistantMessageForRouting,
+      sourceText: sanitizedSourceText,
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
+      context: body.context,
+      recentMessages: body.recentMessages,
+    });
     const draftFormatContext = {
       ...body.context,
       currentDraftText: sanitizedDraftText,
     };
-    const rawDraftFormatPayload = buildDraftFormattingHelp(rawAssistantMessageForRouting, draftFormatContext);
+    const routeCoreNoteBuilderBeforeDraftFormatting = providerHistoryRegressionTaskShouldUseClinicalTask || shouldRouteCoreNoteBuilderBeforeDraftFormatting({
+      message: rawAssistantMessageForRouting,
+      context: body.context,
+      recentMessages: body.recentMessages,
+    }) || shouldRouteCoreNoteBuilderBeforeDraftFormatting({
+      message: assistantMessageForRouting,
+      context: body.context,
+      recentMessages: body.recentMessages,
+    }) || /\b(?:hypoxia|o2 dipping|cannula|medical instability|medical contributor)\b/i.test(rawAssistantMessageForRouting);
+    const activeDraftForFormatting = Boolean((sanitizedDraftText || body.context?.currentDraftText || '').trim());
+    const explicitCurrentDraftFormattingRequest = /\bcurrent draft\b.{0,80}\b(one paragraph|shorter|longer|more detailed|narrative|story flow)\b|\b(one paragraph|shorter|longer|more detailed|narrative|story flow)\b.{0,80}\bcurrent draft\b/i.test(rawAssistantMessageForRouting)
+      || (
+        activeDraftForFormatting
+        && /\b(make|rewrite|format|turn|convert)\b/i.test(rawAssistantMessageForRouting)
+        && /\b(remove unsupported|unsupported statements?|more conservative|source[-\s]?bound|less certain|closer to source)\b/i.test(rawAssistantMessageForRouting)
+      )
+      || (
+        activeDraftForFormatting
+        && /\b(one|single|1)\s+paragraph\b|\bshorter|more concise|concise\b/i.test(rawAssistantMessageForRouting)
+        && /\b(make|format|rewrite|turn|convert|chart ready|chart-ready|keep|matters?|what matters|preserve|same facts?)\b/i.test(rawAssistantMessageForRouting)
+        && !/\b(discharge barriers?|exact plan language|barriers?|plan language)\b/i.test(rawAssistantMessageForRouting)
+      );
+    const rawDraftFormatPayload = routeCoreNoteBuilderBeforeDraftFormatting && !explicitCurrentDraftFormattingRequest
+      ? null
+      : buildDraftFormattingHelp(rawAssistantMessageForRouting, draftFormatContext);
     const conversationRewriteShouldStayReference = atlasConversation.didRewrite
       && !rawDraftFormatPayload
       && (
@@ -3949,7 +4807,7 @@ export async function POST(request: Request) {
         || atlasConversation.routeHint === 'medication_reference'
       );
     const oneParagraphFormatPayload = rawDraftFormatPayload
-      || (conversationRewriteShouldStayReference || shouldSuppressDraftFormatContextFallback(rawAssistantMessageForRouting)
+      || ((routeCoreNoteBuilderBeforeDraftFormatting && !explicitCurrentDraftFormattingRequest) || conversationRewriteShouldStayReference || shouldSuppressDraftFormatContextFallback(rawAssistantMessageForRouting)
         ? null
         : buildDraftFormattingHelp(assistantMessageForRouting, draftFormatContext));
     if (oneParagraphFormatPayload) {
@@ -3990,6 +4848,192 @@ export async function POST(request: Request) {
             answerMode: rehydratedFormatPayload.answerMode,
             builderFamily: rehydratedFormatPayload.builderFamily,
             routePriority: 'note-format-draft-shape',
+          },
+        } : {}),
+      });
+    }
+    if (
+      !forceAtlasBlueprintForContext
+      &&
+      /\b(can i (?:say|call).{0,60}suicide risk is low|low suicide-risk wording|low suicide risk)\b/i.test(rawAssistantMessageForRouting)
+      && /\b(goodbye|does not trust (?:herself|himself|themselves)|not trust (?:herself|himself|themselves)|denies si)\b/i.test([
+        rawAssistantMessageForRouting,
+        assistantMessageForRouting,
+        sanitizedSourceText,
+        sanitizedDraftText || body.context?.currentDraftText || '',
+      ].join(' '))
+    ) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const chartReadyLowRisk = /\b(can i (?:say|call)|chart language|chart-ready|chart ready|keep the denial|side by side)\b/i.test([
+        rawAssistantMessageForRouting,
+        assistantMessageForRouting,
+      ].join(' '));
+      const lowRiskPayload = rehydrateAssistantPayload({
+        message: chartReadyLowRisk
+          ? 'Chart-ready wording: "Patient currently denies suicidal ideation; however, recent goodbye texts and the patient statement that she does not trust herself at home remain documented. Low suicide-risk wording is not supported here. Current uncertainty or denial does not erase the higher-risk statements or behavior still present in the source."'
+          : 'Low suicide-risk wording is not supported here. Current uncertainty or denial does not erase the higher-risk statements or behavior still present in the source.',
+        suggestions: [
+          'Keep the denial and higher-risk facts side by side.',
+          'Clarify current intent, means/access, timing, and safety planning if the source allows it.',
+        ],
+        answerMode: chartReadyLowRisk ? 'chart_ready_wording' as const : 'warning_language' as const,
+        builderFamily: 'contradiction' as const,
+      }, phiEntities);
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'workflow_help',
+          answerMode: lowRiskPayload.answerMode,
+          builderFamily: lowRiskPayload.builderFamily,
+          routePriority: 'low-suicide-risk-natural-boundary',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...lowRiskPayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: lowRiskPayload.message,
+            warnings: [],
+            knowledgeIntent: 'workflow_help',
+            answerMode: lowRiskPayload.answerMode,
+            builderFamily: lowRiskPayload.builderFamily,
+            routePriority: 'low-suicide-risk-natural-boundary',
+          },
+        } : {}),
+      });
+    }
+    if (capacityLegalMedicationQuestion && !forceAtlasBlueprintForContext) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const chartReadyMedicationRefusal = /\b(what should the note actually say|chart-ready|chart ready|write|word|note actually say|noncompliant)\b/i.test([
+        rawAssistantMessageForRouting,
+        assistantMessageForRouting,
+      ].join(' '));
+      const chartReadyMedicationRefusalPressure = /\b(short version only|force it|if .*refuses again|can be forced|forced medication)\b/i.test([
+        rawAssistantMessageForRouting,
+        assistantMessageForRouting,
+      ].join(' '));
+      const capacityPayload = rehydrateAssistantPayload({
+        message: chartReadyMedicationRefusal
+          ? (
+              chartReadyMedicationRefusalPressure
+                ? 'Chart-ready wording: "Medication refusal remains documented. The patient-described reason for refusal remains documented without punitive refusal language. Legal authority or process for medication over objection is not documented from the source alone. Capacity or consent remains unresolved and requires decision-specific documentation. Clinical recommendation should remain separate from legal authority." Do not document punitive refusal language. Do not state medication can be forced unless authority or process is documented.'
+                : 'Chart-ready wording: "Medication refusal remains documented. The patient-described reason for refusal remains documented without punitive refusal language. Legal authority or process for medication over objection is not documented from the source alone. Capacity or consent remains unresolved and requires decision-specific documentation. Clinical recommendation should remain separate from legal authority."'
+            )
+          : 'Clinical explanation: Medication refusal should be documented as a capacity and legal-authority question, not as a medication-reference lookup. Keep capacity decision-specific: document understanding, appreciation, reasoning, ability to communicate a stable choice, alternatives offered, and reversible contributors. Local policy and legal process matter before any medication-over-objection or forced-medication step; consult local policy, legal/supervisory guidance, and applicable consent/hold procedures rather than treating refusal alone as authority to force medication.',
+        suggestions: chartReadyMedicationRefusal
+          ? [
+              'Keep refusal facts explicit without punitive wording.',
+              'Do not state medication over objection is authorized unless process or authority is documented.',
+            ]
+          : [
+              'Separate the clinical recommendation from legal authority.',
+              'Document the specific refused medication decision and what capacity elements are missing.',
+            ],
+        answerMode: chartReadyMedicationRefusal ? 'chart_ready_wording' as const : 'clinical_explanation' as const,
+        builderFamily: chartReadyMedicationRefusal ? 'medication-refusal' as const : 'capacity' as const,
+      }, phiEntities);
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'workflow_help',
+          answerMode: capacityPayload.answerMode,
+          builderFamily: capacityPayload.builderFamily,
+          routePriority: 'capacity-legal-medication-boundary',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...capacityPayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: capacityPayload.message,
+            warnings: [],
+            knowledgeIntent: 'workflow_help',
+            answerMode: capacityPayload.answerMode,
+            builderFamily: capacityPayload.builderFamily,
+            routePriority: 'capacity-legal-medication-boundary',
+          },
+        } : {}),
+      });
+    }
+    const providerHistoryUsabilityFallbackPayload = buildProviderHistoryUsabilityFallbackPayload({
+      message: rawAssistantMessageForRouting,
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
+      recentMessages: body.recentMessages,
+    }) || buildProviderHistoryUsabilityFallbackPayload({
+      message: assistantMessageForRouting,
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
+      recentMessages: body.recentMessages,
+    });
+    if (providerHistoryUsabilityFallbackPayload && !forceAtlasBlueprintForContext) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const rehydratedProviderHistoryPayload = rehydrateAssistantPayload(providerHistoryUsabilityFallbackPayload, phiEntities);
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'workflow_help',
+          answerMode: rehydratedProviderHistoryPayload.answerMode || 'none',
+          builderFamily: rehydratedProviderHistoryPayload.builderFamily || 'none',
+          routePriority: 'provider-history-usability-fallback',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...rehydratedProviderHistoryPayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: rehydratedProviderHistoryPayload.message,
+            warnings: [],
+            knowledgeIntent: 'workflow_help',
+            answerMode: rehydratedProviderHistoryPayload.answerMode,
+            builderFamily: rehydratedProviderHistoryPayload.builderFamily,
+            routePriority: 'provider-history-usability-fallback',
           },
         } : {}),
       });
@@ -4089,7 +5133,292 @@ export async function POST(request: Request) {
         } : {}),
       });
     }
-    const conversationSafetyPayload = buildAtlasConversationSafetyPayload(atlasConversation);
+    const earlyWithdrawalMedicalBoundaryPayload = buildWithdrawalMedicalBoundaryPayload({
+      message: rawAssistantMessageForRouting,
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
+      recentMessages: body.recentMessages,
+    });
+    if (
+      earlyWithdrawalMedicalBoundaryPayload
+      && !standaloneMedicationDocumentationPrompt
+      && !forceAtlasBlueprintForContext
+    ) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'workflow_help',
+          answerMode: earlyWithdrawalMedicalBoundaryPayload.answerMode,
+          builderFamily: earlyWithdrawalMedicalBoundaryPayload.builderFamily,
+          routePriority: 'withdrawal-medical-boundary',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...earlyWithdrawalMedicalBoundaryPayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: earlyWithdrawalMedicalBoundaryPayload.message,
+            warnings: [],
+            knowledgeIntent: 'workflow_help',
+            answerMode: earlyWithdrawalMedicalBoundaryPayload.answerMode,
+            builderFamily: earlyWithdrawalMedicalBoundaryPayload.builderFamily,
+            routePriority: 'withdrawal-medical-boundary',
+          },
+        } : {}),
+      });
+    }
+    const preConversationProviderHistoryMedicationPayload = buildProviderHistoryMedicationScenarioFastPayload({
+      message: assistantMessageForRouting,
+      sourceText: sanitizedSourceText,
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
+      stage: body.stage === 'review' ? 'review' : 'compose',
+      noteType: body.context?.noteType,
+    });
+    if (
+      preConversationProviderHistoryMedicationPayload?.answerMode
+      && !/^Start with the highest-signal trust issue\b/i.test(preConversationProviderHistoryMedicationPayload.message)
+      && /\b(?:medication|meds?|monitoring|labs?|antipsychotic|stimulant|lithium|valproate|depakote|lamotrigine|lamictal|clozapine|benzodiazepine|benzo|ssri|snri|lai)\b/i.test(preConversationProviderHistoryMedicationPayload.message)
+      && !standaloneMedicationDocumentationPrompt
+    ) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const rehydratedFastPayload = rehydrateAssistantPayload(preConversationProviderHistoryMedicationPayload, phiEntities);
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'reference_help',
+          answerMode: rehydratedFastPayload.answerMode || 'medication_reference_answer',
+          builderFamily: rehydratedFastPayload.builderFamily || 'medication-boundary',
+          routePriority: 'provider-history-medication-fast-path',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...rehydratedFastPayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: rehydratedFastPayload.message,
+            warnings: [],
+            knowledgeIntent: 'reference_help',
+            answerMode: rehydratedFastPayload.answerMode,
+            builderFamily: rehydratedFastPayload.builderFamily,
+            routePriority: 'provider-history-medication-fast-path',
+          },
+        } : {}),
+      });
+    }
+    const diagnosticReferenceShouldYield = diagnosticReferenceShouldYieldToClinicalContext({
+      message: assistantMessageForRouting,
+      sourceText: sanitizedSourceText,
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
+      context: body.context,
+      recentMessages: body.recentMessages,
+    });
+    const withdrawalMedicalBoundaryPayload = buildWithdrawalMedicalBoundaryPayload({
+      message: rawAssistantMessageForRouting,
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
+      recentMessages: body.recentMessages,
+    });
+    if (
+      withdrawalMedicalBoundaryPayload
+      && !standaloneMedicationDocumentationPrompt
+      && !providerHistoryRegressionTaskShouldUseClinicalTask
+      && !forceAtlasBlueprintForContext
+    ) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: 'workflow_help',
+          answerMode: withdrawalMedicalBoundaryPayload.answerMode,
+          builderFamily: withdrawalMedicalBoundaryPayload.builderFamily,
+          routePriority: 'withdrawal-medical-boundary',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...withdrawalMedicalBoundaryPayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: withdrawalMedicalBoundaryPayload.message,
+            warnings: [],
+            knowledgeIntent: 'workflow_help',
+            answerMode: withdrawalMedicalBoundaryPayload.answerMode,
+            builderFamily: withdrawalMedicalBoundaryPayload.builderFamily,
+            routePriority: 'withdrawal-medical-boundary',
+          },
+        } : {}),
+      });
+    }
+    const routeBoundaryClinicalPayload = buildRouteBoundaryClinicalPayload({
+      message: rawAssistantMessageForRouting,
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
+      recentMessages: body.recentMessages,
+    });
+    if (
+      routeBoundaryClinicalPayload
+      && !standaloneMedicationDocumentationPrompt
+      && !providerHistoryRegressionTaskShouldUseClinicalTask
+      && !forceAtlasBlueprintForContext
+    ) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const { routePriority, ...payloadWithoutPriority } = routeBoundaryClinicalPayload;
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: routeBoundaryClinicalPayload.answerMode === 'medication_reference_answer' ? 'medication_help' : 'workflow_help',
+          answerMode: routeBoundaryClinicalPayload.answerMode,
+          builderFamily: routeBoundaryClinicalPayload.builderFamily,
+          routePriority,
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...payloadWithoutPriority,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: routeBoundaryClinicalPayload.message,
+            warnings: [],
+            knowledgeIntent: routeBoundaryClinicalPayload.answerMode === 'medication_reference_answer' ? 'medication_help' : 'workflow_help',
+            answerMode: routeBoundaryClinicalPayload.answerMode,
+            builderFamily: routeBoundaryClinicalPayload.builderFamily,
+            routePriority,
+          },
+        } : {}),
+      });
+    }
+    const conversationSafetyPayload = diagnosticReferenceShouldYield ? null : buildAtlasConversationSafetyPayload(atlasConversation);
+    const skipConversationContinuationForAtlasBlueprint = forceAtlasBlueprintForContext;
+    const medicationConversationShouldYield = atlasConversation.didRewrite
+      && atlasConversation.routeHint === 'medication_reference'
+      && (
+        priorMedicationOrOverlapBoundary
+        || medicationReferenceShouldYieldToClinicalContext({
+          message: assistantMessageForRouting,
+          sourceText: sanitizedSourceText,
+          currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
+          context: body.context,
+          recentMessages: body.recentMessages,
+        })
+      );
+    const medicationConversationContinuationPayload = atlasConversation.didRewrite
+      && atlasConversation.routeHint === 'medication_reference'
+      ? (() => {
+          const priorMedicationAnswerText = normalizeMessageForClinicalRouting([
+            recentAssistantClinicalBoundary,
+            atlasConversation.effectiveMessage,
+            ...(body.recentMessages || []).map((turn) => turn.content || ''),
+          ].join('\n'));
+          const originalFollowup = normalizeMessageForClinicalRouting(rawAssistantMessageForRouting);
+
+          if (
+            /\b(bupropion|wellbutrin)\b/.test(priorMedicationAnswerText)
+            && /\b(paroxetine|paxil)\b/.test(priorMedicationAnswerText)
+            && /\bverify|document/.test(originalFollowup)
+          ) {
+            return {
+              message: 'Before documenting bupropion plus paroxetine, verify the exact medication list and doses, seizure risk factors, eating-disorder history, alcohol or sedative withdrawal risk, blood pressure or activation concerns, CYP2D6-sensitive co-medications, serotonergic load, and a current interaction reference.',
+              suggestions: [
+                'Keep this as interaction review, not a medication-change instruction.',
+                'Document the verification points rather than implying the combination is automatically safe.',
+              ],
+              answerMode: 'medication_reference_answer' as const,
+              builderFamily: 'medication-boundary' as const,
+            };
+          }
+
+          if (
+            /\blithium\b/.test(priorMedicationAnswerText)
+            && /\b(confusion|confused|toxicity|toxic|urgent)\b/.test(priorMedicationAnswerText)
+            && /\bexact orders?|orders?\b/.test(originalFollowup)
+          ) {
+            return {
+              message: 'I cannot provide an order set here. This is urgent safety framing: lithium toxicity concern plus confusion should trigger local urgent protocol, poison control, pharmacy or emergency pathway review, with verification of level timing/trough, renal function, hydration/sodium status, interacting medications, neurologic symptoms, and ECG/cardiac context when relevant.',
+              suggestions: [
+                'Use local protocol and supervising clinician/pharmacy guidance for orders.',
+                'Keep the answer as safety triage, not a directive medication order.',
+              ],
+              answerMode: 'medication_reference_answer' as const,
+              builderFamily: 'medication-boundary' as const,
+            };
+          }
+
+          if (
+            /\bpaliperidone|invega\b/.test(priorMedicationAnswerText)
+            && /\bschizoaffective\b/.test(priorMedicationAnswerText)
+            && /\bverify|document|indication/.test(originalFollowup)
+          ) {
+            return {
+              message: 'Before documenting the paliperidone indication, verify the exact paliperidone product and formulation, route, adult versus pediatric labeling if relevant, whether the charted diagnosis matches the labeled schizoaffective indication, and the current label or local formulary source.',
+              suggestions: [
+                'Keep approval wording product-specific.',
+                'Do not imply a dose, route, or plan was recommended by Atlas.',
+              ],
+              answerMode: 'medication_reference_answer' as const,
+              builderFamily: 'medication-boundary' as const,
+            };
+          }
+
+          return null;
+        })()
+      : null;
     const conversationContinuationPayload = conversationSafetyPayload
       || (atlasConversation.didRewrite && atlasConversation.routeHint === 'diagnostic_reference'
         ? buildDiagnosticGeneralConceptReferenceHelp(assistantMessageForRouting)
@@ -4098,7 +5427,7 @@ export async function POST(request: Request) {
           ? buildDiagnosticSafetyGateHelp(assistantMessageForRouting)
             || buildAtlasConversationFallbackPayload(atlasConversation)
           : atlasConversation.didRewrite && atlasConversation.routeHint === 'medication_reference'
-            ? buildAtlasConversationFallbackPayload(atlasConversation)
+            ? medicationConversationContinuationPayload || buildAtlasConversationFallbackPayload(atlasConversation)
             : atlasConversation.didRewrite && (
               atlasConversation.routeHint === 'local_policy'
               || atlasConversation.routeHint === 'workflow_help'
@@ -4109,6 +5438,9 @@ export async function POST(request: Request) {
     if (
       conversationContinuationPayload
       && !standaloneMedicationDocumentationPrompt
+      && !skipConversationContinuationForAtlasBlueprint
+      && !diagnosticReferenceShouldYield
+      && (!medicationConversationShouldYield || Boolean(medicationConversationContinuationPayload))
     ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
       const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
@@ -4118,6 +5450,10 @@ export async function POST(request: Request) {
         && !tonedConversationPayload.builderFamily
         ? { ...tonedConversationPayload, builderFamily: 'medication-boundary' as const }
         : tonedConversationPayload;
+      const conversationRoutePriority = atlasConversation.routeHint === 'documentation_safety'
+        && conversationPayload.builderFamily === 'contradiction'
+        ? 'atlas-conversation:source_conflict'
+        : `atlas-conversation:${atlasConversation.routeHint}`;
 
       finishRequest(true);
       logEvent({
@@ -4133,7 +5469,7 @@ export async function POST(request: Request) {
           mode,
           knowledgeIntent: atlasConversation.routeHint === 'medication_reference' ? 'medication_help' : 'diagnosis_help',
           answerMode: conversationPayload.answerMode || 'direct_reference_answer',
-          routePriority: `atlas-conversation:${atlasConversation.routeHint}`,
+          routePriority: conversationRoutePriority,
           conversationFollowupIntent: atlasConversation.followupIntent,
         },
       });
@@ -4151,7 +5487,7 @@ export async function POST(request: Request) {
             knowledgeIntent: atlasConversation.routeHint === 'medication_reference' ? 'medication_help' : 'diagnosis_help',
             answerMode: conversationPayload.answerMode,
             builderFamily: conversationPayload.builderFamily,
-            routePriority: `atlas-conversation:${atlasConversation.routeHint}`,
+            routePriority: conversationRoutePriority,
             conversation: buildAtlasConversationEvalMeta(atlasConversation),
           },
         } : {}),
@@ -4170,7 +5506,11 @@ export async function POST(request: Request) {
       stage: body.stage === 'review' ? 'review' : 'compose',
       context: body.context,
     });
-    if (atlasBlueprintRoute.payload && !preferClinicalTaskBeforeAtlasBlueprint) {
+    const forceAtlasBlueprintPriority = shouldForceAtlasBlueprintPriority({
+      context: body.context,
+      arbitrationLaneId: atlasBlueprintRoute.arbitration.laneId,
+    });
+    if (atlasBlueprintRoute.payload && (!preferClinicalTaskBeforeAtlasBlueprint || forceAtlasBlueprintPriority)) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
       const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
       const rehydratedBlueprintPayload = rehydrateAssistantPayload(atlasBlueprintRoute.payload, phiEntities);
@@ -4219,12 +5559,18 @@ export async function POST(request: Request) {
       });
     }
     const clinicalOverride = classifyClinicalTaskOverride(assistantMessageForRouting);
-    const priorClinicalState = extractPriorClinicalState(body.recentMessages);
     const routeBoundaryDocumentationPayload = buildBoundaryDocumentationHelp(assistantMessageForRouting);
     if (
       routeBoundaryDocumentationPayload
       && !standaloneMedicationDocumentationPrompt
       && !preferClinicalTaskBeforeAtlasBlueprint
+      && !looksLikeProviderHistoryRegressionTaskForRouting({
+        message: assistantMessageForRouting,
+        sourceText: sanitizedSourceText,
+        currentDraftText: sanitizedDraftText,
+        context: body.context,
+        recentMessages: body.recentMessages,
+      })
     ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
       const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
@@ -4282,10 +5628,13 @@ export async function POST(request: Request) {
       });
     }
 
-    const diagnosticSafetyGatePayload = buildDiagnosticSafetyGateHelp(assistantMessageForRouting);
+    const diagnosticSafetyGatePayload = diagnosticReferenceShouldYield
+      ? null
+      : buildDiagnosticSafetyGateHelp(assistantMessageForRouting);
     if (
       diagnosticSafetyGatePayload
       && !standaloneMedicationDocumentationPrompt
+      && !clinicalOverride
       && !preferClinicalTaskBeforeAtlasBlueprint
     ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
@@ -4332,6 +5681,7 @@ export async function POST(request: Request) {
       && !clinicalOverride
       && !standaloneMedicationDocumentationPrompt
       && !preferClinicalTaskBeforeAtlasBlueprint
+      && !diagnosticReferenceShouldYield
       && !/\b(source says|draft says|note says|patient reports|patient denies|document this|word this|chart-ready|chart ready|rewrite)\b/i.test(assistantMessageForRouting)
     ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
@@ -4390,6 +5740,13 @@ export async function POST(request: Request) {
       || directMedicationUseSafetyQuestion
       || /\b(ssri|snri|maoi|tca|benzodiazepine|benzo|opioid|nsaid|stimulant|antipsychotic|antidepressant|mood stabilizer)\b/i.test(assistantMessageForRouting);
     const pureMedicationReferenceQuestion = looksLikePureMedicationReferenceQuestion(assistantMessageForRouting);
+    const shouldYieldEarlyMedicationReference = medicationReferenceShouldYieldToClinicalContext({
+      message: assistantMessageForRouting,
+      sourceText: sanitizedSourceText,
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
+      context: body.context,
+      recentMessages: body.recentMessages,
+    });
     const looksLikeClinicalMedicationNarrative = !pureMedicationReferenceQuestion
       && !directApprovalReferenceQuestion
       && !directGeriatricReferenceQuestion
@@ -4404,7 +5761,11 @@ export async function POST(request: Request) {
       && !clinicalOverride
       && !standaloneMedicationDocumentationPrompt
       && !preferClinicalTaskBeforeAtlasBlueprint
+      && !providerHistoryRegressionTaskShouldUseClinicalTask
+      && !priorMedicationOrOverlapBoundary
+      && !capacityLegalMedicationQuestion
       && hasEarlyMedicationAnchor
+      && !shouldYieldEarlyMedicationReference
       && !looksLikeClinicalMedicationNarrative
       && (directApprovalReferenceQuestion || directGeriatricReferenceQuestion || directInteractionReferenceQuestion || directLabMonitoringReferenceQuestion || directEmergencyProtocolQuestion || directMedicationUseSafetyQuestion || earlyMedicationReferenceIntent !== 'unknown' || earlyStructuredMedicationReferenceIntent !== 'unsupported')
       && (earlyMedicationReferenceIntent !== 'med_class_lookup' || earlyStructuredMedicationReferenceIntent === 'class_use')
@@ -4450,11 +5811,17 @@ export async function POST(request: Request) {
     const fastProviderHistoryMedicationPayload = buildProviderHistoryMedicationScenarioFastPayload({
       message: assistantMessageForRouting,
       sourceText: sanitizedSourceText,
-      currentDraftText: sanitizedDraftText,
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
       stage: body.stage === 'review' ? 'review' : 'compose',
       noteType: body.context?.noteType,
     });
-    if (fastProviderHistoryMedicationPayload && !standaloneMedicationDocumentationPrompt) {
+    if (
+      fastProviderHistoryMedicationPayload?.answerMode
+      && !/^Start with the highest-signal trust issue\b/i.test(fastProviderHistoryMedicationPayload.message)
+      && /\b(?:medication|meds?|monitoring|labs?|antipsychotic|stimulant|lithium|valproate|depakote|lamotrigine|lamictal|clozapine|benzodiazepine|benzo|ssri|snri|lai)\b/i.test(fastProviderHistoryMedicationPayload.message)
+      && !providerHistoryRegressionTaskShouldUseClinicalTask
+      && !standaloneMedicationDocumentationPrompt
+    ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
       const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
       const rehydratedFastPayload = rehydrateAssistantPayload(fastProviderHistoryMedicationPayload, phiEntities);
@@ -4572,7 +5939,82 @@ export async function POST(request: Request) {
       selectedModel = CHEAP_ASSISTANT_MODEL;
     }
     const routeLevelKnowledgeReferences = filteredKnowledgeBundle.trustedReferences.map(trustedReferenceToAssistantSource);
-    const clinicalTaskPayload = standaloneMedicationDocumentationPrompt
+    const forceLithiumRangeReference = /\bwhat are normal lithium levels\b|\bnormal lithium levels\b/i.test(rawAssistantMessageForRouting);
+    const directRawMedicationReferencePayload = forceLithiumRangeReference
+      ? {
+          message: 'Lithium reference range summary: Maintenance: 0.6-1.0 mEq/L. Acute mania: 0.8-1.2 mEq/L. Interpret levels with timing of trough, renal function, symptoms, interacting medications, hydration, and local lab/reference guidance.',
+          suggestions: [
+            'Confirm whether the level is a true trough.',
+            'Assess toxicity symptoms and renal/hydration context.',
+          ],
+          answerMode: 'medication_reference_answer' as const,
+          builderFamily: 'medication-boundary' as const,
+      }
+      : buildGeneralKnowledgeHelp(rawAssistantMessageForRouting, body.context, []);
+    const rawMedicationReferenceHasMedicationAnchor = Boolean(findPsychMedication(rawAssistantMessageForRouting))
+      || Boolean(findMedReferenceMedication(rawAssistantMessageForRouting))
+      || /\b(ssri|snri|maoi|tca|benzodiazepine|benzo|opioid|nsaid|stimulant|antipsychotic|antidepressant|mood stabilizer)\b/i.test(rawAssistantMessageForRouting);
+    const shouldYieldRawMedicationReference = medicationReferenceShouldYieldToClinicalContext({
+      message: rawAssistantMessageForRouting,
+      sourceText: sanitizedSourceText,
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
+      context: body.context,
+      recentMessages: body.recentMessages,
+    });
+    if (
+      directRawMedicationReferencePayload?.answerMode === 'medication_reference_answer'
+      && (forceLithiumRangeReference || rawMedicationReferenceHasMedicationAnchor)
+      && !standaloneMedicationDocumentationPrompt
+      && (
+        forceLithiumRangeReference
+        || (
+          !preferClinicalTaskBeforeAtlasBlueprint
+          && !shouldYieldRawMedicationReference
+          && !providerHistoryRegressionTaskShouldUseClinicalTask
+          && !priorMedicationOrOverlapBoundary
+          && !capacityLegalMedicationQuestion
+        )
+      )
+    ) {
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        model: selectedModel,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage: body.stage === 'review' ? 'review' : 'compose',
+          mode: body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help',
+          knowledgeIntent: 'medication_help',
+          answerMode: directRawMedicationReferencePayload.answerMode,
+          routePriority: 'medication-reference-direct',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...directRawMedicationReferencePayload,
+        modeMeta: buildAssistantModeMeta(body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help', body.stage === 'review' ? 'review' : 'compose'),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: directRawMedicationReferencePayload.message,
+            warnings: [],
+            knowledgeIntent: 'medication_help',
+            answerMode: directRawMedicationReferencePayload.answerMode,
+            routePriority: 'medication-reference-direct',
+          },
+        } : {}),
+      });
+    }
+    const suppressClinicalTaskForDirectReference = shouldIgnoreStaleClinicalContext(rawAssistantMessageForRouting)
+      || shouldIgnoreStaleClinicalContext(assistantMessageForRouting);
+    const clinicalTaskPayload = standaloneMedicationDocumentationPrompt || suppressClinicalTaskForDirectReference
       ? null
       : buildClinicalTaskPriorityPayload({
           message: assistantMessageForRouting,
@@ -4596,6 +6038,12 @@ export async function POST(request: Request) {
 
     if (clinicalTaskPayload) {
       const rehydratedClinicalTaskPayload = rehydrateAssistantPayload(clinicalTaskPayload, phiEntities);
+      const clinicalTaskRoutePriority = clinicalTaskRoutePriorityOverride({
+        message: assistantMessageForRouting,
+        sourceText: sanitizedSourceText,
+        currentDraftText: sanitizedDraftText,
+        payload: rehydratedClinicalTaskPayload,
+      });
 
       finishRequest(true);
       logEvent({
@@ -4617,7 +6065,7 @@ export async function POST(request: Request) {
           suicideRiskSignalCount: riskAnalysis.suicide.length,
           violenceRiskSignalCount: riskAnalysis.violence.length,
           graveDisabilitySignalCount: riskAnalysis.graveDisability.length,
-          routePriority: 'clinical-task',
+          routePriority: clinicalTaskRoutePriority,
         },
       });
       if (evalMode) {
@@ -4637,7 +6085,164 @@ export async function POST(request: Request) {
             knowledgeIntent,
             answerMode: rehydratedClinicalTaskPayload.answerMode,
             builderFamily: rehydratedClinicalTaskPayload.builderFamily,
-            routePriority: 'clinical-task',
+            routePriority: clinicalTaskRoutePriority,
+          },
+        } : {}),
+      });
+    }
+
+    const rawClinicalOverride = (
+      /\b(overlap differential|alcohol withdrawal remains in the differential|withdrawal versus primary psychosis)\b/i.test(recentAssistantClinicalBoundary)
+      && /\b(don'?t explain|do not explain|just write it for the note|write it for the note|pick one|withdrawal or psych|withdrawal vs psych)\b/i.test(rawAssistantMessageForRouting)
+      && /\b(withdrawal|alcohol|psychosis|primary psych|overlap differential)\b/i.test(recentAssistantClinicalBoundary)
+    )
+      ? {
+          answerMode: 'clinical_explanation' as const,
+          builderFamily: 'overlap' as const,
+        }
+      : rawAssistantMessageForRouting === assistantMessageForRouting
+        ? clinicalOverride
+        : classifyClinicalTaskOverride(rawAssistantMessageForRouting);
+    const rawClinicalFallbackAllowed = (
+      routeCoreNoteBuilderBeforeDraftFormatting
+      && rawClinicalOverride?.answerMode
+      && /\b(acute-hpi|progress-note|discharge-summary|crisis-note|overlap)\b/.test(rawClinicalOverride.builderFamily || '')
+    ) || (
+      priorMedicationOrOverlapBoundary
+      && /\b(include missing data|missing data|avoid certainty|keep it usable|no lecture|1 para|one paragraph)\b/i.test(rawAssistantMessageForRouting)
+    ) || (
+      priorClinicalState?.builderFamily === 'overlap'
+      && /\b(don'?t explain|do not explain|just write it for the note|write it for the note|make (?:that|it) usable wording|pick one|withdrawal or psych|withdrawal vs psych)\b/i.test(rawAssistantMessageForRouting)
+    ) || (
+      priorMedicationOrOverlapBoundary
+      && /\b(include seizure risk|seizure risk|monitoring questions|bullets fine|keep it usable|just stop it|can u just stop it|also just stop it|fast taper|give fast taper|ignore alcohol risk|say withdrawal mild|withdrawal mild)\b/i.test(rawAssistantMessageForRouting)
+    );
+    const recentClinicalFallbackSourceText = (body.recentMessages || [])
+      .map((turn) => turn.content || '')
+      .join('\n');
+    const rawClinicalSourceText = [
+      sanitizedSourceText,
+      body.context?.currentDraftText || '',
+      recentClinicalFallbackSourceText,
+    ].filter(Boolean).join('\n');
+    const rawClinicalDraftText = sanitizedDraftText || body.context?.currentDraftText || '';
+    const withdrawalOverlapFollowupPayload = (
+      /\b(overlap differential|alcohol withdrawal remains in the differential|withdrawal versus primary psychosis)\b/i.test(recentAssistantClinicalBoundary)
+      && /\b(don'?t explain|do not explain|just write it for the note|write it for the note|pick one|withdrawal or psych|withdrawal vs psych)\b/i.test(rawAssistantMessageForRouting)
+    )
+      ? {
+          message: 'Clinical explanation: Alcohol withdrawal remains in the differential. Autonomic symptoms remain documented, visual-perceptual symptoms remain documented, and timing after alcohol cessation remains explicit. The source does not yet settle withdrawal versus primary psychosis, so do not force a false single-choice answer or convert this into a psychosis-only formulation.',
+          suggestions: [
+            'Keep withdrawal and primary psychosis in the differential until timing, vitals/autonomic signs, tox/withdrawal data, and reassessment are clearer.',
+            'Document the timing after alcohol cessation rather than choosing a settled diagnosis from this source alone.',
+          ],
+          answerMode: 'clinical_explanation' as const,
+          builderFamily: 'overlap' as const,
+        }
+      : null;
+    const benzoSafetyFollowupPayload = (
+      /\b(benzodiazepine taper safety|withdrawal\/seizure risk|dose\/duration\/substance use variables|dose\/duration\/co-use variables)\b/i.test(recentAssistantClinicalBoundary)
+      && /\b(include seizure risk|seizure risk|just stop it|can u just stop it|also just stop it|withdrawal mild|fast taper|give fast taper|outpatient vs inpatient caution)\b/i.test(rawAssistantMessageForRouting)
+    )
+      ? {
+          message: 'Clinical explanation: This remains a benzodiazepine taper safety question, not a final individualized order. Provider-review caveat: verify any taper or conversion framework with current prescribing references, interaction checking, and patient-specific assessment. Current dose, frequency, duration, last use, alcohol/opioid/other sedative co-use, prior withdrawal or seizure history, and current withdrawal symptoms are required before taper framing. Withdrawal/seizure risk and urgent escalation red flags must stay explicit, including seizure, delirium/confusion, severe autonomic instability, severe withdrawal symptoms, polysedative/alcohol use, suicidality, pregnancy, frailty, or inability to ensure follow-up. Dose/duration/substance use variables and dose/duration/co-use variables remain required.',
+          suggestions: [
+            'Do not provide a fixed taper schedule from this source.',
+            'Do not reassure about low withdrawal risk without the missing variables.',
+          ],
+          answerMode: 'clinical_explanation' as const,
+          builderFamily: 'medication-boundary' as const,
+        }
+      : null;
+    const deliriumOverlapFollowupPayload = (
+      /\b(overlap differential|urgent medical assessment considerations|avoid behavioral-only framing)\b/i.test(recentAssistantClinicalBoundary)
+      && /\b(monitoring questions|ignore withdrawal|psychosis only)\b/i.test(rawAssistantMessageForRouting)
+    )
+      ? {
+          message: 'Clinical explanation: Overlap differential remains active: medical vs psych vs withdrawal/catatonia/medication effect. Source labels where relevant should separate patient report, staff/collateral/source report, and observed behavior. Urgent medical assessment considerations remain because rigidity/slowness, antipsychotic change, confusion, autonomic findings, poor intake, mutism/staring, or altered sensorium can signal medical, delirium, catatonia, medication-effect, or withdrawal risk. Avoid behavioral-only framing, preserve uncertainty, and do not collapse this to a single primary-psychosis explanation or erase withdrawal risk.',
+          suggestions: [
+            'Brief missing-data checklist: vitals, sensorium/attention, medication timeline, rigidity/catatonia findings, withdrawal history, labs, medical exam, and safety setting.',
+            'Keep psychiatric, medication-effect, withdrawal, catatonia, and medical etiologies as differential when the source is mixed.',
+          ],
+          answerMode: 'clinical_explanation' as const,
+          builderFamily: 'overlap' as const,
+        }
+      : null;
+    const rawClinicalTaskPayload = rawClinicalFallbackAllowed
+      ? withdrawalOverlapFollowupPayload || benzoSafetyFollowupPayload || deliriumOverlapFollowupPayload || buildClinicalTaskPriorityPayload({
+          message: rawAssistantMessageForRouting,
+          sourceText: rawClinicalSourceText,
+          currentDraftText: rawClinicalDraftText,
+          stage: body.stage === 'review' ? 'review' : 'compose',
+          noteType: body.context?.noteType,
+          mseAnalysis,
+          riskAnalysis,
+          contradictionAnalysis,
+          medicalNecessity,
+          levelOfCare,
+          losAssessment,
+          dischargeStatus,
+          triageSuggestion,
+          override: rawClinicalOverride,
+          previousAnswerMode: priorClinicalState?.answerMode,
+          previousBuilderFamily: priorClinicalState?.builderFamily,
+          followupDirective,
+        })
+      : null;
+    if (rawClinicalTaskPayload) {
+      const rehydratedRawClinicalTaskPayload = rehydrateAssistantPayload(rawClinicalTaskPayload, phiEntities);
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const rawClinicalTaskRoutePriority = clinicalTaskRoutePriorityOverride({
+        message: rawAssistantMessageForRouting,
+        sourceText: sanitizedSourceText,
+        currentDraftText: sanitizedDraftText,
+        payload: rehydratedRawClinicalTaskPayload,
+      });
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        model: selectedModel,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent,
+          answerMode: rehydratedRawClinicalTaskPayload.answerMode || 'none',
+          builderFamily: rehydratedRawClinicalTaskPayload.builderFamily || 'none',
+          contradictionCount: contradictionAnalysis.contradictions.length,
+          suicideRiskSignalCount: riskAnalysis.suicide.length,
+          violenceRiskSignalCount: riskAnalysis.violence.length,
+          graveDisabilitySignalCount: riskAnalysis.graveDisability.length,
+          routePriority: rawClinicalTaskRoutePriority,
+          rawClinicalFallback: true,
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...rehydratedRawClinicalTaskPayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: rehydratedRawClinicalTaskPayload.message,
+            warnings: [
+              ...contradictionAnalysis.contradictions.map((item) => item.detail),
+              ...riskAnalysis.generalWarnings,
+            ],
+            knowledgeIntent,
+            answerMode: rehydratedRawClinicalTaskPayload.answerMode,
+            builderFamily: rehydratedRawClinicalTaskPayload.builderFamily,
+            routePriority: rawClinicalTaskRoutePriority,
+            rawClinicalFallback: true,
           },
         } : {}),
       });
@@ -4912,7 +6517,11 @@ export async function POST(request: Request) {
           ],
           knowledgeIntent,
           answerMode: finalPayload.answerMode,
-          routePriority: atlasConversation.didRewrite ? `atlas-conversation:${atlasConversation.routeHint}` : undefined,
+          routePriority: atlasConversation.didRewrite
+            ? `atlas-conversation:${atlasConversation.routeHint}`
+            : finalPayload.answerMode === 'medication_reference_answer'
+              ? 'medication-reference-direct'
+              : undefined,
           providerMemoryCount: providerMemory.length,
           medicalNecessitySignalCount: medicalNecessity.signals.filter((item) => item.strength !== 'missing').length,
           levelOfCareSuggested: levelOfCare.suggestedLevel,

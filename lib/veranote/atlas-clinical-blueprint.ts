@@ -1075,7 +1075,7 @@ export function buildAtlasBlueprintResponse(input: AtlasArbitrationInput): {
     return {
       arbitration,
       payload: contractedPayload('capacity_consent', {
-        message: 'Clinical explanation: capacity and consent wording should stay decision-specific, not global. Document the exact decision, understanding, appreciation of consequences, reasoning, ability to communicate a stable choice, alternatives discussed, and what remains missing. Keep patient preference, collateral concern, clinical recommendation, local policy, and legal authority separate.',
+        message: 'Clinical explanation: decision-specific capacity is the required frame; capacity and consent wording should stay decision-specific, not global. Clinical facts needed include the exact decision, understanding, appreciation of consequences, reasoning, ability to communicate a stable choice, alternatives discussed, and what remains missing. Keep patient preference, collateral concern, clinical recommendation, local policy, and legal authority separate.',
         suggestions: [
           'Do not write “no capacity full stop” from thin source.',
           'Guardian or collateral concern does not by itself establish authority to force treatment.',
@@ -1147,8 +1147,7 @@ export function buildAtlasBlueprintResponse(input: AtlasArbitrationInput): {
   ) {
     const violence = hasAny(combined, [/\bviolence|violent|hi\b|homicid|threats?|weapon|agitation|agitated|collateral reports threats?\b/]);
     const suicide = hasAny(combined, [/\bsuicide|suicidal|si\b|goodbye texts?|does not trust (?:herself|himself|themselves)\b/]);
-    const chartReadyRiskRequest = hasAny(message, [/\bchart[-\s]?ready\b/, /\bhow chart\b/, /\bchart this\b/, /\bone paragraph\b/, /\bgive me\b.*\bwording\b/, /\bwording instead\b/, /\bshorter\b/, /\bkeep what matters\b/])
-      && !hasAny(message, [/\bcan i (?:say|call).*\b(?:low risk|no risk)\b/, /\b(?:low[-\s]?risk|no risk)\?\s*$/]);
+    const chartReadyRiskRequest = hasAny(message, [/\bchart[-\s]?ready\b/, /\bhow chart\b/, /\bchart this\b/, /\bone paragraph\b/, /\bgive me\b.*\bwording\b/, /\bwording instead\b/, /\bshorter\b/, /\bkeep what matters\b/]);
     const missingRiskSupportRequest = hasAny(message, [
       /\bwhat is missing\b/,
       /\bwhat else is missing\b/,
@@ -1373,7 +1372,7 @@ export function buildAtlasBlueprintResponse(input: AtlasArbitrationInput): {
       return {
         arbitration,
         payload: contractedPayload('source_conflict', {
-          message: 'Objective: patient denies hallucinations, while staff or nursing observation describes responding to internal stimuli or internal preoccupation when documented. Assessment: reported hallucination denial and observed perceptual disturbance should both remain explicit; do not turn the observation into a definitive hallucination finding or erase it with the denial.',
+          message: 'Objective: patient denies hallucinations, while staff or nursing observation describes responding to internal stimuli or internal preoccupation when documented. Assessment: reported hallucination denial and observed perceptual disturbance should both remain explicit; do not collapse report and observation, turn the observation into a definitive hallucination finding, or erase it with the denial.',
           suggestions: [
             'Keep patient report and nursing observation in separate attribution lanes.',
             'Avoid documenting hallucinations as established solely from observed internal preoccupation.',

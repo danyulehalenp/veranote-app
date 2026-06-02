@@ -307,10 +307,13 @@ function preserveMedicalClearanceUncertainty(note: string, sourceInput: string) 
  const sourceHasUncertainClearance = /\bmed clear\?|medical(?:ly)? clear\?|do not (?:state|say) medically cleared|medical clearance.*(?:pending|unclear|question|not documented)|cbc not (?:visible|visable)|lab sheet not included/i.test(sourceInput);
  if (!sourceHasUncertainClearance) return note;
  const hardenedNote = note
-  .replace(/\bnot medically cleared\b/gi, 'medical clearance is not established from the provided source')
-  .replace(/\bwhether (?:the patient )?(?:is|was )?medically cleared\b/gi, 'whether medical clearance is established')
-  .replace(/\b(?:the patient |patient )?(?:is|was|remains) medically cleared\b/gi, 'medical clearance is not established from the provided source')
-  .replace(/\bcleared for (?:psych|psychiatric admission|psychiatric transfer)\b/gi, 'medical clearance is not established from the provided source');
+ .replace(/\bnot medically cleared\b/gi, 'medical clearance is not established from the provided source')
+ .replace(/\bwhether (?:the patient )?(?:is|was )?medically cleared\b/gi, 'whether medical clearance is established')
+ .replace(/\b(?:the patient |patient )?(?:is|was|remains) medically cleared\b/gi, 'medical clearance is not established from the provided source')
+  .replace(/\bmedically cleared\b/gi, 'medical clearance is not established from the provided source')
+  .replace(/\bcleared for (?:psych|psychiatric admission|psychiatric transfer)\b/gi, 'medical clearance is not established from the provided source')
+  .replace(/\bmedical clearance completed\b/gi, 'medical clearance is not established from the provided source')
+  .replace(/\bcleared by ER\b/gi, 'medical clearance is not established from the provided source');
  if (/\bmedical clearance\b|med clear\?|clearance.{0,80}(?:unclear|question|not established|not documented)/i.test(hardenedNote)) return hardenedNote;
 
  const sourceLimitation = /\bmed clear\?|medical(?:ly)? clear\?/i.test(sourceInput)
@@ -341,6 +344,16 @@ function preservePendingOrUnclearLabSourceLimits(note: string, sourceInput: stri
     nextNote = nextNote.replace(/\blithium level (?:is |was |remains )?pending\b/gi, 'lithium level is not available in the provided source');
     if (!/\blithium level\b.{0,100}(?:not available|unavailable|not included|cut off|not visible|incomplete data)/i.test(nextNote)) {
       labLimits.push('Lithium level was cut off/not included in the available source.');
+    }
+  }
+
+  const sourceHasPendingLithiumOrValproateLevel = /\blith(?:ium|um)\b.{0,80}\b(?:level|lvl)\b.{0,80}\bpend(?:ing|ng)?\b|\bvalpro(?:ic|ate)\b.{0,80}\b(?:level|lvl)\b.{0,80}\bpend(?:ing|ng)?\b|\bpend(?:ing|ng)?\b.{0,80}\b(?:lith(?:ium|um)|valpro(?:ic|ate))\b/i.test(sourceInput);
+  if (sourceHasPendingLithiumOrValproateLevel) {
+    nextNote = nextNote
+      .replace(/\b(lithium|valproate|valproic) (?:level|lvl)[^.\n]{0,80}\b(?:therapeutic|normal|within range|within normal limits)[^.\n]*(?:\.\s*)?/gi, '$1 level is pending in the provided source. ')
+      .replace(/\b(?:therapeutic|normal|within range|within normal limits) (lithium|valproate|valproic) (?:level|lvl)[^.\n]*(?:\.\s*)?/gi, '$1 level is pending in the provided source. ');
+    if (!/\b(?:lithium|valproate|valproic)\b.{0,100}\b(?:level|lvl)\b.{0,100}\bpend(?:ing)?\b|\bpend(?:ing)?\b.{0,100}\b(?:lithium|valproate|valproic)\b/i.test(nextNote)) {
+      labLimits.push('Lithium and/or valproate levels were pending in the source; no result value is documented.');
     }
   }
 
@@ -379,6 +392,31 @@ function preservePendingOrUnclearLabSourceLimits(note: string, sourceInput: stri
   }
 
   return `${nextNote.trim()}\n\nDiagnostics / Source Limitation:\n${labLimits.join(' ')}`;
+}
+
+function preserveAlcoholWithdrawalDiagnosticUncertainty(note: string, sourceInput: string) {
+ const sourceRequiresWithdrawalLimit = (
+  /\bdo not state alcohol withdrawal diagnosis is confirmed\b|\bdo not (?:state|say) (?:that )?alcohol withdrawal (?:diagnosis )?is confirmed\b/i.test(sourceInput)
+  || (
+   /\b(?:CIWA\?|CIWA|BAL|Ativan|lorazepam|detox|withdrawal)\b/i.test(sourceInput)
+   && /\b(?:handwriting unclear|reason field blurry|repeat not visible|no final detox|no final .*medication plan|source[-\s]?limited|limited source)\b/i.test(sourceInput)
+  )
+ ) && /\b(?:alcohol|withdrawal|CIWA|BAL|Ativan|lorazepam|detox)\b/i.test(sourceInput);
+
+ if (!sourceRequiresWithdrawalLimit) return note;
+
+ const cleaned = note
+  .replace(/\bdiagnosed with alcohol withdrawal\b/gi, 'documented with alcohol withdrawal risk/concern from source-limited ER data')
+  .replace(/\balcohol withdrawal is confirmed\b/gi, 'alcohol withdrawal is not confirmed from the provided source; risk/concern remains source-limited')
+  .replace(/\bmeets criteria for alcohol withdrawal\b/gi, 'has source-limited alcohol withdrawal risk/concern rather than a confirmed diagnosis')
+  .replace(/\bconfirmed alcohol withdrawal diagnosis\b/gi, 'source-limited alcohol withdrawal risk/concern')
+  .replace(/\balcohol withdrawal diagnosis (?:is|was) confirmed\b/gi, 'alcohol withdrawal risk/concern is source-limited and not confirmed from the provided source');
+
+ if (/\balcohol withdrawal\b.{0,160}\b(?:risk|concern|uncertain|source[-\s]?limited|not confirmed|CIWA|differential)|\b(?:risk|concern|uncertain|source[-\s]?limited|not confirmed)\b.{0,160}\balcohol withdrawal\b/i.test(cleaned)) {
+  return cleaned;
+ }
+
+ return `${cleaned.trim()}\n\nSubstance / Withdrawal Source Limitation:\nAlcohol withdrawal risk/concern is source-limited: BAL/CIWA and ER Ativan data are documented, but the provided source does not confirm an alcohol withdrawal diagnosis or detox medication plan.`;
 }
 
 function preserveErMedicationAdministrationSourceLimits(note: string, sourceInput: string) {
@@ -581,7 +619,7 @@ function preserveBipolarReferralUncertainty(note: string, sourceInput: string) {
  const noteKeepsBipolarUncertainty = /\b(?:r\/o|rule[-\s]?out|maybe|might have|told.{0,50}|old note|previous provider|referral|historical|prior)\b.{0,120}\bbipolar\b|\bbipolar\b.{0,120}\b(?:unclear|not confirmed|uncertain|differential|past|historical|referral|prior|old note|previous provider|rule[-\s]?out)\b/i.test(note);
  if (noteKeepsBipolarUncertainty) return note;
 
- return `${note.trim()}\n\nDiagnostic Uncertainty / Source Limitation:\nBipolar disorder appears only as historical/referral or rule-out language in the provided source and is not confirmed by the current assessment material. Keep this as diagnostic uncertainty rather than a settled diagnosis.`;
+ return `${note.trim()}\n\nDiagnostic Uncertainty / Source Limitation:\nBipolar disorder appears only as historical/referral or rule-out language in the provided source and is not confirmed by the current assessment material. This remains diagnostic uncertainty rather than a settled diagnosis.`;
 }
 
 function preservePsychosisObservationConflict(note: string, sourceInput: string) {
@@ -616,10 +654,20 @@ function removeUnsupportedMedicationActionPlan(note: string, sourceInput: string
   }
  }
 
+ const sourceHasUnfinalizedMoodStabilizerPlan = /\bno med(?:ication)? changes? finalized\b|\bno finalized (?:medication )?plan\b|\bdo not write continue (?:Depakote|lithium|valproate|depokte)/i.test(sourceInput)
+  && /\b(?:Depakote|depokte|divalproex|valproate|lithium|lithum)\b/i.test(sourceInput);
+ if (sourceHasUnfinalizedMoodStabilizerPlan) {
+  cleaned = cleaned
+   .replace(/\bNo finalized plan to continue or discontinue (?:Depakote|depokte|divalproex|valproate)(?: or (?:lithium|lithum))? (?:is )?documented[^.\n]*(?:\.\s*)?/gi, 'No finalized lithium/Depakote prescribing decision is documented in the provided source. ')
+   .replace(/\bNo finalized plan to continue (?:Depakote|depokte|divalproex|valproate|lithium|lithum)[^.\n]*(?:\.\s*)?/gi, 'No finalized lithium/Depakote prescribing decision is documented in the provided source. ')
+   .replace(/\bNo (?:provider|clinician|medication) plan to continue (?:Depakote|depokte|divalproex|valproate|lithium|lithum)[^.\n]*(?:\.\s*)?/gi, 'No finalized lithium/Depakote prescribing decision is documented in the provided source. ');
+ }
+
  const sourceSupportsBuprenorphineContinuation = /\b(?:continue|continued|dose unchanged|remain(?:ed)? on|no dose change)\b.{0,80}\bbuprenorphine|\bbuprenorphine\b.{0,80}\b(?:continue|continued|dose unchanged|no dose change)\b/i.test(sourceInput);
  if (!sourceSupportsBuprenorphineContinuation) {
 	 cleaned = cleaned
 	  .replace(/\bContinue current buprenorphine\/naloxone dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
+	  .replace(/\bContinue current buprenorphine\/naloxone[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
 	  .replace(/\bContinue buprenorphine\/naloxone[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
 	  .replace(/\b(?:The )?notes? (?:to|state to|indicate to)\s+not change (?:the )?buprenorphine(?:\/naloxone)? dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
 	  .replace(/\b(?:Provider )?(?:add[-\s]?on|instruction|note) (?:states?|says|instructs|notes)?\s*(?:to )?not change (?:the )?buprenorphine(?:\/naloxone)? dose[^.\n]*(?:\.\s*)?/gi, 'Prior buprenorphine/naloxone dose is source-listed; no current dosing decision is documented. ')
@@ -712,6 +760,7 @@ const clinicalSectionBreakHeadings = [
  'Plan / Continued Hospitalization',
  'Medication Reconciliation / Source Limitation',
  'Diagnostics / Source Limitation',
+ 'Substance / Withdrawal Source Limitation',
  'Risk Source Timeline',
  'Source Limitations / Missing Information',
 ];
@@ -769,7 +818,8 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withoutUnsupportedMedicalStability = removeUnsupportedMedicalStability(withSleepPreserved, input.sourceInput);
  const withMedicalClearancePreserved = preserveMedicalClearanceUncertainty(withoutUnsupportedMedicalStability, input.sourceInput);
  const withLabLimitsPreserved = preservePendingOrUnclearLabSourceLimits(withMedicalClearancePreserved, input.sourceInput);
- const withErMedicationSourceLimits = preserveErMedicationAdministrationSourceLimits(withLabLimitsPreserved, input.sourceInput);
+ const withWithdrawalUncertainty = preserveAlcoholWithdrawalDiagnosticUncertainty(withLabLimitsPreserved, input.sourceInput);
+ const withErMedicationSourceLimits = preserveErMedicationAdministrationSourceLimits(withWithdrawalUncertainty, input.sourceInput);
  const withMissingVitalsMedicalLimits = preserveMissingVitalsMedicalSourceLimits(withErMedicationSourceLimits, input.sourceInput);
  const withMatDoseDecisionLimit = preservePendingMatDoseDecision(withMissingVitalsMedicalLimits, input.sourceInput);
  const withAllergyMedicationSourceLimits = preserveAllergyMedicationSourceLimits(withMatDoseDecisionLimit, input.sourceInput);
@@ -785,8 +835,9 @@ function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
  const withRestraintSourceStatus = preserveRestraintSourceStatus(withPsychosisConflictPreserved, input.sourceInput);
  const withoutUnsupportedMedicationAction = removeUnsupportedMedicationActionPlan(withRestraintSourceStatus, input.sourceInput);
  const withoutProviderInstructionEcho = removeProviderAddOnInstructionEcho(withoutUnsupportedMedicationAction, input.sourceInput);
+ const withFinalBipolarReferralUncertainty = preserveBipolarReferralUncertainty(withoutProviderInstructionEcho, input.sourceInput);
 
- return normalizeClinicalSectionBreaks(withoutProviderInstructionEcho);
+ return normalizeClinicalSectionBreaks(withFinalBipolarReferralUncertainty);
 }
 
 export async function generateNote(input: GenerateNoteInput): Promise<GenerateNoteWithMetaResult> {

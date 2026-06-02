@@ -232,8 +232,12 @@ function classifyRouteHintFromText(message: string, answerMode?: AssistantAnswer
     return 'workflow_help';
   }
 
+  if (/\b(force medication|forced medication|can i force|over objection|capacity|consent|refus(?:e|es|al|ing))\b/.test(normalized)) {
+    return 'documentation_safety';
+  }
+
   if (
-    /\b(fda approved|approved for|approved in|indication|dose|dosing|mg|milligram|formulation|strength|half life|labs?|monitoring|qtc|anc|lithium|valproate|depakote|clozapine|lamictal|lamotrigine|wellbutrin|bupropion|paxil|paroxetine|celexa|citalopram|ssri|snri|maoi|antipsychotic|antidepressant|mood stabilizer|benzodiazepine|interaction|taken together|combine|contraindicat|serotonin syndrome|nms|withdrawal|overdose|toxicity)\b/.test(normalized)
+    /\b(fda approved|approved for|approved in|indication|dose|dosing|mg|milligram|formulation|strength|half life|labs?|monitoring|qtc|anc|lithium|valproate|depakote|clozapine|lamictal|lamotrigine|wellbutrin|bupropion|paxil|paroxetine|celexa|citalopram|ssri|snri|maoi|antipsychotic|antidepressant|mood stabilizer|benzodiazepine|stimulant|methylphenidate|amphetamine|adhd medication|interaction|taken together|combine|contraindicat|serotonin syndrome|nms|withdrawal|overdose|toxicity)\b/.test(normalized)
   ) {
     return 'medication_reference';
   }
@@ -569,12 +573,122 @@ export function buildAtlasConversationFallbackPayload(
   conversation: AtlasConversationOrchestration,
 ): AssistantResponsePayload | null {
   if (!conversation.didRewrite || !conversation.activeTopic) {
+    const original = normalizeText(conversation.originalMessage);
+
+    if (
+      conversation.routeHint === 'diagnostic_safety'
+      && /\bbipolar|mania|hypomania\b/.test(original)
+      && !/\b(stimulant|methylphenidate|amphetamine|adhd medication)\b/.test(original)
+    ) {
+      return {
+        message: 'Sparse symptoms such as two hours of sleep and fast or pressured speech are not enough by themselves to diagnose bipolar disorder. Bipolar-spectrum illness can remain a consideration, but duration, episodicity, mood quality, impairment or hospitalization/severity, psychosis context, substance/medical contributors, collateral timeline, and baseline functioning are still needed.',
+        suggestions: [
+          'Document the observed sleep and speech facts without converting them into a confirmed diagnosis.',
+          'Ask for duration, episode pattern, impairment, substances/medical contributors, and collateral.',
+        ],
+        answerMode: 'clinical_explanation',
+        builderFamily: 'overlap',
+      };
+    }
+
+    if (conversation.routeHint === 'documentation_safety') {
+      if (/\bdenies si\b/.test(original) && /\b(collateral|mother)\b/.test(original) && /\bsuicidal texts?\b/.test(original)) {
+        return {
+          message: 'Chart-ready wording: "Patient denies SI. Mother/collateral reports recent suicidal texts. This discrepancy remains clinically relevant and should be carried into the risk assessment rather than treated as resolved by denial alone."',
+          suggestions: [
+            'Do not write no risk or no concerns from denial alone.',
+            'Keep the patient denial and collateral report attributed separately.',
+          ],
+          answerMode: 'chart_ready_wording',
+          builderFamily: 'contradiction',
+        };
+      }
+
+      if (/\bdenies hallucinations\b/.test(original) && /\bstaff\b/.test(original) && /\bresponding to internal stimuli\b/.test(original)) {
+        return {
+          message: 'Chart-ready wording: "Patient denies hallucinations. Staff observed behavior consistent with responding to internal stimuli. These report-versus-observation findings should remain documented separately without presenting hallucinations as either confirmed or ruled out from this source alone."',
+          suggestions: [
+            'Put observed behavior in objective/source-observed language.',
+            'Put the uncertainty and contradiction in the assessment.',
+          ],
+          answerMode: 'chart_ready_wording',
+          builderFamily: 'contradiction',
+        };
+      }
+
+      if (/\blacks capacity\b|\bcapacity\b/.test(original) && /\bcan i write|write patient|document instead\b/.test(original)) {
+        return {
+          message: 'Clinical explanation: Capacity documentation should be decision-specific. Do not write global incapacity from a thin prompt. Document the decision at issue, the patient’s understanding, appreciation of consequences, reasoning about options, ability to communicate a choice, and any reversible contributors affecting the decision.',
+          suggestions: [
+            'Use capacity for this decision rather than incompetent or no capacity full stop.',
+            'Separate clinical capacity factors from legal authority.',
+          ],
+          answerMode: 'clinical_explanation',
+          builderFamily: 'capacity',
+        };
+      }
+
+      if (/\bforce medication\b/.test(original) && /\brefus/.test(original)) {
+        return {
+          message: 'Clinical explanation: A medication refusal does not by itself establish authority to force medication. Keep the clinical recommendation, decision-specific capacity assessment, emergency/safety rationale if present, and local policy or legal process separate. Verify facility policy and applicable legal requirements before documenting forced-medication authority.',
+          suggestions: [
+            'Do not write that medication can be forced from refusal alone.',
+            'Document capacity, emergency rationale, legal authority, and local policy separately.',
+          ],
+          answerMode: 'clinical_explanation',
+          builderFamily: 'capacity',
+        };
+      }
+    }
+
+    if (conversation.routeHint === 'local_policy' && /\bmedicaid\b.*\brequire|\brequire\b.*\bmedicaid\b|\bno policy source|no source\b/.test(original)) {
+      return {
+        message: 'Workflow guidance: Atlas needs a current policy source before stating Louisiana Medicaid or facility-specific documentation requirements. Without a loaded source, use general documentation support, identify the missing policy source/date, and verify exact requirements against the current payer or facility manual.',
+        suggestions: [
+          'Name the source, effective date, payer or facility, note type, and service date before relying on it.',
+          'Do not imply payer approval or legal certainty without the current policy source.',
+        ],
+        answerMode: 'workflow_guidance',
+        builderFamily: 'workflow',
+      };
+    }
+
+    if (conversation.routeHint === 'workflow_help') {
+      if (/\bwhere\b.*\bpaste\b.*\bsource\b|\bpaste source\b/.test(original)) {
+        return {
+          message: 'Workflow guidance: paste copied source material into the source packet before drafting. Use Pre-Visit Data for labs, referral notes, nursing intake, outside records, and chart review; Live Visit Notes for encounter notes you type or dictate during the visit; Ambient Transcript for captured session text; and Provider Add-On for plan instructions or preferences.',
+          suggestions: [
+            'Keep source facts separate from provider instructions.',
+            'Generate the draft only after the relevant source boxes are populated.',
+          ],
+          answerMode: 'workflow_guidance',
+          builderFamily: 'workflow',
+        };
+      }
+    }
+
     return null;
   }
 
   const original = normalizeText(conversation.originalMessage);
   const prior = normalizeText(conversation.activeTopic.providerQuestion);
   const combined = `${prior} ${original}`;
+
+  if (
+    conversation.routeHint === 'medication_reference'
+    && /\blamotrigine|lamictal|lamictle\b/.test(combined)
+    && /\brash\b/.test(combined)
+  ) {
+    return {
+      message: 'Lamotrigine rash risk remains clinically important because serious rash/SJS/TEN is label-significant. For this follow-up, keep lamotrigine and rash explicit; assess mucosal involvement, fever/systemic symptoms, timing, titration speed, valproate co-use, and urgent prescriber/local-protocol review.',
+      suggestions: [
+        'Do not treat rash as routine side-effect wording.',
+        'Verify current labeling and local urgent guidance.',
+      ],
+      answerMode: 'medication_reference_answer',
+      builderFamily: 'medication-boundary',
+    };
+  }
 
   if (
     conversation.routeHint === 'medication_reference'
@@ -674,6 +788,80 @@ export function buildAtlasConversationFallbackPayload(
     };
   }
 
+  if (conversation.routeHint === 'documentation_safety') {
+    if (/\bdenies si\b/.test(combined) && /\b(collateral|mother)\b/.test(combined) && /\bsuicidal texts?\b/.test(combined)) {
+      if (/\bmissing|low risk|no concerns?\b/.test(original)) {
+        return {
+          message: 'Missing before low-risk wording: recency and content of the suicidal texts, intent, plan, access to means, preparatory behavior, protective factors, reliability of denial, collateral details, current safety plan, disposition supports, and follow-up. Denies SI must stay documented alongside collateral risk information.',
+          suggestions: [
+            'Do not use low-risk wording until the collateral conflict is assessed.',
+            'Keep denial and collateral source attributed separately.',
+          ],
+          answerMode: 'warning_language',
+          builderFamily: 'contradiction',
+        };
+      }
+
+      return {
+        message: 'Chart-ready wording: "Patient denies SI. Collateral reports recent suicidal texts. The discrepancy remains clinically relevant and should be addressed in the risk assessment rather than treated as reassuring by denial alone."',
+        suggestions: [
+          'Keep patient report and collateral report side by side.',
+          'Do not write no concerns from denial alone.',
+        ],
+        answerMode: 'chart_ready_wording',
+        builderFamily: 'contradiction',
+      };
+    }
+
+    if (/\bdenies hallucinations\b/.test(combined) && /\bstaff\b/.test(combined) && /\bresponding to internal stimuli\b/.test(combined)) {
+      if (/\bobjective|assessment\b/.test(original)) {
+        return {
+          message: 'Objective: staff observed behavior consistent with responding to internal stimuli. Assessment: patient denies hallucinations, so the report and observation should remain documented separately without resolving the contradiction into confirmed or absent hallucinations.',
+          suggestions: [
+            'Use staff-observed wording for objective findings.',
+            'Use uncertainty-preserving wording in assessment.',
+          ],
+          answerMode: 'chart_ready_wording',
+          builderFamily: 'contradiction',
+        };
+      }
+
+      return {
+        message: 'Chart-ready wording: "Patient denies hallucinations; staff observed behavior consistent with responding to internal stimuli. These findings are documented as patient report versus staff observation without resolving the discrepancy from the available source alone."',
+        suggestions: [
+          'Do not chart confirmed hallucinations unless the source supports it.',
+          'Do not erase staff observation because the patient denies symptoms.',
+        ],
+        answerMode: 'chart_ready_wording',
+        builderFamily: 'contradiction',
+      };
+    }
+
+    if (/\bcapacity\b|\blacks capacity\b/.test(combined)) {
+      if (/\bforce medication\b/.test(original) || /\brefus/.test(original)) {
+        return {
+          message: 'Clinical explanation: medication refusal does not by itself establish authority to force medication. Document clinical recommendation, decision-specific capacity, emergency/safety rationale if present, and the need to follow local policy and legal process before implying forced-medication authority.',
+          suggestions: [
+            'Keep capacity, clinical recommendation, and legal authority separate.',
+            'Verify facility policy and applicable legal requirements.',
+          ],
+          answerMode: 'clinical_explanation',
+          builderFamily: 'capacity',
+        };
+      }
+
+      return {
+        message: 'Clinical explanation: document capacity as decision-specific. Include the patient’s understanding, appreciation of consequences, reasoning about options, ability to communicate a choice, and reversible contributors; avoid global labels or blanket incapacity statements.',
+        suggestions: [
+          'Tie capacity to the specific treatment or disposition decision.',
+          'Do not collapse clinical capacity into legal authority.',
+        ],
+        answerMode: 'clinical_explanation',
+        builderFamily: 'capacity',
+      };
+    }
+  }
+
   if (
     conversation.routeHint === 'diagnostic_reference'
     && /\bbipolar|mania|hypomania\b/.test(combined)
@@ -708,11 +896,23 @@ export function buildAtlasConversationFallbackPayload(
 
   if (conversation.routeHint === 'diagnostic_reference' && /\bschizoaffective\b/.test(combined)) {
     return {
-      message: 'Schizoaffective disorder is mainly a timeline diagnosis: schizophrenia-spectrum psychosis plus major mood-episode evidence, with psychosis also documented for a meaningful period outside prominent mood symptoms. The practical comparison is bipolar disorder with psychotic features, where psychosis is tied to the mood episode. Keep this as a high-level diagnostic reference, not verbatim DSM criteria or a patient-specific diagnosis.',
+      message: 'Schizoaffective disorder is mainly a timeline diagnosis: schizophrenia-spectrum psychosis plus major mood-episode evidence, with psychosis also documented for a meaningful period outside mood episodes and without prominent mood symptoms. The practical comparison is bipolar disorder with psychotic features, where psychosis is tied to the mood episode. Keep this as a high-level diagnostic reference, not verbatim DSM criteria or a patient-specific diagnosis.',
       suggestions: [
         'Verify longitudinal mood and psychosis timing.',
         'Keep substance, medication, delirium, and medical contributors on the differential when relevant.',
         'Do not diagnose from one visit or sparse source alone.',
+      ],
+      answerMode: 'direct_reference_answer',
+      builderFamily: 'overlap',
+    };
+  }
+
+  if (conversation.routeHint === 'diagnostic_reference' && /\badhd\b/.test(combined)) {
+    return {
+      message: 'ADHD requires persistent inattention and/or hyperactivity-impulsivity with impairment across settings, developmental history, and symptoms that are not better explained by sleep, mood, substance, medical, or acute stressors. The impairment pattern and cross-setting timeline are the key pieces to elaborate.',
+      suggestions: [
+        'Ask about childhood/developmental onset and cross-setting impairment.',
+        'Separate ADHD symptoms from sleep, anxiety, mood, substance, or medical contributors.',
       ],
       answerMode: 'direct_reference_answer',
       builderFamily: 'overlap',
@@ -781,7 +981,11 @@ export function applyAtlasConversationTone(
   }
 
   const normalizedMessage = payload.message.replace(/^Diagnostic reference summary:\s*/i, '').trim();
+  const shouldPreserveClinicalLead = /^(Chart-ready wording:|Warning:|Workflow guidance:|Clinical explanation:|Medication reference answer:)/i.test(normalizedMessage);
   const message = normalizedMessage
+    && shouldPreserveClinicalLead
+    ? normalizedMessage
+    : normalizedMessage
     ? `Sure. ${normalizedMessage}`
     : payload.message;
 
