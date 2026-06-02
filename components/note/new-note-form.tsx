@@ -110,6 +110,7 @@ import {
   setDictationUiState as setLocalDictationUiState,
   updateDictationTarget,
 } from '@/lib/dictation/session-store';
+import { buildDictationInsertionWorkflowProfile } from '@/lib/dictation/ehr-insertion-profiles';
 import { resolveDictationCommandMatch } from '@/lib/dictation/command-library';
 import { getEffectiveDictationCommands } from '@/lib/dictation/command-library';
 import { buildDictationVoiceGuide, buildVoiceVocabularyHints } from '@/lib/dictation/voice-training';
@@ -1171,6 +1172,48 @@ function isServerDictationSessionId(sessionId: string | undefined) {
   return Boolean(sessionId?.startsWith('server-dictation-'));
 }
 
+type MiniVeranoteSourceTarget = Exclude<SourceTabKey, 'all'>;
+
+const MINI_VERANOTE_LAYOUT_STORAGE_KEY = 'veranote-mini-overlay:layout';
+const MINI_VERANOTE_PREF_STORAGE_KEY_PREFIX = 'veranote-mini-overlay:prefs';
+const MINI_VERANOTE_PREF_FALLBACK_STORAGE_KEY = 'veranote-mini-overlay:prefs:fallback';
+const MINI_VERANOTE_HANDOFF_STORAGE_KEY_PREFIX = 'veranote-mini-overlay:desktop-handoff';
+
+const MINI_VERANOTE_SOURCE_TARGETS: Array<{
+  id: MiniVeranoteSourceTarget;
+  label: string;
+}> = [
+  { id: 'intakeCollateral', label: 'Pre-Visit' },
+  { id: 'clinicianNotes', label: 'Live Visit' },
+  { id: 'patientTranscript', label: 'Ambient' },
+  { id: 'objectiveData', label: 'Add-On' },
+];
+
+function getMiniVeranoteProviderStorageKey(prefix: string, providerIdentityId: string) {
+  return `${prefix}:${providerIdentityId || 'default-provider'}`;
+}
+
+function getMiniVeranoteTargetLabel(target: MiniVeranoteSourceTarget) {
+  return MINI_VERANOTE_SOURCE_TARGETS.find((item) => item.id === target)?.label || 'Live Visit';
+}
+
+function writeMiniVeranotePreferences(
+  storageKey: string,
+  preferences: {
+    targetSection: MiniVeranoteSourceTarget;
+    ehrPayloadMode: 'smart' | 'draft' | 'target-source' | 'scratch';
+    selectedFieldTargetId: string;
+  },
+) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const serialized = JSON.stringify(preferences);
+  window.localStorage.setItem(storageKey, serialized);
+  window.localStorage.setItem(MINI_VERANOTE_PREF_FALLBACK_STORAGE_KEY, serialized);
+}
+
 type MiniVeranoteOverlayProps = {
   enabled: boolean;
   assistantName: string;
@@ -1184,7 +1227,7 @@ type MiniVeranoteOverlayProps = {
   hasSource: boolean;
   isGenerating: boolean;
   providerIdentityId: string;
-  onAppendLiveVisit: (text: string) => void;
+  onAppendToSource: (target: MiniVeranoteSourceTarget, text: string) => void;
   onOpenDictation: () => void;
   onOpenAmbient: () => void;
   onOpenAtlas: () => void;
@@ -1219,7 +1262,7 @@ function MiniVeranoteOverlay({
   hasSource,
   isGenerating,
   providerIdentityId,
-  onAppendLiveVisit,
+  onAppendToSource,
   onOpenDictation,
   onOpenAmbient,
   onOpenAtlas,
@@ -1227,23 +1270,151 @@ function MiniVeranoteOverlay({
 }: MiniVeranoteOverlayProps) {
   const [isMinimized, setIsMinimized] = useState(false);
   const [miniText, setMiniText] = useState('');
+  const [targetSection, setTargetSection] = useState<MiniVeranoteSourceTarget>('clinicianNotes');
+  const [ehrPayloadMode, setEhrPayloadMode] = useState<'smart' | 'draft' | 'target-source' | 'scratch'>('smart');
+  const [selectedFieldTargetId, setSelectedFieldTargetId] = useState('');
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [status, setStatus] = useState('Mini Veranote ready');
   const [askStatus, setAskStatus] = useState<'idle' | 'asking'>('idle');
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-  const size = isMinimized ? { width: 286, height: 76 } : { width: 380, height: 504 };
+  const layoutHydratedRef = useRef(false);
+  const preferencesHydratedRef = useRef(false);
+  const skipNextPreferencePersistRef = useRef(false);
+  const size = isMinimized ? { width: 286, height: 76 } : { width: 396, height: 604 };
+  const preferencesStorageKey = getMiniVeranoteProviderStorageKey(MINI_VERANOTE_PREF_STORAGE_KEY_PREFIX, providerIdentityId);
+  const desktopHandoffStorageKey = getMiniVeranoteProviderStorageKey(MINI_VERANOTE_HANDOFF_STORAGE_KEY_PREFIX, providerIdentityId);
+  const workflowProfile = useMemo(
+    () => buildDictationInsertionWorkflowProfile(
+      outputDestination as ProviderSettings['outputDestination'],
+      inferOutputNoteFocus(noteType),
+    ),
+    [noteType, outputDestination],
+  );
+  const selectedFieldTarget = workflowProfile.fieldTargets.find((target) => target.id === selectedFieldTargetId)
+    || workflowProfile.fieldTargets[0]
+    || null;
+  const targetSourceText = sourceSections[targetSection]?.trim() || '';
+  const ehrPayload = useMemo(() => {
+    if (ehrPayloadMode === 'draft') {
+      return currentDraftText.trim();
+    }
+
+    if (ehrPayloadMode === 'target-source') {
+      return targetSourceText;
+    }
+
+    if (ehrPayloadMode === 'scratch') {
+      return miniText.trim();
+    }
+
+    return currentDraftText.trim() || miniText.trim() || targetSourceText || sourceInput.trim();
+  }, [currentDraftText, ehrPayloadMode, miniText, sourceInput, targetSourceText]);
+  const ehrPayloadPreview = ehrPayload || 'Nothing ready to copy yet.';
+
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined' || layoutHydratedRef.current) {
+      return;
+    }
+
+    try {
+      const rawLayout = window.localStorage.getItem(MINI_VERANOTE_LAYOUT_STORAGE_KEY);
+      const parsedLayout = rawLayout ? JSON.parse(rawLayout) as { x?: unknown; y?: unknown; minimized?: unknown } : null;
+      if (parsedLayout && typeof parsedLayout.x === 'number' && typeof parsedLayout.y === 'number') {
+        const parsedPosition = { x: parsedLayout.x, y: parsedLayout.y };
+        setPosition((current) => current || clampMiniOverlayPosition(parsedPosition, size));
+      } else {
+        setPosition((current) => current || clampMiniOverlayPosition({
+          x: window.innerWidth - size.width - 22,
+          y: window.innerHeight - size.height - 22,
+        }, size));
+      }
+      if (typeof parsedLayout?.minimized === 'boolean') {
+        setIsMinimized(parsedLayout.minimized);
+      }
+      layoutHydratedRef.current = true;
+    } catch {
+      setPosition((current) => current || clampMiniOverlayPosition({
+      x: window.innerWidth - size.width - 22,
+      y: window.innerHeight - size.height - 22,
+    }, size));
+      layoutHydratedRef.current = true;
+    }
+  }, [enabled, size.height, size.width]);
+
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined' || preferencesHydratedRef.current) {
+      return;
+    }
+
+    try {
+      const rawPrefs = window.localStorage.getItem(preferencesStorageKey)
+        || window.localStorage.getItem(MINI_VERANOTE_PREF_FALLBACK_STORAGE_KEY);
+      if (!rawPrefs) {
+        preferencesHydratedRef.current = true;
+        return;
+      }
+      const parsedPrefs = JSON.parse(rawPrefs) as {
+        targetSection?: MiniVeranoteSourceTarget;
+        ehrPayloadMode?: typeof ehrPayloadMode;
+        selectedFieldTargetId?: string;
+      };
+      if (MINI_VERANOTE_SOURCE_TARGETS.some((target) => target.id === parsedPrefs.targetSection)) {
+        setTargetSection(parsedPrefs.targetSection as MiniVeranoteSourceTarget);
+      }
+      if (parsedPrefs.ehrPayloadMode === 'smart' || parsedPrefs.ehrPayloadMode === 'draft' || parsedPrefs.ehrPayloadMode === 'target-source' || parsedPrefs.ehrPayloadMode === 'scratch') {
+        setEhrPayloadMode(parsedPrefs.ehrPayloadMode);
+      }
+      if (typeof parsedPrefs.selectedFieldTargetId === 'string') {
+        setSelectedFieldTargetId(parsedPrefs.selectedFieldTargetId);
+      }
+      skipNextPreferencePersistRef.current = true;
+      preferencesHydratedRef.current = true;
+    } catch {
+      // Preferences are optional; malformed localStorage should not block capture.
+      preferencesHydratedRef.current = true;
+    }
+  }, [enabled, preferencesStorageKey]);
 
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') {
       return;
     }
 
-    setPosition((current) => current || clampMiniOverlayPosition({
-      x: window.innerWidth - size.width - 22,
-      y: window.innerHeight - size.height - 22,
-    }, size));
-  }, [enabled, size.height, size.width]);
+    if (!preferencesHydratedRef.current) {
+      return;
+    }
+
+    if (skipNextPreferencePersistRef.current) {
+      skipNextPreferencePersistRef.current = false;
+      return;
+    }
+
+    writeMiniVeranotePreferences(preferencesStorageKey, {
+      targetSection,
+      ehrPayloadMode,
+      selectedFieldTargetId,
+    });
+  }, [ehrPayloadMode, enabled, preferencesStorageKey, selectedFieldTargetId, targetSection]);
+
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined' || !position || !layoutHydratedRef.current) {
+      return;
+    }
+
+    window.localStorage.setItem(MINI_VERANOTE_LAYOUT_STORAGE_KEY, JSON.stringify({
+      ...position,
+      minimized: isMinimized,
+    }));
+  }, [enabled, isMinimized, position]);
+
+  useEffect(() => {
+    if (selectedFieldTargetId || !workflowProfile.fieldTargets[0]) {
+      return;
+    }
+
+    setSelectedFieldTargetId(workflowProfile.fieldTargets[0].id);
+  }, [selectedFieldTargetId, workflowProfile.fieldTargets]);
 
   if (!enabled || !position) {
     return null;
@@ -1292,24 +1463,37 @@ function MiniVeranoteOverlay({
       return;
     }
 
-    onAppendLiveVisit(trimmed);
-    setStatus('Added to Live Visit Notes');
+    onAppendToSource(targetSection, trimmed);
+    setStatus(`Added to ${getMiniVeranoteTargetLabel(targetSection)}`);
   }
 
   async function handleCopyForEhr() {
-    const exportText = currentDraftText.trim()
-      || miniText.trim()
-      || sourceSections.clinicianNotes.trim()
-      || sourceInput.trim();
-
-    if (!exportText) {
+    if (!ehrPayload) {
       setStatus('Nothing ready to copy yet.');
       return;
     }
 
+    const handoff = {
+      providerIdentityId,
+      createdAt: new Date().toISOString(),
+      destination: workflowProfile.destination,
+      destinationLabel: workflowProfile.destinationLabel,
+      destinationMode: workflowProfile.speechBoxMode,
+      fieldTargetId: selectedFieldTarget?.id,
+      fieldTargetLabel: selectedFieldTarget?.label,
+      sourceTarget: targetSection,
+      sourceTargetLabel: getMiniVeranoteTargetLabel(targetSection),
+      payloadMode: ehrPayloadMode,
+      text: ehrPayload,
+    };
+
     try {
-      await navigator.clipboard.writeText(exportText);
-      setStatus(currentDraftText.trim() ? 'Draft copied for EHR' : 'Source copied for EHR');
+      window.localStorage.setItem(desktopHandoffStorageKey, JSON.stringify(handoff));
+      window.dispatchEvent(new CustomEvent('veranote-mini-overlay-ehr-handoff', { detail: handoff }));
+      await navigator.clipboard.writeText(ehrPayload);
+      setStatus(selectedFieldTarget
+        ? `Copied ${selectedFieldTarget.label} payload`
+        : `${workflowProfile.destinationLabel} payload copied`);
     } catch {
       setStatus('Clipboard copy was not available in this browser.');
     }
@@ -1374,7 +1558,9 @@ function MiniVeranoteOverlay({
         left: `${position.x}px`,
         top: `${position.y}px`,
         width: `${size.width}px`,
+        maxWidth: 'calc(100vw - 24px)',
         height: `${size.height}px`,
+        maxHeight: 'calc(100vh - 24px)',
       }}
       onPointerDown={beginDrag}
       aria-label="Mini Veranote overlay"
@@ -1389,7 +1575,18 @@ function MiniVeranoteOverlay({
           <button
             type="button"
             data-no-mini-drag="true"
-            onClick={() => setIsMinimized((current) => !current)}
+            onClick={() => {
+              setIsMinimized((current) => {
+                const next = !current;
+                if (typeof window !== 'undefined' && position) {
+                  window.localStorage.setItem(MINI_VERANOTE_LAYOUT_STORAGE_KEY, JSON.stringify({
+                    ...position,
+                    minimized: next,
+                  }));
+                }
+                return next;
+              });
+            }}
             className="rounded-full border border-cyan-100/14 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-cyan-50/78"
           >
             {isMinimized ? 'Open' : 'Hide'}
@@ -1400,7 +1597,15 @@ function MiniVeranoteOverlay({
           <button
             type="button"
             data-no-mini-drag="true"
-            onClick={() => setIsMinimized(false)}
+            onClick={() => {
+              setIsMinimized(false);
+              if (typeof window !== 'undefined' && position) {
+                window.localStorage.setItem(MINI_VERANOTE_LAYOUT_STORAGE_KEY, JSON.stringify({
+                  ...position,
+                  minimized: false,
+                }));
+              }
+            }}
             className="flex flex-1 items-center justify-between gap-3 px-4 text-left text-sm font-semibold text-white"
           >
             <span>Capture, ask, copy</span>
@@ -1450,6 +1655,61 @@ function MiniVeranoteOverlay({
               />
             </label>
 
+            <div className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/62">
+              <div>Send target</div>
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4" role="group" aria-label="Mini Veranote source target">
+                {MINI_VERANOTE_SOURCE_TARGETS.map((target) => {
+                  const isActive = targetSection === target.id;
+                  return (
+                    <button
+                      key={target.id}
+                      type="button"
+                      data-testid={`mini-veranote-target-${target.id}`}
+                      data-no-mini-drag="true"
+                      aria-pressed={isActive}
+                      onClick={() => {
+                        preferencesHydratedRef.current = true;
+                        setTargetSection(target.id);
+                        writeMiniVeranotePreferences(preferencesStorageKey, {
+                          targetSection: target.id,
+                          ehrPayloadMode,
+                          selectedFieldTargetId,
+                        });
+                      }}
+                      className={`rounded-[12px] border px-2 py-1.5 text-[11px] font-semibold transition ${
+                        isActive
+                          ? 'border-cyan-200/34 bg-cyan-300/14 text-white'
+                          : 'border-cyan-100/12 bg-white/[0.04] text-cyan-50/66'
+                      }`}
+                    >
+                      {target.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <select
+                data-testid="mini-veranote-target-select"
+                data-no-mini-drag="true"
+                aria-label="Mini Veranote source target"
+                value={targetSection}
+                onChange={(event) => {
+                  const nextTarget = event.target.value as MiniVeranoteSourceTarget;
+                  preferencesHydratedRef.current = true;
+                  setTargetSection(nextTarget);
+                  writeMiniVeranotePreferences(preferencesStorageKey, {
+                    targetSection: nextTarget,
+                    ehrPayloadMode,
+                    selectedFieldTargetId,
+                  });
+                }}
+                className="rounded-[14px] border border-cyan-100/14 bg-[rgba(7,18,32,0.74)] px-3 py-2 text-sm normal-case tracking-normal text-white outline-none focus:border-cyan-100/36"
+              >
+                {MINI_VERANOTE_SOURCE_TARGETS.map((target) => (
+                  <option key={target.id} value={target.id}>{target.label}</option>
+                ))}
+              </select>
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -1472,6 +1732,76 @@ function MiniVeranoteOverlay({
                 Copy for EHR
               </button>
             </div>
+
+            <details className="rounded-[16px] border border-cyan-100/12 bg-white/[0.035] p-3" open>
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/64">
+                EHR handoff
+              </summary>
+              <div className="mt-2 grid gap-2">
+                <div className="rounded-[12px] border border-cyan-100/10 bg-[rgba(7,18,32,0.62)] px-3 py-2 text-xs leading-5 text-cyan-50/72">
+                  {workflowProfile.supportsDirectFieldInsertion
+                    ? `${workflowProfile.destinationLabel}: ${workflowProfile.directFieldGuidance}`
+                    : workflowProfile.directFieldGuidance}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="grid gap-1 text-[11px] font-semibold uppercase tracking-[0.11em] text-cyan-100/58">
+                    Copy mode
+                    <select
+                      data-testid="mini-veranote-copy-mode"
+                      data-no-mini-drag="true"
+                      value={ehrPayloadMode}
+                      onChange={(event) => {
+                        const nextMode = event.target.value as typeof ehrPayloadMode;
+                        preferencesHydratedRef.current = true;
+                        setEhrPayloadMode(nextMode);
+                        writeMiniVeranotePreferences(preferencesStorageKey, {
+                          targetSection,
+                          ehrPayloadMode: nextMode,
+                          selectedFieldTargetId,
+                        });
+                      }}
+                      className="rounded-[12px] border border-cyan-100/14 bg-[rgba(7,18,32,0.74)] px-2 py-1.5 text-xs normal-case tracking-normal text-white"
+                    >
+                      <option value="smart">Best available</option>
+                      <option value="draft">Draft</option>
+                      <option value="target-source">Selected source</option>
+                      <option value="scratch">Scratch only</option>
+                    </select>
+                  </label>
+                  <label className="grid gap-1 text-[11px] font-semibold uppercase tracking-[0.11em] text-cyan-100/58">
+                    EHR field
+                    <select
+                      data-testid="mini-veranote-ehr-field-select"
+                      data-no-mini-drag="true"
+                      value={selectedFieldTarget?.id || ''}
+                      onChange={(event) => {
+                        const nextFieldTargetId = event.target.value;
+                        preferencesHydratedRef.current = true;
+                        setSelectedFieldTargetId(nextFieldTargetId);
+                        writeMiniVeranotePreferences(preferencesStorageKey, {
+                          targetSection,
+                          ehrPayloadMode,
+                          selectedFieldTargetId: nextFieldTargetId,
+                        });
+                      }}
+                      className="rounded-[12px] border border-cyan-100/14 bg-[rgba(7,18,32,0.74)] px-2 py-1.5 text-xs normal-case tracking-normal text-white"
+                    >
+                      {workflowProfile.fieldTargets.length ? workflowProfile.fieldTargets.map((target) => (
+                        <option key={target.id} value={target.id}>{target.label}</option>
+                      )) : (
+                        <option value="">Main note body</option>
+                      )}
+                    </select>
+                  </label>
+                </div>
+                <div
+                  data-testid="mini-veranote-ehr-preview"
+                  className="max-h-24 overflow-y-auto whitespace-pre-wrap rounded-[12px] border border-cyan-100/10 bg-[rgba(7,18,32,0.62)] p-2 text-xs leading-5 text-cyan-50/72"
+                >
+                  {ehrPayloadPreview}
+                </div>
+              </div>
+            </details>
 
             <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/62">
               Ask Atlas
@@ -5293,28 +5623,28 @@ export function NewNoteForm() {
     window.dispatchEvent(new CustomEvent(ASSISTANT_OPEN_EVENT));
   }
 
-  function handleMiniVeranoteAppendLiveVisit(text: string) {
+  function handleMiniVeranoteAppendToSource(target: MiniVeranoteSourceTarget, text: string) {
     const trimmedText = text.trim();
     if (!trimmedText) {
       return;
     }
 
     setSourceSections((current) => {
-      const existing = current.clinicianNotes.trim();
+      const existing = current[target].trim();
       return {
         ...current,
-        clinicianNotes: existing ? `${existing}\n\n${trimmedText}` : trimmedText,
+        [target]: existing ? `${existing}\n\n${trimmedText}` : trimmedText,
       };
     });
     handleSourceWorkspaceModeChange('manual');
-    setActiveSourceTab('clinicianNotes');
-    setEvalBanner('Mini Veranote added text to Live Visit Notes.');
+    setActiveSourceTab(target);
+    setEvalBanner(`Mini Veranote added text to ${getMiniVeranoteTargetLabel(target)}.`);
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        const target = document.getElementById('source-field-clinicianNotes');
-        target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        target?.querySelector('textarea')?.focus({ preventScroll: true });
+        const field = document.getElementById(`source-field-${target}`);
+        field?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        field?.querySelector('textarea')?.focus({ preventScroll: true });
       });
     });
   }
@@ -5341,7 +5671,7 @@ export function NewNoteForm() {
       hasSource={hasSource}
       isGenerating={isLoading}
       providerIdentityId={resolvedProviderIdentityId}
-      onAppendLiveVisit={handleMiniVeranoteAppendLiveVisit}
+      onAppendToSource={handleMiniVeranoteAppendToSource}
       onOpenDictation={() => openCaptureOption('dictation')}
       onOpenAmbient={() => openCaptureOption('transcript')}
       onOpenAtlas={openAtlasAssistant}

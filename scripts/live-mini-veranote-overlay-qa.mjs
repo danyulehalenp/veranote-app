@@ -5,7 +5,9 @@
  *
  * Verifies the flagged always-on overlay can:
  * - render over the new-note workspace
- * - append scratch text into Live Visit Notes
+ * - append scratch text into the selected source field
+ * - persist target/minimized preferences after reload
+ * - preview and copy an EHR handoff payload
  * - open dictation and ambient capture lanes
  * - summon the existing Atlas assistant shell
  */
@@ -199,8 +201,10 @@ async function run() {
     sameSite: 'Lax',
   }]);
   await context.addInitScript((providerId) => {
-    window.localStorage.clear();
-    window.sessionStorage.clear();
+    if (!window.sessionStorage.getItem('mini-veranote-qa-initialized')) {
+      window.localStorage.clear();
+      window.sessionStorage.setItem('mini-veranote-qa-initialized', '1');
+    }
     window.localStorage.setItem('veranote:current-provider-id', providerId);
   }, TEST_PROVIDER_ID);
 
@@ -215,12 +219,16 @@ async function run() {
     assertState(Boolean(overlayBox && overlayBox.width >= 320 && overlayBox.height >= 420), `Mini Veranote overlay rendered at an unexpected size: ${JSON.stringify(overlayBox)}`, failures);
 
     const scratch = 'Mini overlay QA: patient reports improved sleep and denies suicidal ideation.';
+    await page.getByTestId('mini-veranote-target-objectiveData').evaluate((node) => node.click());
     await page.getByTestId('mini-veranote-source-input').fill(scratch);
     await page.getByTestId('mini-veranote-send-source').click();
-    await page.locator('#source-field-clinicianNotes textarea').first().waitFor({ state: 'visible', timeout: 10000 });
-    const liveVisitValue = await page.locator('#source-field-clinicianNotes textarea').first().inputValue();
-    assertState(liveVisitValue.includes('Mini overlay QA'), 'Mini Veranote did not append text into Live Visit Notes', failures);
+    await page.locator('#source-field-objectiveData textarea').first().waitFor({ state: 'visible', timeout: 10000 });
+    const addOnValue = await page.locator('#source-field-objectiveData textarea').first().inputValue();
+    assertState(addOnValue.includes('Mini overlay QA'), 'Mini Veranote did not append text into the selected Provider Add-On source field', failures);
     assertState(await page.getByText(/Mini Veranote added text/i).first().isVisible().catch(() => false), 'Mini Veranote append did not update the workspace status banner', failures);
+
+    const previewText = await page.getByTestId('mini-veranote-ehr-preview').textContent();
+    assertState(Boolean(previewText?.includes('Mini overlay QA')), 'Mini Veranote EHR preview did not reflect the selected scratch payload', failures);
 
     await page.getByTestId('mini-veranote-open-dictation').click();
     await page.getByText(/Dictation source mode/i).first().waitFor({ state: 'visible', timeout: 10000 });
@@ -241,12 +249,18 @@ async function run() {
     assertState(answerVisible, 'Mini Veranote inline Atlas answer did not appear', failures);
 
     await page.getByTestId('mini-veranote-copy-ehr').click();
-    await page.getByText(/copied for EHR/i).first().waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
-    const copyStatusVisible = await page.getByText(/copied for EHR|Clipboard copy was not available/i).first().isVisible().catch(() => false);
+    await page.getByText(/copied .*payload|payload copied|Clipboard copy was not available/i).first().waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+    const copyStatusVisible = await page.getByText(/copied .*payload|payload copied|Clipboard copy was not available/i).first().isVisible().catch(() => false);
     assertState(copyStatusVisible, 'Mini Veranote copy action did not report a status', failures);
 
     await page.getByText(/^Hide$/).click();
     assertState(await page.getByTestId('mini-veranote-dock').isVisible().catch(() => false), 'Mini Veranote did not minimize into a dock', failures);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByTestId('mini-veranote-dock').waitFor({ state: 'visible', timeout: 15000 });
+    await page.getByTestId('mini-veranote-dock').getByRole('button', { name: /^Open$/ }).click();
+    await page.getByTestId('mini-veranote-overlay').waitFor({ state: 'visible', timeout: 15000 });
+    const persistedTargetPressed = await page.getByTestId('mini-veranote-target-objectiveData').getAttribute('aria-pressed');
+    assertState(persistedTargetPressed === 'true', `Mini Veranote did not persist selected target; aria-pressed=${persistedTargetPressed}`, failures);
   } finally {
     await browser.close();
     if (server) {
