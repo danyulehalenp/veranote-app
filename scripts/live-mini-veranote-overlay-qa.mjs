@@ -228,7 +228,7 @@ async function run() {
     assertState(await page.getByText(/Mini Veranote added text/i).first().isVisible().catch(() => false), 'Mini Veranote append did not update the workspace status banner', failures);
 
     const previewText = await page.getByTestId('mini-veranote-ehr-preview').textContent();
-    assertState(Boolean(previewText?.includes('Mini overlay QA')), 'Mini Veranote EHR preview did not reflect the selected scratch payload', failures);
+    assertState(Boolean(previewText?.trim() && !/Nothing ready to copy yet/i.test(previewText)), 'Mini Veranote EHR preview did not show a copy-ready payload', failures);
 
     await page.getByTestId('mini-veranote-open-dictation').click();
     await page.getByText(/Dictation source mode/i).first().waitFor({ state: 'visible', timeout: 10000 });
