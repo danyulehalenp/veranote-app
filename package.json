@@ -18,6 +18,7 @@
     "live:assistant:route-qa": "npx tsx scripts/run-live-assistant-route-qa.mjs",
     "live:document-intake": "npx tsx scripts/live-document-source-intake-qa.mjs",
     "live:note:e2e": "npx tsx scripts/live-note-end-to-end-qa.mjs",
+    "live:mini-overlay": "node scripts/live-mini-veranote-overlay-qa.mjs",
     "live:note:matrix": "npx tsx scripts/live-note-workflow-matrix-qa.mjs",
     "live:note:qa": "npx tsx scripts/live-note-workflow-qa.mjs",
     "live:patient-continuity": "node scripts/live-patient-continuity-qa.mjs",

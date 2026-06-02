@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { noteTypeOptionsBySpecialty, sampleSourceInput, templateDescriptions, templateOptionsByNoteType } from '@/lib/constants/mock-data';
@@ -1169,6 +1169,365 @@ function mergeDictationSessionHistory(
 
 function isServerDictationSessionId(sessionId: string | undefined) {
   return Boolean(sessionId?.startsWith('server-dictation-'));
+}
+
+type MiniVeranoteOverlayProps = {
+  enabled: boolean;
+  assistantName: string;
+  assistantAvatar: ProviderSettings['userAiAvatar'];
+  noteType: string;
+  specialty: string;
+  outputDestination: string;
+  sourceSections: SourceSections;
+  sourceInput: string;
+  currentDraftText: string;
+  hasSource: boolean;
+  isGenerating: boolean;
+  providerIdentityId: string;
+  onAppendLiveVisit: (text: string) => void;
+  onOpenDictation: () => void;
+  onOpenAmbient: () => void;
+  onOpenAtlas: () => void;
+  onGenerateDraft: () => void;
+};
+
+function clampMiniOverlayPosition(
+  next: { x: number; y: number },
+  size: { width: number; height: number },
+) {
+  if (typeof window === 'undefined') {
+    return next;
+  }
+
+  const margin = 12;
+  return {
+    x: Math.min(Math.max(next.x, margin), Math.max(margin, window.innerWidth - size.width - margin)),
+    y: Math.min(Math.max(next.y, margin), Math.max(margin, window.innerHeight - size.height - margin)),
+  };
+}
+
+function MiniVeranoteOverlay({
+  enabled,
+  assistantName,
+  assistantAvatar,
+  noteType,
+  specialty,
+  outputDestination,
+  sourceSections,
+  sourceInput,
+  currentDraftText,
+  hasSource,
+  isGenerating,
+  providerIdentityId,
+  onAppendLiveVisit,
+  onOpenDictation,
+  onOpenAmbient,
+  onOpenAtlas,
+  onGenerateDraft,
+}: MiniVeranoteOverlayProps) {
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [miniText, setMiniText] = useState('');
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [status, setStatus] = useState('Mini Veranote ready');
+  const [askStatus, setAskStatus] = useState<'idle' | 'asking'>('idle');
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const size = isMinimized ? { width: 286, height: 76 } : { width: 380, height: 504 };
+
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined') {
+      return;
+    }
+
+    setPosition((current) => current || clampMiniOverlayPosition({
+      x: window.innerWidth - size.width - 22,
+      y: window.innerHeight - size.height - 22,
+    }, size));
+  }, [enabled, size.height, size.width]);
+
+  if (!enabled || !position) {
+    return null;
+  }
+
+  function beginDrag(event: ReactPointerEvent<HTMLElement>) {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button, input, textarea, select, a, [data-no-mini-drag="true"]')) {
+      return;
+    }
+
+    event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    if (!position) {
+      return;
+    }
+    const startPosition = { ...position };
+    document.body.style.userSelect = 'none';
+
+    function handlePointerMove(moveEvent: PointerEvent) {
+      setPosition(clampMiniOverlayPosition({
+        x: startPosition.x + moveEvent.clientX - startX,
+        y: startPosition.y + moveEvent.clientY - startY,
+      }, size));
+    }
+
+    function handlePointerUp(moveEvent: PointerEvent) {
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      setPosition(clampMiniOverlayPosition({
+        x: startPosition.x + moveEvent.clientX - startX,
+        y: startPosition.y + moveEvent.clientY - startY,
+      }, size));
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  }
+
+  function handleAppend() {
+    const trimmed = miniText.trim();
+    if (!trimmed) {
+      setStatus('Add source text before sending it into the note.');
+      return;
+    }
+
+    onAppendLiveVisit(trimmed);
+    setStatus('Added to Live Visit Notes');
+  }
+
+  async function handleCopyForEhr() {
+    const exportText = currentDraftText.trim()
+      || miniText.trim()
+      || sourceSections.clinicianNotes.trim()
+      || sourceInput.trim();
+
+    if (!exportText) {
+      setStatus('Nothing ready to copy yet.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(exportText);
+      setStatus(currentDraftText.trim() ? 'Draft copied for EHR' : 'Source copied for EHR');
+    } catch {
+      setStatus('Clipboard copy was not available in this browser.');
+    }
+  }
+
+  async function handleAskAtlas() {
+    const trimmed = question.trim();
+    if (!trimmed) {
+      setAnswer('Ask a focused question first.');
+      return;
+    }
+
+    setAskStatus('asking');
+    setAnswer('');
+
+    try {
+      const response = await fetch('/api/assistant/respond', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stage: currentDraftText.trim() ? 'review' : 'compose',
+          mode: 'workflow-help',
+          message: trimmed,
+          context: {
+            providerIdentityId,
+            userAiName: assistantName,
+            noteType,
+            specialty,
+            outputDestination,
+            activeSourceMode: 'mini-veranote-overlay',
+            currentDraftText: currentDraftText.trim() ? currentDraftText.slice(0, 4000) : undefined,
+            customInstructions: miniText.trim() || undefined,
+          },
+          recentMessages: [
+            {
+              role: 'provider',
+              content: trimmed,
+            },
+          ],
+        }),
+      });
+      const payload = await response.json() as { message?: string; error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Atlas did not answer from the mini overlay.');
+      }
+
+      setAnswer(payload.message || `${assistantName} answered, but no display text was returned.`);
+      setStatus(`${assistantName} answered in Mini Veranote`);
+    } catch (error) {
+      setAnswer(error instanceof Error ? error.message : 'Atlas did not answer from the mini overlay.');
+    } finally {
+      setAskStatus('idle');
+    }
+  }
+
+  return (
+    <section
+      data-testid={isMinimized ? 'mini-veranote-dock' : 'mini-veranote-overlay'}
+      className="fixed z-[55] overflow-hidden rounded-[24px] border border-teal-100/26 bg-[rgba(5,18,27,0.96)] text-cyan-50 shadow-[0_24px_80px_rgba(2,8,18,0.48)] backdrop-blur-xl"
+      style={{
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        width: `${size.width}px`,
+        height: `${size.height}px`,
+      }}
+      onPointerDown={beginDrag}
+      aria-label="Mini Veranote overlay"
+    >
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex cursor-grab items-center gap-3 border-b border-cyan-100/12 bg-white/[0.04] px-3 py-2.5 active:cursor-grabbing">
+          <AssistantPersonaAvatar avatar={assistantAvatar} label={assistantName} size="sm" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/74">Mini Veranote</div>
+            <div className="truncate text-xs text-cyan-50/68">{noteType}</div>
+          </div>
+          <button
+            type="button"
+            data-no-mini-drag="true"
+            onClick={() => setIsMinimized((current) => !current)}
+            className="rounded-full border border-cyan-100/14 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-cyan-50/78"
+          >
+            {isMinimized ? 'Open' : 'Hide'}
+          </button>
+        </div>
+
+        {isMinimized ? (
+          <button
+            type="button"
+            data-no-mini-drag="true"
+            onClick={() => setIsMinimized(false)}
+            className="flex flex-1 items-center justify-between gap-3 px-4 text-left text-sm font-semibold text-white"
+          >
+            <span>Capture, ask, copy</span>
+            <span className="rounded-full border border-cyan-100/16 px-2 py-1 text-[11px] uppercase tracking-[0.12em] text-cyan-100/74">Ready</span>
+          </button>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3">
+            <div className="grid grid-cols-3 gap-2" aria-label="Mini Veranote capture controls">
+              <button
+                type="button"
+                data-testid="mini-veranote-open-dictation"
+                data-no-mini-drag="true"
+                onClick={onOpenDictation}
+                className="rounded-xl border border-emerald-200/20 bg-emerald-300/10 px-2 py-2 text-xs font-semibold text-emerald-50"
+              >
+                Dictate
+              </button>
+              <button
+                type="button"
+                data-testid="mini-veranote-open-ambient"
+                data-no-mini-drag="true"
+                onClick={onOpenAmbient}
+                className="rounded-xl border border-sky-200/20 bg-sky-300/10 px-2 py-2 text-xs font-semibold text-sky-50"
+              >
+                Ambient
+              </button>
+              <button
+                type="button"
+                data-testid="mini-veranote-open-atlas"
+                data-no-mini-drag="true"
+                onClick={onOpenAtlas}
+                className="rounded-xl border border-cyan-200/20 bg-cyan-300/10 px-2 py-2 text-xs font-semibold text-cyan-50"
+              >
+                Atlas
+              </button>
+            </div>
+
+            <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/62">
+              Capture scratch
+              <textarea
+                data-testid="mini-veranote-source-input"
+                data-no-mini-drag="true"
+                value={miniText}
+                onChange={(event) => setMiniText(event.target.value)}
+                className="min-h-[104px] resize-none rounded-[16px] border border-cyan-100/14 bg-[rgba(7,18,32,0.74)] p-3 text-sm normal-case leading-5 tracking-normal text-white outline-none focus:border-cyan-100/36"
+                placeholder="Jot source while another EHR is open..."
+              />
+            </label>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                data-testid="mini-veranote-send-source"
+                data-no-mini-drag="true"
+                onClick={handleAppend}
+                className="rounded-xl border border-emerald-200/24 bg-emerald-300/12 px-3 py-2 text-xs font-semibold text-emerald-50"
+              >
+                Send to source
+              </button>
+              <button
+                type="button"
+                data-testid="mini-veranote-copy-ehr"
+                data-no-mini-drag="true"
+                onClick={() => {
+                  void handleCopyForEhr();
+                }}
+                className="rounded-xl border border-cyan-200/18 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-cyan-50/82"
+              >
+                Copy for EHR
+              </button>
+            </div>
+
+            <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/62">
+              Ask Atlas
+              <input
+                data-testid="mini-veranote-ask-input"
+                data-no-mini-drag="true"
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void handleAskAtlas();
+                  }
+                }}
+                className="rounded-[14px] border border-cyan-100/14 bg-[rgba(7,18,32,0.74)] px-3 py-2 text-sm normal-case tracking-normal text-white outline-none focus:border-cyan-100/36"
+                placeholder={`Ask ${assistantName} from this note...`}
+              />
+            </label>
+
+            <button
+              type="button"
+              data-testid="mini-veranote-ask-button"
+              data-no-mini-drag="true"
+              onClick={() => {
+                void handleAskAtlas();
+              }}
+              disabled={askStatus === 'asking'}
+              className="rounded-xl border border-cyan-200/22 bg-cyan-300/12 px-3 py-2 text-xs font-semibold text-cyan-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {askStatus === 'asking' ? 'Asking...' : `Ask ${assistantName}`}
+            </button>
+
+            {answer ? (
+              <div data-testid="mini-veranote-answer" className="max-h-32 overflow-y-auto rounded-[16px] border border-cyan-100/12 bg-white/[0.04] p-3 text-xs leading-5 text-cyan-50/78">
+                {answer}
+              </div>
+            ) : null}
+
+            <div className="mt-auto grid gap-2 border-t border-cyan-100/10 pt-3">
+              <div data-testid="mini-veranote-status" className="text-xs leading-5 text-cyan-50/66">{status}</div>
+              <button
+                type="button"
+                data-testid="mini-veranote-generate"
+                data-no-mini-drag="true"
+                onClick={onGenerateDraft}
+                disabled={isGenerating || !hasSource}
+                className="rounded-xl border border-amber-200/24 bg-amber-300/12 px-3 py-2 text-xs font-semibold text-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isGenerating ? 'Generating...' : currentDraftText.trim() ? 'Refresh draft' : 'Generate draft'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
 }
 
 export function NewNoteForm() {
@@ -4934,8 +5293,64 @@ export function NewNoteForm() {
     window.dispatchEvent(new CustomEvent(ASSISTANT_OPEN_EVENT));
   }
 
+  function handleMiniVeranoteAppendLiveVisit(text: string) {
+    const trimmedText = text.trim();
+    if (!trimmedText) {
+      return;
+    }
+
+    setSourceSections((current) => {
+      const existing = current.clinicianNotes.trim();
+      return {
+        ...current,
+        clinicianNotes: existing ? `${existing}\n\n${trimmedText}` : trimmedText,
+      };
+    });
+    handleSourceWorkspaceModeChange('manual');
+    setActiveSourceTab('clinicianNotes');
+    setEvalBanner('Mini Veranote added text to Live Visit Notes.');
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const target = document.getElementById('source-field-clinicianNotes');
+        target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target?.querySelector('textarea')?.focus({ preventScroll: true });
+      });
+    });
+  }
+
   const hasGeneratedDraft = Boolean(generatedSession?.note?.trim());
   const hasSource = sourceCompletionCount > 0;
+  const miniVeranoteEnabled = hasClientHydrated && (
+    searchParams.get('mini') === '1'
+    || searchParams.get('veranoteMini') === '1'
+    || Boolean(searchParams.get('fresh')?.includes('mini-veranote'))
+    || process.env.NEXT_PUBLIC_MINI_VERANOTE_OVERLAY === '1'
+  );
+  const miniVeranoteOverlay = (
+    <MiniVeranoteOverlay
+      enabled={miniVeranoteEnabled}
+      assistantName={assistantPersona.name}
+      assistantAvatar={assistantPersona.avatar}
+      noteType={noteType}
+      specialty={specialty}
+      outputDestination={providerSettings.outputDestination}
+      sourceSections={sourceSections}
+      sourceInput={sourceInput}
+      currentDraftText={generatedSession?.note || draftCheckpoint?.note || ''}
+      hasSource={hasSource}
+      isGenerating={isLoading}
+      providerIdentityId={resolvedProviderIdentityId}
+      onAppendLiveVisit={handleMiniVeranoteAppendLiveVisit}
+      onOpenDictation={() => openCaptureOption('dictation')}
+      onOpenAmbient={() => openCaptureOption('transcript')}
+      onOpenAtlas={openAtlasAssistant}
+      onGenerateDraft={() => {
+        scrollToDraftControls();
+        void handleGenerate();
+      }}
+    />
+  );
   const sourceEvidenceAttentionCount = sourceEvidenceReview.signals.filter((item) => item.severity === 'review' || item.severity === 'caution').length;
   const atlasAttentionCount = composeNudges.filter((item) => item.tone === 'warning' || item.tone === 'danger').length + sourceEvidenceAttentionCount;
   const atlasSourceCompletionLabel = `${sourceCompletionCount}/${sourceEntrySteps.length} source`;
@@ -5139,6 +5554,7 @@ export function NewNoteForm() {
             </div>
           </div>
         </div>
+        {miniVeranoteOverlay}
       </div>
     );
   }
@@ -5260,7 +5676,8 @@ export function NewNoteForm() {
   }
 
 	  return (
-	    <div ref={composeWorkspaceRef} className="workspace-left-shell">
+    <div ref={composeWorkspaceRef} className="workspace-left-shell">
+      {miniVeranoteOverlay}
 	      <aside className="workspace-left-rail">
 	        <div className="workspace-left-rail-header">
 	          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100/54">Veranote</div>
