@@ -39,6 +39,18 @@ const COMMANDS = [
     required: true,
   },
   {
+    name: 'Mini Veranote overlay contract tests',
+    command: 'npx',
+    args: ['vitest', 'run', '--silent=true', '--maxWorkers=1', 'tests/mini-veranote-overlay-contract.test.ts'],
+    required: true,
+  },
+  {
+    name: 'Live Mini Veranote overlay QA',
+    command: 'npm',
+    args: ['run', 'live:mini-overlay'],
+    required: true,
+  },
+  {
     name: 'Live note end-to-end QA',
     command: 'npm',
     args: ['run', 'live:note:e2e'],

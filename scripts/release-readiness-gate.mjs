@@ -68,6 +68,7 @@ async function main() {
         '--',
         '--silent=true',
         '--maxWorkers=1',
+        'tests/resilience-backoff-retry.test.ts',
         'tests/prototype-db-path.test.ts',
         'tests/draft-persistence.test.ts',
         'tests/dictation-audit-persistence.test.ts',

@@ -1,9 +1,50 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { isRetryableTransientError, withBackoffRetry } from '@/lib/resilience/backoff-retry';
 
 type DatabaseClient = SupabaseClient;
 
 let cachedSupabase: DatabaseClient | null | undefined;
 let cachedSupabaseAdmin: DatabaseClient | null | undefined;
+
+const RETRYABLE_READ_STATUS = new Set([408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524]);
+
+class RetryableSupabaseStatusError extends Error {
+  status: number;
+
+  constructor(status: number) {
+    super(`Supabase request returned retryable status ${status}.`);
+    this.name = 'RetryableSupabaseStatusError';
+    this.status = status;
+  }
+}
+
+function getRequestMethod(init?: RequestInit) {
+  return (init?.method || 'GET').toUpperCase();
+}
+
+function isReadLikeMethod(method: string) {
+  return method === 'GET' || method === 'HEAD';
+}
+
+function buildRetryingSupabaseFetch() {
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    const method = getRequestMethod(init);
+
+    return withBackoffRetry(async () => {
+      const response = await fetch(input, init);
+      if (isReadLikeMethod(method) && RETRYABLE_READ_STATUS.has(response.status)) {
+        throw new RetryableSupabaseStatusError(response.status);
+      }
+
+      return response;
+    }, {
+      retries: 2,
+      baseDelayMs: 150,
+      maxDelayMs: 750,
+      shouldRetry: isRetryableTransientError,
+    });
+  };
+}
 
 function buildClient(key: string | undefined) {
   const supabaseUrl = process.env.SUPABASE_URL?.trim();
@@ -17,6 +58,9 @@ function buildClient(key: string | undefined) {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
+    },
+    global: {
+      fetch: buildRetryingSupabaseFetch(),
     },
   });
 }
