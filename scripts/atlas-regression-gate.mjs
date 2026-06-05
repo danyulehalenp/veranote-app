@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 
 const vitestSuites = [
   'tests/atlas-clinical-blueprint.test.ts',
+  'tests/atlas-blueprint-stress.test.ts',
   'tests/live-assistant-conversation-route.test.ts',
   'tests/live-assistant-answer-quality.test.ts',
   'tests/med-reference.test.ts',
