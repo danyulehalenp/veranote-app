@@ -242,13 +242,47 @@ function hasProgressHeading(note: string, heading: string) {
 }
 
 function enforceProgressNoteHeadings(note: string, noteType: string) {
- if (!/inpatient psych progress/i.test(noteType)) return note;
+	 if (!/inpatient psych progress/i.test(noteType)) return note;
 
  const missingHeadings = progressNoteRequiredHeadings.filter((heading) => !hasProgressHeading(note, heading));
  if (!missingHeadings.length) return note;
 
  const additions = missingHeadings.map((heading) => `${heading}:\nNot documented in source.`);
- return `${note.trim()}\n\n${additions.join('\n\n')}`;
+	 return `${note.trim()}\n\n${additions.join('\n\n')}`;
+}
+
+function hasInitialEvalHeading(note: string, heading: string) {
+	 const aliases: Record<string, RegExp[]> = {
+	  'Psychiatric History': [/^\s*Psychiatric History\s*:/im, /^\s*Psych History\s*:/im],
+	  'Medical History': [/^\s*Medical History\s*:/im, /^\s*Medical Conditions\s*:/im],
+	 };
+
+	 return (aliases[heading] ?? [new RegExp(`^\\s*${escapeRegExp(heading)}\\s*:`, 'im')]).some((pattern) => pattern.test(note));
+}
+
+function insertInitialEvalMissingHeading(note: string, heading: string, body: string) {
+	 const block = `${heading}:\n${body}`;
+	 const beforeClinicalBody = /\n\s*(?:Substance (?:Use )?History|Prior Treatment|Social History|Family Psychiatric|Trauma|Legal History|Current Medications|Medications|Mental Status|Safety \/ Risk|Risk Assessment|Assessment|Plan)\s*:/i;
+	 const match = beforeClinicalBody.exec(note);
+	 if (!match?.index) {
+	  return `${note.trim()}\n\n${block}`;
+	 }
+
+	 return `${note.slice(0, match.index).trimEnd()}\n\n${block}\n\n${note.slice(match.index).trimStart()}`;
+}
+
+function enforceInitialPsychEvaluationHeadings(note: string, noteType: string) {
+	 if (!/inpatient psych initial adult/i.test(noteType)) return note;
+
+	 let next = note.trim();
+	 if (!hasInitialEvalHeading(next, 'Psychiatric History')) {
+	  next = insertInitialEvalMissingHeading(next, 'Psychiatric History', 'Not documented in the provided source.');
+	 }
+	 if (!hasInitialEvalHeading(next, 'Medical History')) {
+	  next = insertInitialEvalMissingHeading(next, 'Medical History', 'Medical history is not confirmed in the provided source.');
+	 }
+
+	 return next;
 }
 
 function hardenRiskReassuranceWording(note: string, noteType: string) {
@@ -812,8 +846,9 @@ function normalizeClinicalSectionBreaks(note: string) {
 }
 
 function finalizeGeneratedNote(note: string, input: GenerateNoteInput) {
- const withRequiredHeadings = enforceProgressNoteHeadings(note, input.noteType);
- const withRiskHardened = hardenRiskReassuranceWording(withRequiredHeadings, input.noteType);
+	 const withRequiredHeadings = enforceProgressNoteHeadings(note, input.noteType);
+	 const withInitialEvalHeadings = enforceInitialPsychEvaluationHeadings(withRequiredHeadings, input.noteType);
+	 const withRiskHardened = hardenRiskReassuranceWording(withInitialEvalHeadings, input.noteType);
  const withSleepPreserved = preserveDocumentedSleepDetail(withRiskHardened, input.noteType, input.sourceInput);
  const withoutUnsupportedMedicalStability = removeUnsupportedMedicalStability(withSleepPreserved, input.sourceInput);
  const withMedicalClearancePreserved = preserveMedicalClearanceUncertainty(withoutUnsupportedMedicalStability, input.sourceInput);

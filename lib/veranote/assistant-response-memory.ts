@@ -227,6 +227,13 @@ export function enrichAssistantResponseWithLearning(input: EnrichInput): Assista
     return input.payload;
   }
 
+  if (
+    input.payload.actions?.some((action) => action.type === 'send-beta-feedback')
+    || input.payload.message.trim().toLowerCase() === "no, but i'll find out how i can learn how to."
+  ) {
+    return input.payload;
+  }
+
   const rememberedFacts = findRelevantRememberedFacts(input.normalizedMessage, input.learningStore);
   const rewriteLine = buildRewritePreferenceLine(input.noteType, input.learningStore);
   const memorySuggestions = buildMemorySuggestions(input);

@@ -158,7 +158,7 @@ export const EMERGING_DRUG_CLASSES: NpsClass[] = [
     ),
     chartReadyTemplate: 'Chart-ready option: "Concentrated 7-OH or kratom-product exposure should be considered given the reported use history and withdrawal-like symptoms. These products may behave more like opioid-type exposure than a benign supplement, and routine urine drug screening does not test for them."',
     chartSuggestion: 'Document 7-OH explicitly if that is the reported product instead of collapsing it into vague supplement language.',
-    scenarioTemplate: 'This pattern fits 7-OH or kratom-concentrate dependence with withdrawal-type symptoms more than ordinary anxiety alone, especially when the patient describes smoke-shop or gas-station opioid-like products.',
+    scenarioTemplate: 'Kratom withdrawal: this pattern fits 7-OH or kratom-concentrate dependence with opioid-like withdrawal-type symptoms more than ordinary anxiety alone, especially when the patient describes smoke-shop or gas-station opioid-like products. Buprenorphine questions are case-dependent and specialist-supervised, not a default recommendation from this layer.',
     scenarioSuggestion: 'High-yield checks are exact product, amount/frequency, last use, co-use, and whether the patient is also using other opioids.',
   },
   {
@@ -260,6 +260,9 @@ export function buildEmergingDrugScenarioHelp(normalizedMessage: string): Assist
       `Medical red flags that matter here include ${match.medicalRedFlags.slice(0, 3).join(', ')}.`,
     ],
     references: getReferences(match.referenceIds),
+    ...(match.id === 'kratom_7oh' && /\b(buprenorphine|suboxone|withdrawal|opioid-like withdrawal)\b/.test(normalizedMessage)
+      ? { answerMode: 'medication_reference_answer' as const }
+      : {}),
   };
 }
 

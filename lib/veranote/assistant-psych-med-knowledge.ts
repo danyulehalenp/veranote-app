@@ -1133,8 +1133,8 @@ function buildSpecificMedicationSafetyAnswer(query: string): AssistantResponsePa
     const isAlpha2AdhdMed = /\b(guanfacine|intuniv|clonidine|kapvay)\b/.test(lower);
     return makeBatchOneReferenceResponse(
       [
-        'Stimulant/ADHD medication safety framing: do not treat this as a routine restart or dose question when mania, psychosis, violence risk, substance-use risk, or cardiovascular concern is present.',
-        'Before applying any stimulant or atomoxetine framework, review current mood stability, psychosis or paranoia, sleep, agitation, substance use and diversion risk, blood pressure, heart rate, cardiac history, interacting medications, and the indication/functional target.',
+        'Stimulant/ADHD medication safety framing: do not treat this as a routine restart or dose question when mania/psychosis, violence risk, substance-use risk, or cardiovascular concern is present.',
+        'Before applying any stimulant or atomoxetine framework, review current mood stability, mania/psychosis or paranoia, sleep, agitation, substance use and diversion risk, blood pressure, heart rate, cardiac history, interacting medications, and the indication/functional target.',
         isAlpha2AdhdMed
           ? 'Guanfacine ER and clonidine ER shift the safety focus toward low blood pressure, slowed heart rate, sedation, rebound hypertension if abruptly discontinued, and CYP interaction context for guanfacine.'
           : 'For stimulant-class questions, also keep appetite/weight, sleep, anxiety, misuse/diversion, and cardiovascular screening visible.',

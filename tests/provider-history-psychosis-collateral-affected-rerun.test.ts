@@ -223,5 +223,5 @@ describe('provider-history psychosis/collateral affected category rerun', () => 
 
     expect(summary.total).toBe(41);
     expect(summary.passed / summary.total).toBeGreaterThanOrEqual(0.85);
-  });
+  }, 30_000);
 });

@@ -94,8 +94,8 @@ export function orchestrateAssistantResponse(
     || builders.buildConversationalHelp(normalizedMessage, context)
     || (mode === 'reference-lookup'
       ? builders.buildReferenceLookupHelp(normalizedMessage, context, recentMessages)
-      : builders.buildGeneralKnowledgeHelp(normalizedMessage, context, recentMessages)
-        || builders.buildInternalKnowledgeHelp(normalizedMessage, context))
+      : builders.buildInternalKnowledgeHelp(normalizedMessage, context)
+        || builders.buildGeneralKnowledgeHelp(normalizedMessage, context, recentMessages))
     || builders.buildPrivacyTrustHelp(normalizedMessage)
     || builders.buildSupportAndTrainingHelp(normalizedMessage)
     || builders.buildRequestedRevisionHelp(normalizedMessage, message, stage, context)

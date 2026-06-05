@@ -1,4 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('@/lib/auth/auth-middleware', () => ({
+  requireAuth: async () => ({
+    user: {
+      id: 'assistant-route-memory-provider',
+      role: 'provider',
+      email: 'assistant-route-memory@veranote.local',
+    },
+    isAuthenticated: true,
+    providerIdentityId: 'assistant-route-memory-provider',
+    tokenSource: 'header',
+  }),
+}));
+
+vi.mock('@/lib/resilience/rate-limiter', () => ({
+  checkRateLimit: async () => {},
+}));
+
 import { POST } from '@/app/api/assistant/respond/route';
 
 describe('assistant route memory usage', () => {

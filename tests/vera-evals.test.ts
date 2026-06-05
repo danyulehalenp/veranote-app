@@ -1,6 +1,24 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { veraEvalCases } from '@/lib/veranote/evals/eval-cases';
 import { buildEvalSummary, formatEvalReport } from '@/lib/veranote/evals/eval-reporter';
+
+vi.mock('@/lib/auth/auth-middleware', () => ({
+  requireAuth: async () => ({
+    user: {
+      id: 'vera-evals-provider',
+      role: 'provider',
+      email: 'vera-evals@veranote.local',
+    },
+    isAuthenticated: true,
+    providerIdentityId: 'vera-evals-provider',
+    tokenSource: 'header',
+  }),
+}));
+
+vi.mock('@/lib/resilience/rate-limiter', () => ({
+  checkRateLimit: async () => {},
+}));
+
 import { runEvalCase } from '@/lib/veranote/evals/eval-runner';
 
 describe('vera eval system', () => {

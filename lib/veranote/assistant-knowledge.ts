@@ -50,6 +50,123 @@ export function buildStructuredKnowledgeReminder(bundle: KnowledgeBundle) {
   return 'If structured psychiatry knowledge is thin, stay source-only and keep uncertainty visible.';
 }
 
+function buildDirectGlossaryReferenceHelp(normalized: string): AssistantResponsePayload | null {
+  const referenceLinks = buildTrustedReferenceLinks(normalized);
+
+  if (hasKeyword(normalized, ['what is soap', 'what does soap mean', 'soap note'])) {
+    return {
+      message: 'SOAP stands for Subjective, Objective, Assessment, and Plan. It is a note structure that separates what the patient reports, what is observed or measured, the clinician’s assessment, and the documented next steps.',
+      suggestions: ['If you want, I can help shape raw details into a SOAP-style note.'],
+      references: referenceLinks,
+    };
+  }
+
+  if (hasKeyword(normalized, ['difference between h&p and consult', 'difference between consult and h&p', 'h&p vs consult', 'consult vs h&p'])) {
+    return {
+      message: 'An H&P is the primary history and physical for a patient encounter or admission. A consult note is narrower: it answers a specific question or evaluates one problem at the request of another clinician or service.',
+      suggestions: ['If you want, I can help structure the same source material as either an H&P or a consult note.'],
+      references: referenceLinks,
+    };
+  }
+
+  if (
+    hasKeyword(normalized, ['what does', 'what is', 'meaning of'])
+    && hasKeyword(normalized, ['h&p', 'history and physical', 'hpi', 'mse', 'uds', 'upt', 'icd 10', 'icd-10', 'a1c', 'cbc', 'cmp', 'phq-9', 'phq 9', 'c-ssrs', 'cssrs'])
+  ) {
+    if (hasKeyword(normalized, ['h&p', 'history and physical'])) {
+      return {
+        message: 'H&P means History and Physical. It is the core admission or encounter note that documents the history, relevant review, exam findings when appropriate, assessment, and plan for the patient.',
+        suggestions: ['If you want, I can help structure the same raw details as an H&P or as a consult note.'],
+        answerMode: 'direct_reference_answer',
+        references: referenceLinks,
+      };
+    }
+
+    if (hasKeyword(normalized, ['hpi'])) {
+      return {
+        message: 'HPI means History of Present Illness. In practice, it is the section that captures the current story of why the patient is being seen and what has changed since the last contact.',
+        suggestions: ['If you want, I can help draft the HPI from your patient details.'],
+        answerMode: 'direct_reference_answer',
+        references: referenceLinks,
+      };
+    }
+
+    if (hasKeyword(normalized, ['mse'])) {
+      return {
+        message: 'MSE means Mental Status Exam. It documents observed presentation such as appearance, behavior, speech, mood, affect, thought process, thought content, cognition, insight, and judgment.',
+        suggestions: ['If you want, I can help keep MSE wording brief and source-faithful.'],
+        answerMode: 'direct_reference_answer',
+        references: referenceLinks,
+      };
+    }
+
+    if (hasKeyword(normalized, ['uds'])) {
+      return {
+        message: 'UDS means urine drug screen.',
+        suggestions: ['If you send the actual results, I can help place them into the note cleanly.'],
+        answerMode: 'direct_reference_answer',
+        references: referenceLinks,
+      };
+    }
+
+    if (hasKeyword(normalized, ['upt'])) {
+      return {
+        message: 'UPT means urine pregnancy test.',
+        suggestions: ['If you send the actual result, I can help place it into the note cleanly.'],
+        answerMode: 'direct_reference_answer',
+        references: referenceLinks,
+      };
+    }
+
+    if (hasKeyword(normalized, ['a1c', 'hba1c'])) {
+      return {
+        message: 'A1c, or hemoglobin A1c, reflects average blood glucose over roughly the last 2 to 3 months.',
+        suggestions: ['If you want, I can help place A1c results into the note in a cleaner objective section.'],
+        answerMode: 'direct_reference_answer',
+        references: referenceLinks,
+      };
+    }
+
+    if (hasKeyword(normalized, ['cbc', 'complete blood count'])) {
+      return {
+        message: 'CBC means complete blood count. It measures components such as white blood cells, hemoglobin, hematocrit, and platelets.',
+        suggestions: ['If you want, I can help place CBC findings into the objective section without overinterpreting them.'],
+        answerMode: 'direct_reference_answer',
+        references: referenceLinks,
+      };
+    }
+
+    if (hasKeyword(normalized, ['cmp', 'comprehensive metabolic panel'])) {
+      return {
+        message: 'CMP means comprehensive metabolic panel. It includes electrolytes, kidney function, liver-related markers, glucose, and related chemistry values.',
+        suggestions: ['If you want, I can help summarize CMP results in a clean, source-faithful way.'],
+        answerMode: 'direct_reference_answer',
+        references: referenceLinks,
+      };
+    }
+
+    if (hasKeyword(normalized, ['phq-9', 'phq 9'])) {
+      return {
+        message: 'PHQ-9 is a nine-item depression screening questionnaire commonly used to screen for and track depressive symptom burden.',
+        suggestions: ['If you want, I can help document PHQ-9 results without overstating what they mean clinically.'],
+        answerMode: 'direct_reference_answer',
+        references: referenceLinks,
+      };
+    }
+
+    if (hasKeyword(normalized, ['c-ssrs', 'cssrs'])) {
+      return {
+        message: 'C-SSRS stands for the Columbia-Suicide Severity Rating Scale. It is a structured suicide risk screening and assessment tool.',
+        suggestions: ['If you want, I can help keep C-SSRS results literal and time-aware in the note.'],
+        answerMode: 'direct_reference_answer',
+        references: referenceLinks,
+      };
+    }
+  }
+
+  return null;
+}
+
 export function buildGeneralKnowledgeHelp(
   normalizedMessage: string,
   context?: AssistantApiContext,
@@ -64,10 +181,10 @@ export function buildGeneralKnowledgeHelp(
     return diagnosisCodingHelp;
   }
 
-  const medicalNecessityHelp = buildMedicalNecessityHelp(normalized, context);
+  const directGlossaryHelp = buildDirectGlossaryReferenceHelp(normalized);
 
-  if (medicalNecessityHelp) {
-    return medicalNecessityHelp;
+  if (directGlossaryHelp) {
+    return directGlossaryHelp;
   }
 
   const psychCptHelp = buildPsychCptHelp(normalized, context?.currentDraftText);
@@ -76,16 +193,46 @@ export function buildGeneralKnowledgeHelp(
     return psychCptHelp;
   }
 
-  const directDiagnosticConceptHelp = buildDiagnosticGeneralConceptReferenceHelp(normalized);
+  const stimulantMedicationReferenceBeforeDiagnosis = (
+    /\b(stimulant|methylphenidate|amphetamine|adhd med|adhd medication)\b.*\b(mania|manic|psychosis|psychotic|paranoia|restart)\b|\b(mania|manic|psychosis|psychotic|paranoia|restart)\b.*\b(stimulant|methylphenidate|amphetamine|adhd med|adhd medication)\b/.test(normalized)
+    && !/\bstimulant[- ]induced\b.*\b(psychosis|psychotic|mania|manic)\b/.test(normalized)
+  );
+  const substanceConceptShouldStayBeforeMedication = /\b(chart[- ]?ready|chart ready|language|wording)\b/.test(normalized)
+    || /\b(what are symptoms|what symptoms|symptoms of|signs of|vs|versus)\b/.test(normalized)
+    || (
+      !/\?/.test(normalizedMessage)
+      && /\b(fentanyl|overdose risk|prior overdose|no naloxone|naloxone access)\b/.test(normalized)
+    );
+  const directMedicationReferenceBeforeDiagnosis = (
+    !substanceConceptShouldStayBeforeMedication
+    && (
+      (
+        /\b(interaction|interact|combine|combined|taken together|contraindicated|avoid|safely combined|increase levels?|decrease levels?|inhibit|induce|inducer|affect metabolism|with\b|plus\b|pregnancy|pregnant|breastfeeding|lactation|cyp1a2|cyp2d6|cyp3a4|qtc)\b/.test(normalized)
+        && /\b(lithium|nsaid|maoi|fluoxetine|prozac|valproate|depakote|divalproex|carbamazepine|smoking|tobacco|ssri|grapefruit|buspirone|clozapine|ciprofloxacin|bupropion|wellbutrin|celexa|citalopram|zoloft|sertraline|lexapro|escitalopram|paxil|paroxetine|seroquel|quetiapine|zyprexa|olanzapine|risperdal|risperidone|abilify|aripiprazole|lamictal|lamotrigine|trileptal|oxcarbazepine|ativan|lorazepam|haldol|haloperidol|suboxone|buprenorphine|vivitrol|naltrexone|invega|paliperidone|lybalvi|samidorphan|erythromycin|linezolid|pimozide|thioridazine|ace inhibitor|rifampin|methadone|disulfiram|alcohol|warfarin|omeprazole|diazepam|diuretic|aspirin|tamoxifen|tramadol|verapamil|pseudoephedrine|urea cycle|ect|snri|benzodiazepine|benzo|mirtazapine|topiramate)\b/.test(normalized)
+      ) || (
+        /\b(acute|urgent|emergency|overdose|toxicity|toxic|withdrawal|intoxicated|restraints?|triage|dystonic|nms|neuroleptic malignant|serotonin syndrome|wernicke|korsakoff|ciwa|cows|flumazenil|naloxone|narcan|first-line treatment|what is the treatment|how is .* managed|dose of)\b/.test(normalized)
+        && /\b(dystonic|maoi|nms|haloperidol|olanzapine|ziprasidone|lorazepam|ssri|sertraline|fluoxetine|suicidal|suicide|ketamine|diphenhydramine|serotonin syndrome|benzodiazepine|benzo|restraints?|flumazenil|clozapine|valproate|opioid withdrawal|buprenorphine|suboxone|naloxone|narcan|wernicke|korsakoff|disulfiram|cows|cocaine|methadone|heroin|clonidine)\b/.test(normalized)
+      ) || /\bmedication for cocaine use disorder\b/.test(normalized)
+        || /\b(antipsychotics?|risperidone|quetiapine|trazodone|lithium|citalopram|rivastigmine|cholinesterase inhibitors?)\b.*\b(dementia|dementia-related psychosis|older|elderly|geriatric|falls?|alzheimer)\b/.test(normalized)
+    )
+  );
+  const explicitMedicationReferenceBeforeDiagnosis = (
+    /\b(fda[- ]?approved|approved for|approved treatment|approval|labeled|label|indication|indicated)\b/.test(normalized)
+    || /\b(ck|cpk)\b.*\b(rigidity|fever|antipsychotic|nms)\b|\b(rigidity|fever|antipsychotic|nms)\b.*\b(ck|cpk)\b/.test(normalized)
+    || stimulantMedicationReferenceBeforeDiagnosis
+    || /\btrazodone\b.*\b(dementia|alzheimer|sleep|insomnia|older adult|older adults|geriatric|elderly)\b/.test(normalized)
+    || /\bpaliperidone|invega\b/.test(normalized) && /\bschizoaffective\b/.test(normalized) && /\b(approved|approval|fda|label|labeled|indication|indicated)\b/.test(normalized)
+  );
+  const shouldTryMedicationBeforeDiagnosis = explicitMedicationReferenceBeforeDiagnosis || directMedicationReferenceBeforeDiagnosis || (
+    /\b(what meds?|what medications?|what drugs?|types of drugs|drugs help|starting dose|start dose|dose of|dosing|trileptal|oxcarbazepine|antidepressants?|ssris?|snris?|maois?|tcas?|zoloft|sertraline|lamictal|lamotrigine|side effects?|is it an antidepressant)\b/.test(normalized)
+    && !/\b(withdrawal|intoxication|substance[- ]induced|substance use disorder|psychosis|psychotic|meth|stimulant|cannabis|opioid|alcohol|benzodiazepine|benzo|kratom|7-oh|7oh|tianeptine|neptune)\b/.test(normalized)
+  );
+  const earlyPsychMedicationHelp = shouldTryMedicationBeforeDiagnosis
+    ? buildPsychMedicationReferenceHelp(normalized, recentMessages)
+    : null;
 
-  if (directDiagnosticConceptHelp) {
-    return directDiagnosticConceptHelp;
-  }
-
-  const psychMedicationHelp = buildPsychMedicationReferenceHelp(normalized, recentMessages);
-
-  if (psychMedicationHelp) {
-    return psychMedicationHelp;
+  if (earlyPsychMedicationHelp) {
+    return earlyPsychMedicationHelp;
   }
 
   if (
@@ -104,6 +251,24 @@ export function buildGeneralKnowledgeHelp(
 
   if (diagnosisConceptHelp) {
     return diagnosisConceptHelp;
+  }
+
+  const medicalNecessityHelp = buildMedicalNecessityHelp(normalized, context);
+
+  if (medicalNecessityHelp) {
+    return medicalNecessityHelp;
+  }
+
+  const psychMedicationHelp = buildPsychMedicationReferenceHelp(normalized, recentMessages);
+
+  if (psychMedicationHelp) {
+    return psychMedicationHelp;
+  }
+
+  const directDiagnosticConceptHelp = buildDiagnosticGeneralConceptReferenceHelp(normalized);
+
+  if (directDiagnosticConceptHelp) {
+    return directDiagnosticConceptHelp;
   }
 
   const referenceLinks = buildTrustedReferenceLinks(normalized);
@@ -244,25 +409,38 @@ export function buildReferenceLookupHelp(
   context?: AssistantApiContext,
   recentMessages?: AssistantThreadTurn[],
 ): AssistantResponsePayload | null {
-  const knowledge = buildGeneralKnowledgeHelp(normalizedMessage.toLowerCase(), context, recentMessages);
-  if (knowledge) {
+  const normalized = normalizedMessage.toLowerCase();
+  const knowledge = buildGeneralKnowledgeHelp(normalized, context, recentMessages);
+  const lowConfidenceMedicationFallback = knowledge?.answerMode === 'medication_reference_answer'
+    && /^I do not have a confident medication match\b/i.test(knowledge.message || '');
+  if (knowledge && !lowConfidenceMedicationFallback) {
     return {
       ...knowledge,
       suggestions: [
         ...(knowledge.suggestions || []),
+        'Use this as reference lookup support and verify against the linked source before relying on it.',
       ],
     };
   }
 
-  const references = buildTrustedReferenceLinks(normalizedMessage.toLowerCase());
-  if (references.length) {
+  const references = buildTrustedReferenceLinks(normalized);
+  const trustedWebFallbackReferences = references.length
+    ? references
+    : /\b(cms|consult note|consult notes|documentation page|documentation pages)\b/.test(normalized)
+      ? [{
+          label: 'CMS Evaluation and Management visits overview',
+          url: 'https://www.cms.gov/medicare/payment/fee-schedules/physician/evaluation-management-visits',
+          sourceType: 'external' as const,
+        }]
+      : [];
+  if (trustedWebFallbackReferences.length) {
     return {
-      message: 'I do not have a trusted direct answer for that yet. Use the approved references below to verify it directly.',
+      message: 'I do not have a fully taught direct answer for that yet. Use trusted web sources below to verify it directly.',
       suggestions: [
         'Open one of the approved references below to verify the answer directly.',
         'If this is a recurring need, use Teach Atlas this so it can become a first-class answer later.',
       ],
-      references,
+      references: trustedWebFallbackReferences,
     };
   }
 

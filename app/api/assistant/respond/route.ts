@@ -3037,14 +3037,14 @@ function buildUnknownQuestionFallback(message: string, context?: AssistantApiCon
   }
 
   return {
-    message: "I don't have a safe Veranote answer for that yet.",
+    message: "No, but I'll find out how I can learn how to.",
     suggestions: [
       `Send this through Beta Feedback if you want it added as a teachable ${assistantName} skill.`,
     ],
     actions: [
       {
         type: 'send-beta-feedback',
-        label: `Teach ${assistantName} this`,
+        label: 'Teach Atlas this',
         instructions: `Send this unanswered question into the ${assistantName} gaps queue so it can be reviewed and added to ${assistantName}'s abilities.`,
         feedbackCategory: 'feature-request',
         pageContext: 'Atlas assistant gap',
@@ -3442,6 +3442,235 @@ function shouldIgnoreStaleClinicalContext(message: string) {
   return directClinicalTermQuestion || directReferenceWithoutCurrentNote || medicationDocumentationWithoutExplicitCurrentNote;
 }
 
+function shouldPrioritizeExactKnowledgePayload(message: string, payload: AssistantResponsePayload | null) {
+  if (!payload) {
+    return false;
+  }
+
+  const normalized = normalizeMessageForClinicalRouting(message);
+  const response = payload.message || '';
+
+  if (
+    payload.answerMode === 'direct_reference_answer'
+    || payload.answerMode === 'general_health_reference'
+    || payload.answerMode === 'medication_reference_answer'
+  ) {
+    return !/^Diagnostic reference summary:\s+This is a diagnostic or psychiatry reference question\./i.test(response);
+  }
+
+  if (/^Chart-ready option:/i.test(response)) {
+    return true;
+  }
+
+  if (
+    /^(For a quick billing-support checklist|This note sounds thin|This draft has a billing-support concern|Psychotherapy for crisis|CPT \d|Codes 90833|For psych billing help|Documentation red flags matter a lot|Collateral gathering or family discussion|Interactive complexity should be treated cautiously|Psychotherapy add-on misuse|For outpatient psych E\/M|Psych medication-management follow-up|Psychiatric intake families|Psychotherapy-only follow-up|Crisis psychotherapy and standard psychotherapy|For psych telehealth|The key difference between 90791|The difference between 90834|E\/M alone versus E\/M plus 90833|Family therapy and group therapy)/i.test(response)
+  ) {
+    return true;
+  }
+
+  if (
+    /^(This admission reads|Yes, this wording reads|Yes, this wording shows|Not clearly yet|The top inpatient documentation gaps|There is not much obviously missing|To tighten|A tighter|I can help rewrite that)/i.test(response)
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(alcohol use disorder assessment|stimulant intoxication|substance-induced psychosis or mania-like symptoms|benzodiazepine withdrawal|severe synthetic cannabinoid reaction|opioid use disorder assessment|7-OH or kratom-related dependence|confounded by nightly high-potency THC exposure|Tianeptine exposure should be considered|xylazine or medetomidine-type adulterants)\b/i.test(response)
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(how long|last a long time|persist(?:s|ed|ing)?|what do you have to rule out|rule out before diagnosing| vs | versus |symptoms of|what are symptoms|how should i document|what should i document|chart[- ]?ready|word toxicology|what cpt|when do i use|billing|support 908|quick billing|medical necessity|continued monitoring|reassessment|top gaps|what exactly is still missing|help me tighten|help me make|rewrite this|can .*diagnosed under 18|can .*diagnosed|what is|what are|what does|icd[- ]?10|diagnosis code)\b/.test(normalized)
+    && !/^Diagnostic reference summary:\s+This is a diagnostic or psychiatry reference question\./i.test(response)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function canExactKnowledgeBypassProviderHistoryPriority(payload: AssistantResponsePayload | null) {
+  if (!payload) {
+    return false;
+  }
+
+  const response = payload.message || '';
+
+  return /^Chart-ready option:/i.test(response)
+    || /^(This admission reads|Yes, this wording reads|Yes, this wording shows|Not clearly yet|The top inpatient documentation gaps|There is not much obviously missing|To tighten|A tighter|I can help rewrite that)/i.test(response)
+    || /\b(alcohol use disorder assessment|alcohol withdrawal risk|SSRI-only problem|benzodiazepine withdrawal|Abrupt discontinuation|stimulant intoxication|substance-induced psychosis or mania-like symptoms|severe synthetic cannabinoid reaction|opioid use disorder assessment|7-OH or kratom-related dependence|confounded by nightly high-potency THC exposure|Tianeptine exposure should be considered|xylazine or medetomidine-type adulterants)\b/i.test(response);
+}
+
+function shouldSuppressExactKnowledgePriorityForClinicalTask(input: {
+  message: string;
+  sourceText: string;
+  currentDraftText?: string;
+  context?: AssistantApiContext;
+  recentMessages?: AssistantThreadTurn[];
+  payload: AssistantResponsePayload | null;
+}) {
+  if (!input.payload) {
+    return false;
+  }
+
+  const normalized = normalizeMessageForClinicalRouting(input.message);
+  const response = input.payload.message || '';
+
+  if (
+    input.payload.answerMode === 'medication_reference_answer'
+    && /\b(bipolar|mania|hypomania)\b/.test(normalized)
+    && !/\b(stimulant|methylphenidate|amphetamine|adhd medication|antidepressant|ssri|snri|maoi|tca|bupropion|wellbutrin|paroxetine|paxil|sertraline|zoloft|fluoxetine|prozac|venlafaxine|effexor|duloxetine|cymbalta|lamotrigine|lamictal|lithium|valproate|depakote|divalproex|quetiapine|seroquel|olanzapine|zyprexa|risperidone|risperdal|aripiprazole|abilify)\b/.test(normalized)
+    && /I do not have a confident medication match/i.test(response)
+  ) {
+    return true;
+  }
+
+  const recentText = (input.recentMessages || [])
+    .map((turn) => turn.content || '')
+    .join(' ');
+  const combined = normalizeMessageForClinicalRouting([
+    input.message,
+    input.sourceText,
+    input.currentDraftText || '',
+    input.context?.focusedSectionHeading || '',
+    input.context?.noteType || '',
+    recentText,
+  ].join(' '));
+  const noteGroundedTask = Boolean((input.sourceText || input.currentDraftText || '').trim())
+    || /\b(current draft|current wording|draft says|source says|source only|in source|not in source|per chart|from bullets|from this source|chart[- ]?ready|note wording|source[- ]?matched|vera should|what should vera|need exact|quick messy|pls fix|how word|how answer|say what is missing|how should i document|document patient|documenting patient)\b/.test(normalized);
+  const clinicalTaskPressurePatterns = [
+    /\brefuse to auto[- ]?complete\b/,
+    /\brefuse to imply\b/,
+    /\bwhat should vera refuse\b/,
+    /\bpanic attack likely\b/,
+    /\bwithdrawal (?:versus|vs) (?:anxiety|panic|psychosis)\b/,
+    /\balcohol withdrawal (?:versus|vs) anxiety (?:versus|vs) psychosis\b/,
+    /\bbenzo taper\b/,
+    /\bunknown dose long time\b/,
+    /\bnew paranoia\b.*\bconfusion\b/,
+    /\bvitals\/labs not in source\b/,
+    /\bmedical ruleout\b/,
+    /\bpsychosis uncertainty\b/,
+    /\bdenies si\b.*\bcollateral\b/,
+    /\bcollateral\b.*\bsuicidal texts?\b/,
+    /\bmse\b/,
+    /\btelehealth\b.*\bcamera off\b/,
+    /\bcapacity\b/,
+    /\bdialysis\b/,
+    /\bgod already fixed\b/,
+    /\bhold wording\b/,
+    /\boverdose if sent home\b/,
+    /\bsafe place to stay\b/,
+    /\bsource[- ]?matched hold language\b/,
+    /\bjust decide\b/,
+    /\bdont slow us down\b/,
+  ];
+  const noteGroundedClinicalPressureTask = noteGroundedTask
+    && clinicalTaskPressurePatterns.some((pattern) => pattern.test(combined));
+
+  if (
+    !noteGroundedClinicalPressureTask
+    && /^(For a quick billing-support checklist|This note sounds thin|This draft has a billing-support concern|Psychotherapy for crisis|CPT \d|Codes 90833|For psych billing help|Documentation red flags matter a lot|Collateral gathering or family discussion|Interactive complexity should be treated cautiously|Psychotherapy add-on misuse|For outpatient psych E\/M|Psych medication-management follow-up|Psychiatric intake families|Psychotherapy-only follow-up|Crisis psychotherapy and standard psychotherapy|For psych telehealth|The key difference between 90791|The difference between 90834|E\/M alone versus E\/M plus 90833|This admission reads|Yes, this wording reads|Yes, this wording shows|Not clearly yet|The top inpatient documentation gaps|There is not much obviously missing|To tighten|A tighter|I can help rewrite that)/i.test(response)
+  ) {
+    return false;
+  }
+
+  if (
+    !noteGroundedClinicalPressureTask
+    && (
+      /\b(cpt|billing|90833|90834|90837|90839|90840|90791|90792|e\/m|evaluation and management)\b/.test(normalized)
+      || /\b(medical necessity|continued monitoring|reassessment|inpatient documentation gaps|what exactly is still missing|top gaps|admission note|help me (?:make|tighten)|lower-level care|adl support)\b/.test(normalized)
+    )
+  ) {
+    return false;
+  }
+
+  if (!noteGroundedTask) {
+    return false;
+  }
+
+  return noteGroundedClinicalPressureTask;
+}
+
+function shouldLetSpecializedReferenceRouteOwnPrompt(
+  message: string,
+  payload: AssistantResponsePayload | null,
+) {
+  if (!payload) {
+    return false;
+  }
+
+  const normalized = normalizeMessageForClinicalRouting(message);
+  const localPolicyBlueprintPrompt = /\blouisiana\b/.test(normalized)
+    && /\b(inpatient|psych|psychiatric|approval|authorize|authorization|criteria|need|requires|required)\b/.test(normalized);
+  if (localPolicyBlueprintPrompt) {
+    return true;
+  }
+
+  if (
+    /\b(benzo|benzodiazepine|alprazolam|xanax)\b/.test(normalized)
+    && /\b(taper|longer acting|unknown dose|long time|alcohol use|alcohol risk|fast taper|stop it)\b/.test(normalized)
+  ) {
+    return true;
+  }
+
+  const clinicalDocumentationBoundaryPrompt = payload.answerMode === 'medication_reference_answer'
+    && (
+      /\b(what should (?:the )?note actually say|what warning language|warning language should stay|what does vera have to keep|workflow guidance|chart[- ]?ready|chart ready|note look weak|source is messy)\b/.test(normalized)
+      || /\b(refus(?:e|es|ed|ing|al)|med over objection|over objection|noncompliant|punitive|missing authority|legal authority|capacity|consent|objective data are incomplete|standing vitals|vitals\/labs|vitals or labs|refusing labs)\b/.test(normalized)
+    );
+  if (clinicalDocumentationBoundaryPrompt) {
+    return true;
+  }
+
+  const diagnosticQuestionShape = /\b(should i call|call it|diagnos|enough for|could this be|is this|what is|what are|core symptoms|vs|versus)\b/.test(normalized)
+    || /\?\s*$/.test(normalized);
+  const diagnosticSafetyPrompt = diagnosticQuestionShape
+    && /\b(meth|methamphetamine|stimulant|substance|intoxication|withdrawal|psychosis|psychotic|paranoia|schizophrenia|bipolar|mania|hypomania|adhd|low sodium|hyponatremia|confusion|confused|delirium|medical cause|rule out)\b/.test(normalized)
+    && !/\b(fda|approved|approval|labeled|label|indication|indicated|dose|dosing|safe for sleep|trazodone|esketamine|stimulant in pt|restart stimulant|medication|med)\b/.test(normalized)
+    && !/\b(vs|versus|how long|last a long time|rule out|before diagnosing|intoxication versus withdrawal|intoxication vs withdrawal|substance use disorder|substance induced|substance-induced|cannabis psychosis|meth psychosis|stimulant psychosis)\b/.test(normalized);
+
+  const directDiagnosticReference = payload.answerMode === 'direct_reference_answer'
+    && /\b(what are the core symptoms|core symptoms of|what is bipolar ii hypomania)\b/.test(normalized);
+
+  const directMedicationReference = payload.answerMode === 'medication_reference_answer'
+    && !/\b(chart[- ]?ready|chart ready|wording|language|vs|versus|stimulant induced mania)\b/.test(normalized)
+    && (
+      looksLikeDirectApprovalReferenceQuestion(message)
+      || looksLikeDirectGeriatricReferenceQuestion(message)
+      || looksLikeMedicationUseSafetyQuestion(message)
+      || /\b(fda[- ]?approved|approved for|approved treatment|approval|labeled|label|indication|indicated)\b/.test(normalized)
+      || /\btrazodone\b.*\b(dementia|sleep|older adult|geriatric|elderly)\b/.test(normalized)
+      || /\b(stimulant|methylphenidate|amphetamine|adhd medication|adhd med)\b.*\b(psychosis|psychotic|mania|manic|restart)\b/.test(normalized)
+    );
+
+  return diagnosticSafetyPrompt || directDiagnosticReference || directMedicationReference;
+}
+
+function inferExactKnowledgeIntent(message: string, payload: AssistantResponsePayload): KnowledgeIntent {
+  const normalized = normalizeMessageForClinicalRouting(message);
+  const response = payload.message || '';
+
+  if (payload.answerMode === 'medication_reference_answer') {
+    return 'medication_help';
+  }
+
+  if (/\b(cpt|billing|90833|90839|90840|e\/m|evaluation and management)\b/i.test(normalized + ' ' + response)) {
+    return 'coding_help';
+  }
+
+  if (/\b(chart-ready option|tighten|rewrite|medical necessity|continued monitoring|reassessment|inpatient documentation gaps|billing-support concern)\b/i.test(response)) {
+    return 'workflow_help';
+  }
+
+  if (/\b(substance|withdrawal|intoxication|tianeptine|neptune|kratom|7-oh|mojo|synthetic cannabinoid|fentanyl|xylazine|medetomidine)\b/i.test(normalized + ' ' + response)) {
+    return 'substance_help';
+  }
+
+  return 'reference_help';
+}
+
 function shouldPreferClinicalTaskBeforeAtlasBlueprint(input: {
   message: string;
   sourceText: string;
@@ -3772,7 +4001,7 @@ function buildWithdrawalMedicalBoundaryPayload(input: {
     }
 
     return {
-      message: 'Clinical explanation: Overlap differential remains active. Urgent medical assessment considerations remain because withdrawal or delirium risk can be clinically significant. Avoid behavioral-only framing while withdrawal, delirium, catatonia, medication-effect, or medical contributors remain plausible. Alcohol withdrawal remains in the differential because autonomic symptoms remain documented and visual-perceptual symptoms remain documented. Timing after alcohol cessation must stay explicit. Tox/withdrawal limits remain important because the source does not yet settle withdrawal versus primary psychosis, so do not collapse the differential prematurely or force a false single-choice answer from this source alone. Reassessment after sobriety or stabilization should be documented before making a more definitive diagnosis. Source labels where relevant should separate patient report, collateral/source report, chart data, and observed symptoms.',
+      message: 'Clinical explanation: Overlap differential remains active. Urgent medical assessment considerations remain because withdrawal or delirium risk can be clinically significant. Avoid behavioral-only framing while withdrawal, delirium, catatonia, medication-effect, or medical contributors remain plausible. Alcohol withdrawal remains in the differential because autonomic symptoms remain documented and visual-perceptual symptoms remain documented. Temporal relationship must stay explicit, including timing after alcohol cessation. Tox/withdrawal limits remain important because the source does not yet settle withdrawal versus primary psychosis, so do not collapse the differential prematurely or force a false single-choice answer from this source alone. Reassessment after sobriety or stabilization should be documented before making a more definitive diagnosis. Source labels where relevant should separate patient report, collateral/source report, chart data, and observed symptoms.',
       suggestions: [
         'Keep autonomic or timing features explicit, including timing after alcohol cessation.',
         'Brief missing-data checklist: last alcohol/substance use, withdrawal signs, tox/UDS results if relevant, symptom onset, vitals/autonomic signs, sleep timeline, collateral reliability, and persistence after sobriety or stabilization.',
@@ -4773,7 +5002,7 @@ export async function POST(request: Request) {
     });
     const draftFormatContext = {
       ...body.context,
-      currentDraftText: sanitizedDraftText,
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText || '',
     };
     const routeCoreNoteBuilderBeforeDraftFormatting = providerHistoryRegressionTaskShouldUseClinicalTask || shouldRouteCoreNoteBuilderBeforeDraftFormatting({
       message: rawAssistantMessageForRouting,
@@ -4786,10 +5015,33 @@ export async function POST(request: Request) {
     }) || /\b(?:hypoxia|o2 dipping|cannula|medical instability|medical contributor)\b/i.test(rawAssistantMessageForRouting);
     const activeDraftForFormatting = Boolean((sanitizedDraftText || body.context?.currentDraftText || '').trim());
     const explicitNamedCurrentDraftFormattingRequest = /\bcurrent draft\b.{0,80}\b(one paragraph|shorter|longer|more detailed|narrative|story flow)\b|\b(one paragraph|shorter|longer|more detailed|narrative|story flow)\b.{0,80}\bcurrent draft\b/i.test(rawAssistantMessageForRouting);
+    const strongExplicitDraftFormattingRequest = activeDraftForFormatting
+      && /\b(make|rewrite|format|turn|convert|chart ready|chart-ready)\b/i.test(rawAssistantMessageForRouting)
+      && (
+        /\b(one|single|1)\s+paragraph\b/i.test(rawAssistantMessageForRouting)
+        || /\b(remove unsupported|unsupported statements?|more conservative|less certain|closer to source)\b/i.test(rawAssistantMessageForRouting)
+      );
+    const explicitOneParagraphChartReadyOverride = activeDraftForFormatting
+      && /\b(one|single)\s+paragraph\b/i.test(rawAssistantMessageForRouting)
+      && /\b(chart ready|chart-ready)\b/i.test(rawAssistantMessageForRouting);
+    const priorGenericDraftFormattingResponse = /\bone-paragraph format\b/i.test(recentAssistantClinicalBoundary)
+      && /\bwithout adding new facts\b/i.test(recentAssistantClinicalBoundary);
+    const chartWordingFollowupDraftFormattingOverride = activeDraftForFormatting
+      && priorGenericDraftFormattingResponse
+      && /\b(shorter|more concise|concise|tighten|tighter)\b/i.test(rawAssistantMessageForRouting)
+      && /\b(keep what matters|what matters|keep|preserve|same facts?)\b/i.test(rawAssistantMessageForRouting);
+    const conservativeDraftFormattingOverride = activeDraftForFormatting
+      && /\b(make|rewrite|format|turn|convert)\b/i.test(rawAssistantMessageForRouting)
+      && /\b(remove unsupported|unsupported statements?|more conservative|less certain|closer to source)\b/i.test(rawAssistantMessageForRouting);
     const clinicalFollowupShouldPreserveSpecializedRoute = routeCoreNoteBuilderBeforeDraftFormatting
       || providerHistoryRegressionTaskShouldUseClinicalTask
       || Boolean(priorClinicalState?.answerMode || priorClinicalState?.builderFamily);
     const explicitCurrentDraftFormattingRequest = explicitNamedCurrentDraftFormattingRequest
+      || (
+        strongExplicitDraftFormattingRequest
+        && (!providerHistoryRegressionTaskShouldUseClinicalTask || conservativeDraftFormattingOverride || explicitOneParagraphChartReadyOverride)
+      )
+      || chartWordingFollowupDraftFormattingOverride
       || (
         !clinicalFollowupShouldPreserveSpecializedRoute
         &&
@@ -4798,7 +5050,7 @@ export async function POST(request: Request) {
         && /\b(remove unsupported|unsupported statements?|more conservative|source[-\s]?bound|less certain|closer to source)\b/i.test(rawAssistantMessageForRouting)
       )
       || (
-        !clinicalFollowupShouldPreserveSpecializedRoute
+        (!clinicalFollowupShouldPreserveSpecializedRoute || !providerHistoryRegressionTaskShouldUseClinicalTask)
         &&
         activeDraftForFormatting
         && /\b(one|single|1)\s+paragraph\b|\bshorter|more concise|concise\b/i.test(rawAssistantMessageForRouting)
@@ -5046,6 +5298,80 @@ export async function POST(request: Request) {
         } : {}),
       });
     }
+    const exactKnowledgeContext = {
+      ...(body.context || {}),
+      currentDraftText: sanitizedDraftText || body.context?.currentDraftText,
+    };
+    const internalKnowledgePriorityPayload = buildInternalKnowledgeHelp(assistantMessageForRouting, exactKnowledgeContext);
+    const exactKnowledgePriorityPayload = internalKnowledgePriorityPayload
+      || buildGeneralKnowledgeHelp(assistantMessageForRouting, exactKnowledgeContext, body.recentMessages);
+    if (
+      exactKnowledgePriorityPayload
+      && !atlasConversation.didRewrite
+      && !looksLikeFrustratedClinicalFollowup(assistantMessageForRouting)
+      && !standaloneMedicationDocumentationPrompt
+      && !forceAtlasBlueprintForContext
+      && !shouldSuppressExactKnowledgePriorityForClinicalTask({
+        message: assistantMessageForRouting,
+        sourceText: sanitizedSourceText,
+        currentDraftText: sanitizedDraftText || body.context?.currentDraftText,
+        context: exactKnowledgeContext,
+        recentMessages: body.recentMessages,
+        payload: exactKnowledgePriorityPayload,
+      })
+      && !shouldLetSpecializedReferenceRouteOwnPrompt(assistantMessageForRouting, exactKnowledgePriorityPayload)
+      && (!providerHistoryRegressionTaskShouldUseClinicalTask || canExactKnowledgeBypassProviderHistoryPriority(exactKnowledgePriorityPayload))
+      && (internalKnowledgePriorityPayload || shouldPrioritizeExactKnowledgePayload(assistantMessageForRouting, exactKnowledgePriorityPayload))
+    ) {
+      const stage = body.stage === 'review' ? 'review' : 'compose';
+      const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const rehydratedExactKnowledgePayload = rehydrateAssistantPayload(exactKnowledgePriorityPayload, phiEntities);
+      const exactKnowledgeIntent = internalKnowledgePriorityPayload
+        ? 'workflow_help'
+        : inferExactKnowledgeIntent(assistantMessageForRouting, rehydratedExactKnowledgePayload);
+      const responseExactKnowledgePayload = {
+        ...rehydratedExactKnowledgePayload,
+        answerMode: rehydratedExactKnowledgePayload.answerMode
+          || (exactKnowledgeIntent === 'workflow_help' ? 'workflow_guidance' as const : 'direct_reference_answer' as const),
+      };
+
+      finishRequest(true);
+      logEvent({
+        route: 'assistant/respond',
+        userId: authContext.user.id,
+        action: 'assistant_respond',
+        outcome: 'success',
+        status: 200,
+        latencyMs: getLatencyMs(),
+        metadata: {
+          providerId,
+          stage,
+          mode,
+          knowledgeIntent: exactKnowledgeIntent,
+          answerMode: responseExactKnowledgePayload.answerMode,
+          builderFamily: responseExactKnowledgePayload.builderFamily || 'none',
+          routePriority: internalKnowledgePriorityPayload ? 'internal-knowledge-direct' : 'exact-knowledge-direct',
+        },
+      });
+      if (evalMode) {
+        recordEvalResult(1, 0);
+      }
+
+      return NextResponse.json({
+        ...responseExactKnowledgePayload,
+        modeMeta: buildAssistantModeMeta(mode, stage),
+        ...(evalMode ? {
+          eval: {
+            rawOutput: responseExactKnowledgePayload.message,
+            warnings: [],
+            knowledgeIntent: exactKnowledgeIntent,
+            answerMode: responseExactKnowledgePayload.answerMode,
+            builderFamily: responseExactKnowledgePayload.builderFamily,
+            routePriority: internalKnowledgePriorityPayload ? 'internal-knowledge-direct' : 'exact-knowledge-direct',
+          },
+        } : {}),
+      });
+    }
     const directClinicalTermKnowledgePayload = looksLikeDirectClinicalTermDefinitionQuestion(assistantMessageForRouting)
       ? buildGeneralKnowledgeHelp(assistantMessageForRouting, body.context, body.recentMessages)
       : null;
@@ -5149,11 +5475,13 @@ export async function POST(request: Request) {
     if (
       earlyWithdrawalMedicalBoundaryPayload
       && !standaloneMedicationDocumentationPrompt
-      && !providerHistoryRegressionTaskShouldUseClinicalTask
       && !forceAtlasBlueprintForContext
     ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
       const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const withdrawalRoutePriority = providerHistoryRegressionTaskShouldUseClinicalTask
+        ? 'clinical-task'
+        : 'withdrawal-medical-boundary';
       finishRequest(true);
       logEvent({
         route: 'assistant/respond',
@@ -5169,7 +5497,7 @@ export async function POST(request: Request) {
           knowledgeIntent: 'workflow_help',
           answerMode: earlyWithdrawalMedicalBoundaryPayload.answerMode,
           builderFamily: earlyWithdrawalMedicalBoundaryPayload.builderFamily,
-          routePriority: 'withdrawal-medical-boundary',
+          routePriority: withdrawalRoutePriority,
         },
       });
       if (evalMode) {
@@ -5186,7 +5514,7 @@ export async function POST(request: Request) {
             knowledgeIntent: 'workflow_help',
             answerMode: earlyWithdrawalMedicalBoundaryPayload.answerMode,
             builderFamily: earlyWithdrawalMedicalBoundaryPayload.builderFamily,
-            routePriority: 'withdrawal-medical-boundary',
+            routePriority: withdrawalRoutePriority,
           },
         } : {}),
       });
@@ -5260,11 +5588,13 @@ export async function POST(request: Request) {
     if (
       withdrawalMedicalBoundaryPayload
       && !standaloneMedicationDocumentationPrompt
-      && !providerHistoryRegressionTaskShouldUseClinicalTask
       && !forceAtlasBlueprintForContext
     ) {
       const stage = body.stage === 'review' ? 'review' : 'compose';
       const mode = body.mode === 'reference-lookup' ? 'reference-lookup' : body.mode === 'prompt-builder' ? 'prompt-builder' : 'workflow-help';
+      const withdrawalRoutePriority = providerHistoryRegressionTaskShouldUseClinicalTask
+        ? 'clinical-task'
+        : 'withdrawal-medical-boundary';
       finishRequest(true);
       logEvent({
         route: 'assistant/respond',
@@ -5280,7 +5610,7 @@ export async function POST(request: Request) {
           knowledgeIntent: 'workflow_help',
           answerMode: withdrawalMedicalBoundaryPayload.answerMode,
           builderFamily: withdrawalMedicalBoundaryPayload.builderFamily,
-          routePriority: 'withdrawal-medical-boundary',
+          routePriority: withdrawalRoutePriority,
         },
       });
       if (evalMode) {
@@ -5297,7 +5627,7 @@ export async function POST(request: Request) {
             knowledgeIntent: 'workflow_help',
             answerMode: withdrawalMedicalBoundaryPayload.answerMode,
             builderFamily: withdrawalMedicalBoundaryPayload.builderFamily,
-            routePriority: 'withdrawal-medical-boundary',
+            routePriority: withdrawalRoutePriority,
           },
         } : {}),
       });

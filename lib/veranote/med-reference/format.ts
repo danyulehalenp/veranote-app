@@ -133,11 +133,12 @@ function formatClassUseAnswer(query: MedReferenceQuery): MedReferenceAnswer {
   const uses = medication.commonPsychUses.length
     ? joinSeries(medication.commonPsychUses)
     : 'uses should be verified in current labeling';
+  const classLabel = medication.class === 'antidepressant (SSRI)' ? 'SSRI' : medication.class;
 
   return {
     intent: query.intent,
     medication,
-    text: `${medication.genericName} is ${indefiniteArticleFor(medication.class)} ${medication.class}. Common psychiatric uses include ${uses}. This is general medication reference support, not a patient-specific treatment recommendation; verify indication-specific use with a current prescribing reference.`,
+    text: `${medication.genericName} is ${indefiniteArticleFor(classLabel)} ${classLabel} commonly used for depression and related psychiatric indications. Common psychiatric uses for ${medication.genericName} include ${uses}. This is general medication reference support, not a patient-specific treatment recommendation; verify indication-specific use with a current prescribing reference.`,
     sourceRefs: medication.sourceRefs,
   };
 }

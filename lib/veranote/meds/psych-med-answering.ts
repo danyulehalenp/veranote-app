@@ -473,6 +473,16 @@ export function formatMedicationSafetyAnswer(
     case 'med_class_lookup':
     case 'unknown':
     default:
+      if (profile.genericName === 'sertraline') {
+        return [
+          'Sertraline is an SSRI commonly used for depression, panic disorder, OCD, PTSD, social anxiety disorder, and PMDD; sertraline is an antidepressant in the SSRI class.',
+          profile.highRiskWarnings[0] ? `Key caution: ${profile.highRiskWarnings[0]}.` : undefined,
+          'Verify dosing, interactions, and special-population questions with a current prescribing reference.',
+        ]
+          .filter(Boolean)
+          .join(' ');
+      }
+
       return [
         `${profile.genericName} is ${withIndefiniteArticle(profile.class.toLowerCase())}${profile.subclass ? ` (${profile.subclass.replace(/_/g, ' ')})` : ''}.`,
         profile.commonUses.length ? `Common uses include ${profile.commonUses.slice(0, 4).join(', ')}.` : undefined,

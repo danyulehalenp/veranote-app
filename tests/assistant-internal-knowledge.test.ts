@@ -1,5 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildInternalKnowledgeHelp } from '@/lib/veranote/assistant-internal-knowledge';
+
+vi.mock('@/lib/auth/auth-middleware', () => ({
+  requireAuth: async () => ({
+    user: {
+      id: 'assistant-internal-knowledge-provider',
+      role: 'provider',
+      email: 'assistant-internal-knowledge@veranote.local',
+    },
+    isAuthenticated: true,
+    providerIdentityId: 'assistant-internal-knowledge-provider',
+    tokenSource: 'header',
+  }),
+}));
+
+vi.mock('@/lib/resilience/rate-limiter', () => ({
+  checkRateLimit: async () => {},
+}));
+
 import { POST } from '@/app/api/assistant/respond/route';
 
 describe('assistant internal knowledge helper', () => {

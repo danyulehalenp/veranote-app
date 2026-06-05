@@ -5,6 +5,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    alias: {
+      'next/server': path.resolve(__dirname, 'node_modules/next/server.js'),
+    },
   },
   resolve: {
     alias: {

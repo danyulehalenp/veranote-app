@@ -55,6 +55,10 @@ const COMPARISON_CONCEPTS: Array<{
     build: () => buildBipolarOneVsTwoHelp(),
   },
   {
+    test: /\bschizoaffective\b.*\b(bipolar|mood).*\bpsychosis\b|\bbipolar\b.*\bpsychosis\b.*\bschizoaffective\b/,
+    build: () => buildSchizoaffectiveVsBipolarPsychosisHelp(),
+  },
+  {
     test: /\bschizophrenia\b.*\b(vs|versus)\b.*\bschizoaffective\b|\bschizoaffective\b.*\b(vs|versus)\b.*\bschizophrenia\b/,
     build: () => buildSchizophreniaVsSchizoaffectiveHelp(),
   },
@@ -265,7 +269,16 @@ export function buildPsychDiagnosisConceptHelp(normalizedMessage: string): Assis
   }
 
   const ambiguousLead = findAmbiguousFamilyLead(normalized);
-  const summary = conceptMatch.summary || `${conceptMatch.diagnosisName} is a psychiatry diagnosis Atlas can help explain at a high level.`;
+  const baseSummary = conceptMatch.summary || `${conceptMatch.diagnosisName} is a psychiatry diagnosis Atlas can help explain at a high level.`;
+  const summaryIncludesDiagnosisName = new RegExp(`\\b${escapeRegExp(conceptMatch.diagnosisName)}\\b`, 'i').test(baseSummary);
+  const namedSummary = summaryIncludesDiagnosisName ? baseSummary : `${conceptMatch.diagnosisName}: ${baseSummary}`;
+  const conceptName = conceptMatch.diagnosisName.toLowerCase();
+  const criteriaStyleQuestion = /\b(criteria|criterion|dsm|diagnostic criteria)\b/.test(normalized);
+  const summary = /\bbipolar ii\b/.test(conceptName) && /\bhypomania\b/.test(normalized)
+    ? `Bipolar II hypomania reference: ${namedSummary}`
+    : /\bschizoaffective\b/.test(conceptName) && criteriaStyleQuestion
+      ? `DSM-oriented diagnostic reference summary, not verbatim DSM criteria: ${namedSummary}`
+      : namedSummary;
   const timeframe = conceptMatch.timeframeSummary;
   const differential = conceptMatch.commonConfusionWithOtherDiagnoses?.length
     ? `Common diagnostic confusion points include ${conceptMatch.commonConfusionWithOtherDiagnoses.slice(0, 4).join(', ')}.`
@@ -1393,6 +1406,27 @@ function buildSchizophreniaVsSchizoaffectiveHelp(): AssistantResponsePayload {
       'If you want, I can also help with the psychosis-family coding anchors.',
     ].filter(Boolean) as string[],
     references: mergeConceptReferences('dx_schizophrenia', 'dx_schizoaffective'),
+  };
+}
+
+function buildSchizoaffectiveVsBipolarPsychosisHelp(): AssistantResponsePayload {
+  const schizoaffective = getDiagnosis('dx_schizoaffective');
+  const bipolarOne = getDiagnosis('dx_bipolar1');
+  const bipolarTwo = getDiagnosis('dx_bipolar2');
+
+  return {
+    message: [
+      'Schizoaffective disorder versus bipolar disorder with psychosis is mainly a timeline and mood-linkage distinction.',
+      'In bipolar disorder with psychotic features, psychosis is tied to the mood episode.',
+      schizoaffective ? `Schizoaffective disorder requires prominent mood episodes plus a meaningful period of psychosis outside mood episodes or without mood symptoms: ${schizoaffective.summary}` : null,
+      bipolarOne ? `Bipolar I anchors on a manic episode, and psychosis can occur during mood episodes: ${bipolarOne.summary}` : null,
+      bipolarTwo ? `Bipolar II uses hypomania rather than full mania, so psychotic symptoms would push clinicians to reconsider the diagnosis and episode severity: ${bipolarTwo.summary}` : null,
+    ].filter(Boolean).join(' '),
+    suggestions: [
+      'Document mood episode timing, psychosis timing, substance or medical contributors, collateral timeline, and functioning before treating either label as settled.',
+      schizoaffective?.timeframeSummary || null,
+    ].filter(Boolean) as string[],
+    references: mergeConceptReferences('dx_schizoaffective', 'dx_bipolar1', 'dx_bipolar2'),
   };
 }
 
