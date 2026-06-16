@@ -16,4 +16,22 @@ describe('Integration test for generateNote function', () => {
         const response = await generateNote(mockInput);
         expect(response).toHaveProperty('note');
     });
+
+    it('hardens vague adherence wording when missed doses are documented', async () => {
+        const response = await generateNote({
+            specialty: 'Psychiatry',
+            noteType: 'Psychiatric Follow-Up',
+            outputStyle: 'Standard',
+            format: 'Labeled Sections',
+            keepCloserToSource: true,
+            flagMissingInfo: true,
+            sourceInput: [
+                'Patient reports medication adherence is not perfect.',
+                'Patient missed two doses of sertraline this week.',
+            ].join(' '),
+        });
+
+        expect(response.note).toContain('missed medication doses are documented');
+        expect(response.note).not.toMatch(/adherence is not perfect/i);
+    });
 });

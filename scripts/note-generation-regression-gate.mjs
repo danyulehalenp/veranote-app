@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 
 const liveGenerationEnv = {
   VERANOTE_ALLOW_OPENAI: process.env.VERANOTE_ALLOW_OPENAI || '1',
@@ -7,6 +7,7 @@ const liveGenerationEnv = {
 
 const gateScope = (process.env.VERANOTE_NOTE_GATE_SCOPE || 'representative').trim().toLowerCase();
 const stepTimeoutMs = Number.parseInt(process.env.VERANOTE_NOTE_GATE_STEP_TIMEOUT_MS || '900000', 10);
+const staleProcessCleanupEnabled = process.env.VERANOTE_NOTE_GATE_SKIP_STALE_PROCESS_CLEANUP !== '1';
 
 const representativeSourcePacketCaseIds = [
   'four-field-outpatient-passive-risk',
@@ -104,32 +105,164 @@ const steps = [
   },
 ];
 
+function formatCommand(step) {
+  return `${step.command} ${step.args.join(' ')}`;
+}
+
+function formatDuration(ms) {
+  const seconds = Math.round(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  return minutes ? `${minutes}m ${remainingSeconds}s` : `${remainingSeconds}s`;
+}
+
+function listRepoGateProcesses() {
+  let output = '';
+  try {
+    output = execFileSync('ps', ['-axo', 'pid,ppid,pgid,command'], {
+      encoding: 'utf8',
+    });
+  } catch {
+    return [];
+  }
+
+  return output
+    .split('\n')
+    .slice(1)
+    .map((line) => {
+      const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/);
+      if (!match) return null;
+      return {
+        pid: Number(match[1]),
+        ppid: Number(match[2]),
+        pgid: Number(match[3]),
+        command: match[4],
+      };
+    })
+    .filter(Boolean)
+    .filter((item) => item.pid !== process.pid)
+    .filter((item) => item.command.includes('/Users/danielhale/.openclaw/workspace/app-prototype'))
+    .filter((item) => (
+      item.command.includes('scripts/note-generation-regression-gate.mjs')
+      || item.command.includes('vitest run --silent=true')
+      || item.command.includes('node_modules/vitest/dist/workers/forks')
+    ));
+}
+
+function terminateProcessGroup(pid, signal = 'SIGTERM') {
+  try {
+    process.kill(-pid, signal);
+    return true;
+  } catch {
+    try {
+      process.kill(pid, signal);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+function cleanupRepoGateProcesses(reason) {
+  if (!staleProcessCleanupEnabled) return;
+  const processes = listRepoGateProcesses();
+  if (!processes.length) return;
+
+  const groups = [...new Set(processes.map((item) => item.pgid).filter((pgid) => pgid > 0))];
+  console.warn(`Cleaning up ${processes.length} stale note-gate/Vitest process(es) before ${reason}.`);
+  for (const pgid of groups) {
+    terminateProcessGroup(pgid, 'SIGTERM');
+  }
+}
+
+function runStep(step) {
+  const startedAt = Date.now();
+
+  return new Promise((resolve) => {
+    const child = spawn(step.command, step.args, {
+      cwd: process.cwd(),
+      detached: true,
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        ...(step.env || {}),
+      },
+    });
+
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      console.error(`Note gate step timed out after ${formatDuration(stepTimeoutMs)}: ${step.label}`);
+      terminateProcessGroup(child.pid, 'SIGTERM');
+      setTimeout(() => terminateProcessGroup(child.pid, 'SIGKILL'), 5_000).unref();
+    }, Number.isFinite(stepTimeoutMs) ? stepTimeoutMs : 900000);
+
+    const stopCurrentChild = () => {
+      terminateProcessGroup(child.pid, 'SIGTERM');
+    };
+
+    process.once('SIGINT', stopCurrentChild);
+    process.once('SIGTERM', stopCurrentChild);
+
+    child.on('close', (code, signal) => {
+      clearTimeout(timeout);
+      process.removeListener('SIGINT', stopCurrentChild);
+      process.removeListener('SIGTERM', stopCurrentChild);
+
+      resolve({
+        code,
+        signal,
+        timedOut,
+        durationMs: Date.now() - startedAt,
+      });
+    });
+
+    child.on('error', (error) => {
+      clearTimeout(timeout);
+      process.removeListener('SIGINT', stopCurrentChild);
+      process.removeListener('SIGTERM', stopCurrentChild);
+
+      resolve({
+        code: 1,
+        signal: null,
+        timedOut,
+        durationMs: Date.now() - startedAt,
+        error,
+      });
+    });
+  });
+}
+
 console.log('Note-generation regression gate starting.');
 console.log(`Scope: ${gateScope === 'full' ? 'full exhaustive live bank' : 'representative bounded live gate'}.`);
 console.log('Protected baseline: four-lane source packets, prompt fidelity directives, focused note-builder regressions, build green.');
 
-for (const step of steps) {
-  console.log(`\n=== Note gate: ${step.label} ===`);
-  console.log(`$ ${step.command} ${step.args.join(' ')}`);
-  const result = spawnSync(step.command, step.args, {
-    cwd: process.cwd(),
-    stdio: 'inherit',
-    timeout: Number.isFinite(stepTimeoutMs) ? stepTimeoutMs : 900000,
-    env: {
-      ...process.env,
-      ...(step.env || {}),
-    },
-  });
+cleanupRepoGateProcesses('starting the note-generation gate');
 
-  if (result.status !== 0) {
-    if (result.signal) {
-      console.error(`Note-generation gate timed out or was terminated at step: ${step.label} (${result.signal})`);
+try {
+  for (const step of steps) {
+    console.log(`\n=== Note gate: ${step.label} ===`);
+    console.log(`$ ${formatCommand(step)}`);
+    const result = await runStep(step);
+
+    if (result.error) {
+      console.error(result.error);
     }
-    console.error(`Note-generation gate failed at step: ${step.label}`);
-    process.exit(result.status ?? 1);
-  }
 
-  console.log(`Note gate step passed: ${step.label}`);
+    if (result.code !== 0) {
+      if (result.signal || result.timedOut) {
+        console.error(`Note-generation gate timed out or was terminated at step: ${step.label} (${result.signal || 'timeout'})`);
+      }
+      console.error(`Note-generation gate failed at step: ${step.label}`);
+      cleanupRepoGateProcesses('handling a failed note-generation gate step');
+      process.exit(result.code ?? 1);
+    }
+
+    console.log(`Note gate step passed: ${step.label} (${formatDuration(result.durationMs)})`);
+  }
+} finally {
+  cleanupRepoGateProcesses('finishing the note-generation gate');
 }
 
 console.log('\nNote-generation regression gate passed.');
