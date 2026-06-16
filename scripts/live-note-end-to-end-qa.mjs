@@ -250,7 +250,11 @@ async function ensureComposeSetupVisible(page) {
       /New note/i.test(bodyText) &&
       /Setup/i.test(bodyText) &&
       /Source/i.test(bodyText) &&
-      /Paste, dictate, or commit transcript/i.test(bodyText) &&
+      (
+        /Paste, dictate, or commit transcript/i.test(bodyText) ||
+        /Paste source first; add beta capture only when helpful/i.test(bodyText) ||
+        /Use any source field that fits/i.test(bodyText)
+      ) &&
       /Generate Draft/i.test(bodyText);
 
     if (hasLegacySetup || hasCompactSetup) {
