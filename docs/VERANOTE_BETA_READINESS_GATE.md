@@ -11,14 +11,16 @@ npm run beta:gate
 ## What The Gate Checks
 
 1. Production domain reachability at `https://app.veranote.org`.
-2. Document source intake unit tests.
-3. Live browser document intake from reviewed text into Pre-Visit Data.
-4. One complete browser workflow from source entry to draft generation, save, reopen, and export.
-5. A broader browser workflow matrix across note types, source fields, EHR destinations, dictation controls, and ambient controls.
-6. Atlas clinical regression gate.
-7. Note generation regression gate.
-8. Production build.
-9. Git patch whitespace check.
+2. Production durable-storage smoke for synthetic draft, settings, presets, dictation audit, and assistant-learning persistence.
+3. Document source intake unit tests.
+4. Live browser document intake from reviewed text into Pre-Visit Data.
+5. One complete browser workflow from source entry to draft generation, save, reopen, and export.
+6. A broader browser workflow matrix across note types, source fields, EHR destinations, dictation controls, and ambient controls.
+7. Live patient-continuity workflow from synthetic prior snapshot through follow-up draft generation.
+8. Atlas clinical regression gate.
+9. Note generation regression gate.
+10. Production build.
+11. Git patch whitespace check.
 
 ## EHR Coverage
 
@@ -43,6 +45,8 @@ The gate should pass before any beta demo, production push confidence check, or 
 
 - The production app responds.
 - The local browser can complete critical note workflows.
+- Durable storage can persist and restore synthetic QA markers without leaving provider settings/presets changed.
+- Patient continuity can save, search, use, generate from, and archive synthetic prior context.
 - Atlas protected clinical QA remains green.
 - Note generation protected QA remains green.
 - The app can build.

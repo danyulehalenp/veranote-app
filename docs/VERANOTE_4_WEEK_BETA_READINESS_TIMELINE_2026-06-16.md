@@ -26,6 +26,8 @@ Required outcomes:
 - Provider account and identity switching cannot mutate state without an authorized provider context.
 - MacBook-to-iMac dev viewing works over the iMac LAN URL.
 - The note workspace fails open if saved-draft hydration stalls instead of staying on the preparation screen.
+- Beta gate includes production durable-storage smoke coverage.
+- Beta gate includes live patient-continuity workflow coverage.
 
 Focused verification:
 ```bash
@@ -121,4 +123,3 @@ Do not expand if:
 ## Current Next Step
 
 Finish Week 1 by committing the focused security and local reliability hardening locally after review. Do not push or deploy until Daniel explicitly approves.
-

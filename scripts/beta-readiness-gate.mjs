@@ -21,6 +21,12 @@ const COMMANDS = [
     required: true,
   },
   {
+    name: 'Production durable-storage smoke',
+    command: 'npm',
+    args: ['run', 'production:durable'],
+    required: true,
+  },
+  {
     name: 'Document source intake unit tests',
     command: 'npx',
     args: ['vitest', 'run', '--silent=true', '--maxWorkers=1', 'tests/document-source-intake.test.ts'],
@@ -60,6 +66,12 @@ const COMMANDS = [
     name: 'Live note workflow matrix QA',
     command: 'npm',
     args: ['run', 'live:note:matrix'],
+    required: true,
+  },
+  {
+    name: 'Live patient continuity QA',
+    command: 'npm',
+    args: ['run', 'live:patient-continuity'],
     required: true,
   },
   {
