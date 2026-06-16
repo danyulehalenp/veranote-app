@@ -28,6 +28,9 @@ Required outcomes:
 - The note workspace fails open if saved-draft hydration stalls instead of staying on the preparation screen.
 - Beta gate includes production durable-storage smoke coverage.
 - Beta gate includes live patient-continuity workflow coverage.
+- The note workspace clearly presents manual source entry as the supported beta path.
+- Dictation is labeled as beta and ambient capture is labeled as experimental in the workspace.
+- A synthetic/de-identified case pack exists for Week 1 tester rehearsal.
 
 Focused verification:
 ```bash
@@ -40,6 +43,7 @@ Exit criteria:
 - local workspace loads from `http://localhost:3001/dashboard/new-note`
 - LAN workspace loads from `http://192.168.1.73:3001/dashboard/new-note`
 - no console errors on first workspace load
+- tester rehearsal uses `docs/VERANOTE_DEIDENTIFIED_BETA_CASE_PACK_2026-06-16.md`
 - no full release gates run without approval
 
 ## Week 2: Provider-Data Isolation And Feedback Loop
@@ -122,4 +126,4 @@ Do not expand if:
 
 ## Current Next Step
 
-Finish Week 1 by committing the focused security and local reliability hardening locally after review. Do not push or deploy until Daniel explicitly approves.
+Finish Week 1 by verifying the clarified workspace copy in the browser, running focused checks only, and committing the local beta guidance updates. Do not push, deploy, or run the full beta gate until Daniel explicitly approves.

@@ -463,10 +463,10 @@ function buildWorkspaceStageStatusItems(input: {
       id: 'source',
       label: 'Add Source',
       detail: sourceReady
-        ? `${input.sourceCompletionCount}/${input.totalSourceSteps} source streams loaded.`
+        ? `${input.sourceCompletionCount}/${input.totalSourceSteps} source fields in use.`
         : sourceStarted
-          ? `${input.sourceCompletionCount}/${input.totalSourceSteps} source streams loaded so far.`
-          : 'Paste, type, dictate, or add transcript source first.',
+          ? `${input.sourceCompletionCount}/${input.totalSourceSteps} source fields in use so far.`
+          : 'Paste or type source first; dictation and ambient capture stay optional.',
       status: sourceReady ? 'complete' : input.activeComposeLane === 'source' || input.activeComposeLane === 'setup' ? 'active' : 'upcoming',
     },
     {
@@ -2559,18 +2559,18 @@ export function NewNoteForm() {
     () => ([
       {
         id: 'manual' as const,
-        label: 'Source packet',
-        detail: 'The four-field note workspace: pre-visit data, live visit notes, ambient transcript, and provider add-on.',
+        label: 'Manual source',
+        detail: 'Supported beta path: paste or type source into whichever fields fit the note.',
       },
       {
         id: 'dictation' as const,
-        label: 'Dictation',
-        detail: 'Provider-directed source capture with insertion review, owned by the dictation lane.',
+        label: 'Dictation beta',
+        detail: 'Beta capture path: dictate into a target source field, then review the transcript before insertion.',
       },
       {
         id: 'transcript' as const,
-        label: 'Ambient review',
-        detail: 'Consent, listen, review the transcript, then commit corrected spoken source into the Ambient Transcript field.',
+        label: 'Ambient experimental',
+        detail: 'Experimental capture path: consent, listen, review, then commit corrected spoken source into Ambient Transcript.',
       },
     ]),
     [],
@@ -5265,7 +5265,7 @@ export function NewNoteForm() {
                   <div className="mt-1 text-lg font-semibold tracking-[-0.02em] text-white">Edit source beside the draft</div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <span className="rounded-full border border-cyan-200/14 bg-white/[0.06] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
-                      {sourceCompletionCount}/{sourceEntrySteps.length} fields loaded
+                      {sourceCompletionCount}/{sourceEntrySteps.length} source fields in use
                     </span>
                     <span className="rounded-full border border-cyan-200/14 bg-white/[0.06] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
                       {sourceCompletionPercent}% ready
@@ -5708,13 +5708,13 @@ export function NewNoteForm() {
 		                {[
 		                  {
 		                    id: 'transcript' as const,
-		                    label: 'Ambient listening',
-		                    detail: sourceWorkspaceMode === 'transcript' ? 'On - ambient lane open' : 'Off - open ambient lane',
+		                    label: 'Ambient experimental',
+		                    detail: sourceWorkspaceMode === 'transcript' ? 'On - ambient lane open' : 'Off - optional experimental lane',
 		                  },
 		                  {
 		                    id: 'dictation' as const,
-		                    label: 'Dictation',
-		                    detail: sourceWorkspaceMode === 'dictation' ? 'On - dictation lane open' : 'Off - open dictation lane',
+		                    label: 'Dictation beta',
+		                    detail: sourceWorkspaceMode === 'dictation' ? 'On - dictation lane open' : 'Off - optional beta lane',
 		                  },
 		                ].map((captureOption) => {
 		                  const isActive = sourceWorkspaceMode === captureOption.id;
@@ -5745,19 +5745,19 @@ export function NewNoteForm() {
 	              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
 	                <div>
 	                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/66">Capture options</div>
-		                  <p className="mt-1 hidden text-sm leading-6 text-cyan-50/72 md:block">Ambient and dictation stay optional; source typing always works.</p>
+		                  <p className="mt-1 hidden text-sm leading-6 text-cyan-50/72 md:block">Manual source entry is the supported beta path; dictation and ambient stay optional.</p>
 	                </div>
                 <div className="flex flex-wrap gap-2">
                   {[
                     {
                       id: 'transcript' as const,
-                      label: 'Ambient listening',
-                      detail: sourceWorkspaceMode === 'transcript' ? 'On - ambient lane open' : 'Off - open ambient lane',
+                      label: 'Ambient experimental',
+                      detail: sourceWorkspaceMode === 'transcript' ? 'On - ambient lane open' : 'Off - optional experimental lane',
                     },
                     {
                       id: 'dictation' as const,
-                      label: 'Dictation',
-                      detail: sourceWorkspaceMode === 'dictation' ? 'On - dictation lane open' : 'Off - open dictation lane',
+                      label: 'Dictation beta',
+                      detail: sourceWorkspaceMode === 'dictation' ? 'On - dictation lane open' : 'Off - optional beta lane',
                     },
                   ].map((captureOption) => {
                     const isActive = sourceWorkspaceMode === captureOption.id;
@@ -6096,7 +6096,7 @@ export function NewNoteForm() {
                         Template: {template}
                       </div>
                       <div className="rounded-full border border-cyan-300/18 bg-cyan-400/10 px-3 py-1 text-xs font-medium text-cyan-50">
-                        Source coverage: {sourceCompletionCount}/{sourceEntrySteps.length}
+                        Source fields in use: {sourceCompletionCount}/{sourceEntrySteps.length}
                       </div>
                     </div>
                     <details className="workspace-inline-details mt-3">
@@ -6122,10 +6122,10 @@ export function NewNoteForm() {
 	        <div className="mb-2 flex flex-col gap-2 rounded-[20px] border border-cyan-200/10 bg-[rgba(255,255,255,0.035)] px-3 py-2.5 2xl:flex-row 2xl:items-center 2xl:justify-between">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100/62">Source</div>
-            <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-white">Paste, dictate, or commit transcript.</h2>
+            <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-white">Paste source first; add beta capture only when helpful.</h2>
           </div>
           <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.13em] text-cyan-50/78">
-            <span className="rounded-full border border-cyan-200/12 bg-white/[0.05] px-3 py-1">{sourceCompletionCount}/{sourceEntrySteps.length} fields</span>
+            <span className="rounded-full border border-cyan-200/12 bg-white/[0.05] px-3 py-1">{sourceCompletionCount}/{sourceEntrySteps.length} source fields</span>
             {populatedSectionLabels.length ? (
               <span className="rounded-full border border-cyan-200/12 bg-white/[0.05] px-3 py-1">
                 Active: {populatedSectionLabels[0]}
@@ -6526,16 +6526,16 @@ export function NewNoteForm() {
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100/66">Source</div>
-                      <div className="mt-1 text-sm font-semibold text-white">Four fields feed the draft.</div>
+                      <div className="mt-1 text-sm font-semibold text-white">Use any source field that fits.</div>
                     </div>
                     <div className="rounded-full border border-cyan-200/14 bg-[rgba(255,255,255,0.05)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-50">
-                      {sourceCompletionCount}/{sourceEntrySteps.length} fields loaded
+                      {sourceCompletionCount}/{sourceEntrySteps.length} source fields in use
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2" aria-label="Source entry mode">
                     {sourceModeCards.map((modeCard) => {
                       const isActive = sourceWorkspaceMode === modeCard.id;
-                      const shortLabel = modeCard.id === 'manual' ? 'Manual' : modeCard.id === 'dictation' ? 'Dictation' : 'Ambient';
+                      const shortLabel = modeCard.id === 'manual' ? 'Manual' : modeCard.id === 'dictation' ? 'Dictation beta' : 'Ambient experimental';
 
                       return (
                         <button
@@ -6598,7 +6598,7 @@ export function NewNoteForm() {
                         {isLoading ? 'Generating draft...' : hasSource ? 'Source ready for draft.' : 'Paste, dictate, or upload source to start.'}
                       </div>
                       <div className="mt-1 text-xs text-cyan-50/66">
-                        {sourceCompletionCount}/{sourceEntrySteps.length} fields loaded • Generate in the draft pane.
+                        {sourceCompletionCount}/{sourceEntrySteps.length} source fields in use • Generate in the draft pane.
                       </div>
                     </div>
                     <button
