@@ -68,22 +68,35 @@ const noteBuilderRegressionArgs = gateScope === 'full'
       'tests/note-builder-first25-cleanup-regression.test.ts',
     ];
 
+const noteBuilderSteps = gateScope === 'full'
+  ? noteBuilderRegressionArgs.map((testPath) => ({
+      label: `Focused note-builder regression: ${testPath.replace(/^tests\/|\.test\.ts$/g, '')}`,
+      command: 'npx',
+      args: [
+        'vitest',
+        'run',
+        '--silent=true',
+        '--maxWorkers=1',
+        testPath,
+      ],
+      env: liveGenerationEnv,
+    }))
+  : [{
+      label: 'Representative note-builder regression set',
+      command: 'npx',
+      args: [
+        'vitest',
+        'run',
+        '--silent=true',
+        '--maxWorkers=1',
+        ...noteBuilderRegressionArgs,
+      ],
+      env: liveGenerationEnv,
+    }];
+
 const steps = [
   promptAndSourceStep,
-  {
-    label: gateScope === 'full'
-      ? 'Focused note-builder regression set'
-      : 'Representative note-builder regression set',
-    command: 'npx',
-    args: [
-      'vitest',
-      'run',
-      '--silent=true',
-      '--maxWorkers=1',
-      ...noteBuilderRegressionArgs,
-    ],
-    env: liveGenerationEnv,
-  },
+  ...noteBuilderSteps,
   {
     label: 'Production build',
     command: 'npm',

@@ -630,6 +630,8 @@ function hardenMedicationAdherenceWording(note: string, sourceInput: string) {
   .replace(/\btaking\s+as\s+prescribed\b/gi, 'taking as reported, with missed doses also documented')
   .replace(/\bfully\s+adherent\b/gi, 'missed doses documented')
   .replace(/\bperfect\s+adherence\b/gi, 'missed doses documented')
+  .replace(/\b(?:medication\s+)?adherence\s+is\s+not\s+perfect\b/gi, 'missed medication doses are documented')
+  .replace(/\b(?:medication\s+)?adherence\s+was\s+not\s+perfect\b/gi, 'missed medication doses are documented')
   .replace(/\badherence\s+is\s+good\b/gi, 'adherence includes documented missed doses')
   .replace(/\bgood\s+adherence\b/gi, 'adherence includes documented missed doses')
   .replace(/\badherent\s+with\s+([A-Za-z][\w-]*)\b/gi, 'taking $1 as reported, with missed doses also documented')
