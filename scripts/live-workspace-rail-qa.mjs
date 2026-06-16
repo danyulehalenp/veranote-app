@@ -23,6 +23,9 @@ const SHOULD_START_SERVER = process.env.LIVE_WORKSPACE_RAIL_START_SERVER !== '0'
 const TEST_PROVIDER_ID = 'provider-brandy-norris-beta';
 const IGNORE_HTTPS_ERRORS = process.env.LIVE_WORKSPACE_RAIL_IGNORE_HTTPS_ERRORS === '1'
   || process.env.VERANOTE_LIVE_IGNORE_HTTPS_ERRORS === '1';
+const MANUAL_MODE_LABEL = /^Manual$/i;
+const DICTATION_MODE_LABEL = /^Dictation beta$/i;
+const AMBIENT_MODE_LABEL = /^Ambient experimental$/i;
 
 async function readLocalEnvValue(key) {
   if (process.env[key]) {
@@ -306,9 +309,9 @@ async function runLaptopRailScenario(browser) {
   assertState(/px/.test(initial.columns) && initial.columns.split(' ').length >= 2, `workspace shell did not expose two grid columns: ${initial.columns}`, failures);
   assertState(initial.scrollY <= 24, `workspace did not start near top; scrollY=${initial.scrollY}`, failures);
   assertState(await page.getByTestId('workspace-quick-find-input').isVisible().catch(() => false), 'workspace quick-find input was not visible in the rail', failures);
-  assertState(await page.getByRole('button', { name: /^Manual$/i }).first().isVisible().catch(() => false), 'source entry mode controls did not expose Manual near the source pane', failures);
-  assertState(await page.getByRole('button', { name: /^Dictation$/i }).first().isVisible().catch(() => false), 'source entry mode controls did not expose Dictation near the source pane', failures);
-  assertState(await page.getByRole('button', { name: /^Ambient$/i }).first().isVisible().catch(() => false), 'source entry mode controls did not expose Ambient near the source pane', failures);
+  assertState(await page.getByRole('button', { name: MANUAL_MODE_LABEL }).first().isVisible().catch(() => false), 'source entry mode controls did not expose Manual near the source pane', failures);
+  assertState(await page.getByRole('button', { name: DICTATION_MODE_LABEL }).first().isVisible().catch(() => false), 'source entry mode controls did not expose Dictation beta near the source pane', failures);
+  assertState(await page.getByRole('button', { name: AMBIENT_MODE_LABEL }).first().isVisible().catch(() => false), 'source entry mode controls did not expose Ambient experimental near the source pane', failures);
 
   const actionCardCount = await page.locator('.workspace-action-card').count();
   const actionPillCount = await page.locator('.workspace-action-pill').count();
@@ -334,11 +337,11 @@ async function runLaptopRailScenario(browser) {
   assertState(await page.locator('#source-field-intakeCollateral textarea').first().isVisible().catch(() => false), 'Paste Source Here quick-find did not reveal the Pre-Visit Data source box', failures);
 
   await clickQuickFindResult(page, 'dictation', /Dictation/i, failures, 'workspace quick-find did not surface Dictation for dictation search');
-  assertState(await page.getByRole('button', { name: /^Dictation$/i }).first().isVisible().catch(() => false), 'Dictation quick-find did not keep the Dictation mode control visible', failures);
+  assertState(await page.getByRole('button', { name: DICTATION_MODE_LABEL }).first().isVisible().catch(() => false), 'Dictation quick-find did not keep the Dictation beta mode control visible', failures);
   assertState(await page.getByText(/Dictation source mode/i).first().isVisible().catch(() => false), 'Dictation quick-find did not reveal the dictation source mode panel', failures);
 
   await clickQuickFindResult(page, 'ambient', /Ambient Listening/i, failures, 'workspace quick-find did not surface Ambient Listening for ambient search');
-  assertState(await page.getByRole('button', { name: /^Ambient$/i }).first().isVisible().catch(() => false), 'Ambient quick-find did not keep the Ambient mode control visible', failures);
+  assertState(await page.getByRole('button', { name: AMBIENT_MODE_LABEL }).first().isVisible().catch(() => false), 'Ambient quick-find did not keep the Ambient experimental mode control visible', failures);
   assertState(await page.getByText(/Ambient/i).first().isVisible().catch(() => false), 'Ambient quick-find did not keep ambient source context visible', failures);
 
   await clickQuickFindResult(page, 'prompt', /My Note Prompt/i, failures, 'workspace quick-find did not surface My Note Prompt for prompt search');
