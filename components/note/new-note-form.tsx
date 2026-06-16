@@ -2769,6 +2769,10 @@ export function NewNoteForm() {
 
   useEffect(() => {
     let isActive = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      controller.abort();
+    }, 5000);
     setDraftHydrationComplete(false);
 
     async function hydrateDraft() {
@@ -2777,6 +2781,7 @@ export function NewNoteForm() {
           try {
           const response = await fetch(`/api/drafts/${encodeURIComponent(requestedDraftId)}?providerId=${encodeURIComponent(resolvedProviderIdentityId)}&includeArchived=true`, {
             cache: 'no-store',
+            signal: controller.signal,
           });
           const data = (await response.json()) as { draft?: PersistedDraftSession | null };
           const parsed = data?.draft;
@@ -2815,6 +2820,7 @@ export function NewNoteForm() {
               await fetch('/api/dictation/audit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
                 body: JSON.stringify({
                   providerId: resolvedProviderIdentityId,
                   id: `dictation-resume-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -2840,6 +2846,7 @@ export function NewNoteForm() {
             await fetch(`/api/drafts/${encodeURIComponent(requestedDraftId)}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
+              signal: controller.signal,
               body: JSON.stringify({
                 providerId: resolvedProviderIdentityId,
                 action: 'mark-opened',
@@ -2934,7 +2941,10 @@ export function NewNoteForm() {
         }
 
         try {
-          const response = await fetch(`/api/drafts/latest?providerId=${encodeURIComponent(resolvedProviderIdentityId)}`, { cache: 'no-store' });
+          const response = await fetch(`/api/drafts/latest?providerId=${encodeURIComponent(resolvedProviderIdentityId)}`, {
+            cache: 'no-store',
+            signal: controller.signal,
+          });
           const data = (await response.json()) as { draft?: PersistedDraftSession | null };
           const parsed = data?.draft;
 
@@ -2975,6 +2985,7 @@ export function NewNoteForm() {
           // Keep the prototype usable even if backend draft restore is unavailable.
         }
       } finally {
+        window.clearTimeout(timeout);
         if (isActive) {
           setDraftHydrationComplete(true);
         }
@@ -2984,6 +2995,8 @@ export function NewNoteForm() {
     void hydrateDraft();
     return () => {
       isActive = false;
+      window.clearTimeout(timeout);
+      controller.abort();
     };
   }, [draftRecoveryStorageKey, draftSessionStorageKey, draftStageStorageKey, requestedDictationSessionId, requestedDraftId, resolvedProviderIdentityId]);
 

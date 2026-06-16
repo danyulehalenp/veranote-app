@@ -8,10 +8,37 @@ import { InlineFeedbackControl } from '@/components/veranote/feedback/inline-fee
 import { buildFeedbackRegressionScaffold } from '@/lib/beta/feedback-regression';
 import type { BetaFeedbackItem } from '@/types/beta-feedback';
 
+const mockRequireAuth = vi.hoisted(() => vi.fn(async () => ({
+  user: {
+    id: 'beta-feedback-admin',
+    role: 'admin',
+    email: 'beta-feedback-admin@veranote.local',
+  },
+  isAuthenticated: true,
+  tokenSource: 'header',
+})));
+
+vi.mock('@/lib/auth/auth-middleware', () => ({
+  requireAuth: mockRequireAuth,
+}));
+
+vi.mock('@/lib/veranote/access-mode', () => ({
+  INTERNAL_MODE_ENABLED: true,
+}));
+
 const ORIGINAL_ENV = { ...process.env };
 let tempDir = '';
 
 beforeEach(async () => {
+  mockRequireAuth.mockResolvedValue({
+    user: {
+      id: 'beta-feedback-admin',
+      role: 'admin',
+      email: 'beta-feedback-admin@veranote.local',
+    },
+    isAuthenticated: true,
+    tokenSource: 'header',
+  });
   tempDir = await mkdtemp(path.join(os.tmpdir(), 'veranote-beta-feedback-'));
   process.env = {
     ...ORIGINAL_ENV,

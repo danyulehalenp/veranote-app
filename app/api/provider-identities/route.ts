@@ -26,6 +26,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Provider identity switching is not enabled in beta mode.' }, { status: 403 });
   }
 
+  const authorizedProvider = await getAuthorizedProviderContext();
+  if (!authorizedProvider) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const body = (await request.json()) as { providerId?: string };
   const providerId = body.providerId || DEFAULT_PROVIDER_IDENTITY_ID;
   const currentProviderId = await saveCurrentProviderIdentityId(providerId);

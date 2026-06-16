@@ -28,6 +28,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Provider account switching is not enabled in beta mode.' }, { status: 403 });
   }
 
+  const authorizedProvider = await getAuthorizedProviderContext();
+  if (!authorizedProvider) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const body = (await request.json()) as { providerAccountId?: string };
   const providerAccountId = body.providerAccountId || DEFAULT_PROVIDER_ACCOUNT_ID;
   const account = findProviderAccount(providerAccountId);

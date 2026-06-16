@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/auth/auth-middleware';
 import { REWRITE_MODES, rewriteNote, type RewriteMode } from '@/lib/ai/rewrite-note';
 
 function normalizeRewriteMode(value: unknown): RewriteMode {
@@ -8,6 +9,12 @@ function normalizeRewriteMode(value: unknown): RewriteMode {
 }
 
 export async function POST(request: Request) {
+  try {
+    await requireAuth(request);
+  } catch {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const body = await request.json();
   const currentDraft = typeof body?.currentDraft === 'string' ? body.currentDraft : '';
   const sourceInput = typeof body?.sourceInput === 'string' ? body.sourceInput : '';

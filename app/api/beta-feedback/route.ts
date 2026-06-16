@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/auth/auth-middleware';
+import { requireRole } from '@/lib/auth/role-check';
 import { isFeedbackEmailConfigured, sendFeedbackNotification } from '@/lib/beta/feedback-email';
 import { listBetaFeedback, saveBetaFeedback, updateBetaFeedback } from '@/lib/db/client';
 import { detectFeedbackPhiRisk, redactFeedbackText } from '@/lib/beta/feedback-redaction';
 import { inferVeraGapType } from '@/lib/beta/vera-gaps';
+import { INTERNAL_MODE_ENABLED } from '@/lib/veranote/access-mode';
 import type {
   BetaFeedbackCategory,
   BetaFeedbackItem,
@@ -78,12 +81,29 @@ function buildDefaultMessage(body: Partial<BetaFeedbackItem>, label?: BetaFeedba
   return 'Provider submitted beta feedback.';
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  if (!INTERNAL_MODE_ENABLED) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  try {
+    const authContext = await requireAuth(request);
+    requireRole(authContext.user, 'admin');
+  } catch {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   const feedback = await listBetaFeedback();
   return NextResponse.json({ feedback });
 }
 
 export async function POST(request: Request) {
+  try {
+    await requireAuth(request);
+  } catch {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const body = (await request.json()) as Partial<BetaFeedbackItem>;
   const feedbackLabel = typeof body.feedbackLabel === 'string' && validLabels.includes(body.feedbackLabel as BetaFeedbackLabel)
     ? body.feedbackLabel as BetaFeedbackLabel
@@ -167,6 +187,17 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  if (!INTERNAL_MODE_ENABLED) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  try {
+    const authContext = await requireAuth(request);
+    requireRole(authContext.user, 'admin');
+  } catch {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   const body = (await request.json()) as {
     id?: string;
     status?: BetaFeedbackStatus;

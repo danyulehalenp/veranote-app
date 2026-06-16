@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/auth/auth-middleware';
 import { generateNote } from '@/lib/ai/generate-note';
 import { buildSourceInputFromSections, normalizeSourceSections } from '@/lib/ai/source-sections';
 import { normalizeDiagnosisProfile } from '@/lib/note/diagnosis-profile';
@@ -6,6 +7,12 @@ import { normalizeEncounterSupport } from '@/lib/note/encounter-support';
 import { normalizeMedicationProfile } from '@/lib/note/medication-profile';
 
 export async function POST(request: Request) {
+  try {
+    await requireAuth(request);
+  } catch {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const body = await request.json();
   const sourceSections = normalizeSourceSections(body?.sourceSections);
   const sourceInputFromSections = buildSourceInputFromSections(sourceSections);

@@ -3,7 +3,10 @@ import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
+import { requireAuth } from '@/lib/auth/auth-middleware';
+import { requireRole } from '@/lib/auth/role-check';
 import { listVeranoteBuildTasks, saveVeranoteBuildTasks } from '@/lib/db/client';
+import { INTERNAL_MODE_ENABLED } from '@/lib/veranote/access-mode';
 import type { VeranoteBuildTask } from '@/types/task';
 
 const SHARED_TASK_FILE = path.join(os.homedir(), '.openclaw', 'shared', 'veranote-build-tasks.json');
@@ -26,12 +29,34 @@ async function syncTasksToImac(tasks: VeranoteBuildTask[]) {
   });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  if (!INTERNAL_MODE_ENABLED) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  try {
+    const authContext = await requireAuth(request);
+    requireRole(authContext.user, 'admin');
+  } catch {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   const tasks = await listVeranoteBuildTasks();
   return NextResponse.json({ tasks });
 }
 
 export async function POST(request: Request) {
+  if (!INTERNAL_MODE_ENABLED) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  try {
+    const authContext = await requireAuth(request);
+    requireRole(authContext.user, 'admin');
+  } catch {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   const body = await request.json();
   const tasks = Array.isArray(body?.tasks) ? body.tasks as VeranoteBuildTask[] : null;
 
